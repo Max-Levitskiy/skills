@@ -1,0 +1,22 @@
+{
+  "name": "herdr",
+  "description": "Drive the herdr terminal workspace manager from the CLI. List, focus, rename, create, and close workspaces, worktrees, tabs, and panes; spawn agents in panes and hold conversations with them; and resolve \"which one am I in\". No MCP server required.",
+  "version": "0.1.0",
+  "license": "MIT",
+  "author": {
+    "name": "Max Levitskiy",
+    "url": "https://github.com/Max-Levitskiy"
+  },
+  "homepage": "https://github.com/Max-Levitskiy/skills/tree/main/plugins/herdr",
+  "keywords": [
+    "herdr",
+    "terminal",
+    "workspace",
+    "worktree",
+    "tmux-alternative",
+    "multi-agent",
+    "agent-orchestration",
+    "panes",
+    "claude-skill"
+  ]
+}

@@ -93,6 +93,24 @@
         "dead-code",
         "code-smell"
       ]
+    },
+    {
+      "name": "herdr",
+      "source": "./plugins/herdr",
+      "description": "Drive the herdr terminal workspace manager from the CLI. List, focus, rename, create, and close workspaces, worktrees, tabs, and panes; spawn agents in panes and hold conversations with them; and resolve \"which one am I in\".",
+      "version": "0.1.0",
+      "license": "MIT",
+      "author": { "name": "Max Levitskiy" },
+      "category": "development",
+      "keywords": [
+        "herdr",
+        "terminal",
+        "workspace",
+        "worktree",
+        "multi-agent",
+        "agent-orchestration",
+        "panes"
+      ]
     }
   ]
 }
