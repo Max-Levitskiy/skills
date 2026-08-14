@@ -2,7 +2,7 @@
 
 How a skill or subagent stores per-user and per-project settings, and how it gets hold of secrets without ever committing one.
 
-Status: **active**. Applies to any skill, subagent, command, or hook in this marketplace that needs configuration. Canonical implementation: [`plugins/agent-config`](../plugins/agent-config). Reference implementations: [`fellow`](../plugins/fellow) (credential-backed) and [`orchestrate`](../plugins/orchestrate) (optional config).
+Status: **active**. Applies to any skill, subagent, command, or hook in this marketplace that needs configuration. Canonical implementation: [`plugins/agent-config`](../plugins/agent-config). Reference implementations: [`fellow`](../plugins/fellow) (credential-backed), [`orchestrate`](../plugins/orchestrate) (optional config), and [`herdr`](../plugins/herdr) (no credential at all — presets only).
 
 ## Why this exists
 

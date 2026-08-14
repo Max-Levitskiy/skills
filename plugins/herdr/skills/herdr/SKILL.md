@@ -1,15 +1,22 @@
 ---
 name: herdr
 description: >-
-  Drive the herdr terminal workspace manager from the CLI - list, focus, rename,
-  create, or close workspaces, worktrees, tabs, and panes; spawn agents and talk to
-  them; and answer "which one am I in". Use whenever the user mentions herdr, or asks
-  to rename / switch / focus / close / list a session, workspace, tab, pane, or
-  worktree in their terminal workspace manager - e.g. "rename this session", "what
-  workspace am I in", "focus the argocd workspace", "make a worktree for branch X",
-  "close this tab". Also use to start another agent in a pane, send it a message, read
-  its output, or wait for it to finish. Prefer this over ad-hoc `herdr` commands: it
-  resolves the current pane correctly and handles the session-vs-workspace trap.
+  Run and manage AI subagents in herdr panes, and drive the herdr terminal workspace
+  manager from the CLI. Use to start a subagent (claude, codex, omp, gemini, opencode,
+  droid, copilot, cursor - or a preset of your own), send it a task, read its answer,
+  hold a multi-turn conversation with it, list which agents are running and what state
+  they are in, and stop one - one command per step, with the send/Enter and
+  status-timing traps handled. Subagent definitions (argv, cwd, env, session, timeouts)
+  live in agent config, so "run the reviewer agent" resolves to a preset rather than a
+  guessed command line. Also covers the layout itself: list, focus, rename, create, or
+  close workspaces, worktrees, tabs, and panes, and answer "which one am I in". Use
+  whenever the user mentions herdr, asks to run / spawn / ask / message / check on /
+  stop an agent or subagent, or asks to rename / switch / focus / close / list a
+  session, workspace, tab, pane, or worktree - e.g. "run a subagent to review this",
+  "ask the other claude what it found", "which agents are running", "rename this
+  session", "make a worktree for branch X", "close this tab". Prefer this over ad-hoc
+  `herdr` commands: it resolves the current pane correctly and handles the
+  session-vs-workspace trap.
 ---
 
 # Driving herdr
@@ -75,6 +82,34 @@ So "rename this session to backups" is `scripts/herdr_here.py rename backups`.
 Pick a short, kebab-ish label matching the user's existing naming (run `list` to see it),
 not a verbose invented one.
 
+## Running a subagent
+
+`scripts/herdr-agent.ts` (bun) does the whole exchange in one command. Use it instead of
+hand-rolling `agent start` + `wait` + `send` + `send-keys Enter` + `read`: the manual
+sequence has two traps that silently return the *previous* answer, and this handles both
+(see `references/agents.md` for what they are).
+
+```bash
+scripts/herdr-agent.ts presets                       # which subagents are configured + installed
+scripts/herdr-agent.ts running                       # what is alive now, and its status
+scripts/herdr-agent.ts start codex --prompt "..."    # spawn, wait for boot, ask once, print the reply
+scripts/herdr-agent.ts ask <pane|name> "..."         # next turn in the same conversation
+scripts/herdr-agent.ts read <pane|name> [--raw]      # what is on its screen
+scripts/herdr-agent.ts stop <pane|name> --force      # close the pane (kills the agent)
+```
+
+Add `--json` to `presets`, `running`, `start` and `ask` when you need to consume the
+result rather than show it. `start` takes `--name`, `--cwd`, `--workspace`, `--tab`,
+`--split right|down`, `--focus`, `--env K=V`, `--session`, `--timeout`.
+
+**Which agent runs is a config question, not a command line.** Presets live under
+`agents` in agent config (`scripts/herdr-agent.ts config path global`, ACS v1 - see
+`standards/agent-config.md`), keyed by name, holding argv plus cwd, env, session, split,
+timeouts and the TUI markers used to scrape replies. Eight agents are built in, so the
+skill works with no config file; `config.example.json` shows how to override one or add a
+role of your own (`reviewer`, `scratch`). When the user names an agent you do not have a
+preset for, run `presets` before guessing a binary.
+
 ## Reference - load what the task needs
 
 Each file is the verb list plus the gotchas for that area. Read one when the task touches
@@ -84,15 +119,17 @@ it; do not read all four.
 |------|--------|
 | `references/workspaces.md` | workspace + worktree verbs; creating worktree-backed workspaces |
 | `references/tabs-and-panes.md` | tab verbs; pane verbs incl. split, move, zoom, resize, read, input |
-| `references/agents.md` | starting an agent, messaging it, reading its replies, waiting on status |
+| `references/agents.md` | subagent presets and config; the one-shot runner; raw `agent` verbs; status semantics |
 | `references/sessions.md` | the literal session/server: list, attach, stop, `--session`, `--remote` |
 
 Anything not listed there: `herdr <noun> --help` prints the authoritative subcommand list.
 
 ## Gotchas
 
-- **`herdr agent send` does not press Enter.** It writes literal text into the composer.
-  Follow with `herdr pane send-keys <pane_id> Enter`. See `references/agents.md`.
+- **Use `scripts/herdr-agent.ts` for anything conversational.** Raw `herdr agent send`
+  does not press Enter, an Enter sent in the same breath as the text is swallowed by the
+  TUI redraw, and a status wait straight after submitting returns instantly - each of
+  which reads back the *previous* answer. See `references/agents.md`.
 - **"session" is usually the workspace** - but check `herdr session list` rather than
   assuming there is only `default`.
 - **Destructive verbs** (`workspace close`, `worktree remove`, `tab close`, `pane close`,

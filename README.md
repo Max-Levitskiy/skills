@@ -58,7 +58,7 @@ Prefer a UI? Run `/plugin` to open the interactive browser, pick a plugin, and i
 | [`orchestrate`](plugins/orchestrate) | Run a multi-part task as small, tracked, parallel work packages — one agent, one output file each — with an async question protocol so waiting on human decisions never blocks progress. | `/plugin install orchestrate@max-skills` |
 | [`code-density-analyzer`](plugins/code-density-analyzer) | Detect AI-generation slop in code — duplication, dead code, redundant comments, verbosity, over-abstraction, error masking, convention violations, hallucinated dependencies, and performance waste. Scores a git diff or standalone files via 10 parallel analysis methods. | `/plugin install code-density-analyzer@max-skills` |
 | [`agent-config`](plugins/agent-config) | Give a skill or subagent layered settings — global, repo, and a gitignored local layer — plus credentials referenced from 1Password, the environment, a dotenv file, Keychain, or any command, so a secret never lands in a config file. Includes a re-runnable onboarding flow and a zero-dependency loader other plugins vendor instead of rewriting. | `/plugin install agent-config@max-skills` |
-| [`herdr`](plugins/herdr) | Drive the herdr terminal workspace manager from the CLI. List, focus, rename, create, and close workspaces, worktrees, tabs, and panes; spawn agents in panes and hold conversations with them; and resolve "which one am I in". | `/plugin install herdr@max-skills` |
+| [`herdr`](plugins/herdr) | Run and manage AI subagents in herdr panes from presets stored in agent config - start, ask, read, converse, list, stop - and drive the workspace manager itself: workspaces, worktrees, tabs, panes, and "which one am I in". | `/plugin install herdr@max-skills` |
 
 ## Standards
 

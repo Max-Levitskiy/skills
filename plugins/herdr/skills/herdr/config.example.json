@@ -1,0 +1,63 @@
+{
+  "//": "Example only. Copy to ~/.agents/config/herdr/config.json (global),",
+  "//1": "<repo>/.agents/config/herdr/config.json (repo, committed), or",
+  "//2": "<repo>/.agents/config/herdr/config.local.json (local, gitignored).",
+  "//3": "Every key is optional: with no config at all the skill uses its built-in presets",
+  "//4": "(claude, codex, omp, gemini, opencode, droid, copilot, cursor) and launches claude.",
+  "//5": "herdr talks to a local socket, so no credential is ever needed here.",
+  "//6": "See standards/agent-config.md.",
+
+  "version": 1,
+
+  "//agents": "Launchable subagents. A name matching a built-in overrides it key by key; any other name is yours alone. Only `command` is required.",
+  "agents": {
+    "//claude": "Overriding a built-in: same agent, extra argv. Arrays replace wholesale across layers.",
+    "claude": {
+      "command": ["claude"],
+      "//markers": "How replies are scraped: replyMarker prefixes the agent's own output, composerMarker its input line, chrome lists per-line furniture regexes (spinners, hint rows, status bar).",
+      "replyMarker": "⏺",
+      "composerMarker": "❯",
+      "chrome": []
+    },
+    "//reviewer": "A preset is a role, not just a binary - argv, cwd, env and timeouts together.",
+    "reviewer": {
+      "command": ["claude", "--permission-mode", "plan"],
+      "description": "read-only reviewer, cannot edit files",
+      "split": "down",
+      "replyMarker": "⏺",
+      "replyTimeoutMs": 600000
+    },
+
+    "//scratch": "cwd keeps an agent out of a project, so it inherits no CLAUDE.md, hooks or SessionStart work.",
+    "scratch": {
+      "command": ["claude"],
+      "description": "inert agent in a scratch directory",
+      "cwd": "~/tmp",
+      "replyMarker": "⏺"
+    },
+
+    "//codex": "Non-Claude agents work the same way, with their own markers - Codex prefixes output with • and its composer with ›.",
+    "codex": {
+      "command": ["codex", "--search"],
+      "description": "Codex with web search",
+      "env": { "RUST_LOG": "warn" }
+    },
+
+    "//farm": "session sends the agent to a different herdr server, keeping long jobs out of your working session.",
+    "farm": {
+      "command": ["claude"],
+      "session": "agents",
+      "focus": false
+    }
+  },
+
+  "//defaults": "Applied to every preset that does not set the key itself. Shown values are the built-in defaults.",
+  "defaults": {
+    "agent": "claude",
+    "split": "right",
+    "focus": false,
+    "bootTimeoutMs": 90000,
+    "replyTimeoutMs": 300000,
+    "readLines": 200
+  }
+}

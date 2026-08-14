@@ -1,7 +1,7 @@
 {
   "name": "herdr",
-  "description": "Drive the herdr terminal workspace manager from the CLI. List, focus, rename, create, and close workspaces, worktrees, tabs, and panes; spawn agents in panes and hold conversations with them; and resolve \"which one am I in\". No MCP server required.",
-  "version": "0.1.0",
+  "description": "Run and manage AI subagents in herdr panes from named presets stored in agent config - start, ask, read, converse, list, stop - and drive the herdr terminal workspace manager: workspaces, worktrees, tabs, panes, and \"which one am I in\". No MCP server required.",
+  "version": "0.2.0",
   "license": "MIT",
   "author": {
     "name": "Max Levitskiy",
