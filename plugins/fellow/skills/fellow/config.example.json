@@ -16,14 +16,17 @@
     "apiKey": {
       "source": "1password",
       "ref": "op://Vault/Fellow API key/credential",
-      "account": "OPTIONAL_ACCOUNT_ID"
+      "account": "OPTIONAL_ACCOUNT_ID",
+
+      "//cacheVar": "Optional, works with any source. When this variable holds a non-empty value it is used and the source is never touched, so a shell session pays one Touch ID prompt instead of one per command. Seed it with: export FELLOW_API_KEY=\"$(op read 'op://Vault/Fellow API key/credential')\". Name it what the env source below uses, so switching between them is a source edit and not a rename.",
+      "cacheVar": "FELLOW_API_KEY"
     },
 
-    "//alternatives": "Replace the apiKey object above with any one of these:",
+    "//alternatives": "Replace the apiKey object above with any one of these (each also accepts cacheVar):",
     "//env": { "source": "env", "var": "FELLOW_API_KEY" },
     "//dotenv": { "source": "dotenv", "path": ".env.local", "var": "FELLOW_API_KEY" },
-    "//keychain": { "source": "keychain", "service": "fellow", "account": "me@example.com" },
-    "//command": { "source": "command", "command": "pass show work/fellow-api-key" }
+    "//keychain": { "source": "keychain", "service": "fellow", "account": "me@example.com", "cacheVar": "FELLOW_API_KEY" },
+    "//command": { "source": "command", "command": "pass show work/fellow-api-key", "cacheVar": "FELLOW_API_KEY" }
   },
 
   "storage": {

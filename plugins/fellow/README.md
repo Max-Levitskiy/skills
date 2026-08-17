@@ -57,6 +57,14 @@ Just ask Claude to set up Fellow access. It will ask where your key lives, which
 
 Configuration follows the [Agent Config Standard](../../standards/agent-config.md): three layers (global `~/.agents/`, repo, and a gitignored local layer), and **the API key is never written to a config file** — only a reference to where it lives (1Password, an env var, a `.env` file, Keychain, or any shell command).
 
+If that reference is 1Password, Keychain, or a command, add `"cacheVar": "FELLOW_API_KEY"` to it and seed the variable once per shell session:
+
+```bash
+export FELLOW_API_KEY="$(op read 'op://Vault/Fellow API key/credential')"
+```
+
+Every command in that session then uses the variable and never re-resolves the secret — one Touch ID prompt instead of one per command, and about 5s off each call. The secret is never cached to disk; it dies with the shell.
+
 See [`skills/fellow/config.example.json`](skills/fellow/config.example.json) for the full shape.
 
 ## CLI

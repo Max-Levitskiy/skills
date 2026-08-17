@@ -55,14 +55,17 @@
     "githubToken": {
       "source": "1password",
       "ref": "op://Vault/GitHub token/credential",
-      "account": "OPTIONAL_ACCOUNT_ID"
+      "account": "OPTIONAL_ACCOUNT_ID",
+
+      "//cacheVar": "Optional, works with any source. When this variable holds a non-empty value it is used and the source is never touched — one Touch ID prompt per shell session instead of one per process. Seed it with: export GITHUB_TOKEN=\"$(op read 'op://Vault/GitHub token/credential')\". Name it what the env source below uses, so switching between them is a source edit and not a rename.",
+      "cacheVar": "GITHUB_TOKEN"
     },
 
-    "//alternatives": "Replace the object above with any one of these:",
+    "//alternatives": "Replace the object above with any one of these (each also accepts cacheVar):",
     "//env": { "source": "env", "var": "GITHUB_TOKEN" },
     "//dotenv": { "source": "dotenv", "path": ".env.local", "var": "GITHUB_TOKEN" },
-    "//keychain": { "source": "keychain", "service": "github", "account": "me@example.com" },
-    "//command": { "source": "command", "command": "pass show work/github-token" },
+    "//keychain": { "source": "keychain", "service": "github", "account": "me@example.com", "cacheVar": "GITHUB_TOKEN" },
+    "//command": { "source": "command", "command": "pass show work/github-token", "cacheVar": "GITHUB_TOKEN" },
 
     "//jiraToken": "kind=jira — an Atlassian API token, paired with tracker.email.",
     "jiraToken": { "source": "env", "var": "JIRA_API_TOKEN" },

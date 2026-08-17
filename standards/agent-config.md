@@ -95,9 +95,28 @@ macOS Keychain via `security find-generic-password -s <service> -a <account> -w`
 ```
 Runs a shell command; stdout minus trailing newline is the secret. The escape hatch for password managers not covered above (Bitwarden, pass, LastPass, Doppler, AWS Secrets Manager). Powerful, so a component should surface the command to the user during onboarding rather than accepting it silently from a config it just read.
 
+### `cacheVar` — one prompt per session
+
+Any reference, whatever its `source`, may carry an optional `cacheVar`:
+```json
+{ "source": "1password", "ref": "op://Vault/Item/field", "cacheVar": "MY_API_KEY" }
+```
+When that environment variable holds a non-empty value, the resolver returns it and never touches `source`. Empty or whitespace-only means unseeded, so a stray `export MY_API_KEY=` falls through to the real source instead of resolving to an empty secret.
+
+This exists because a CLI is a new process every invocation, so a `1password` reference means `op read` — and a Touch ID prompt — on every single call. The operator seeds the variable once per shell session:
+
+```bash
+export MY_API_KEY="$(op read 'op://Vault/Item/field')"
+```
+
+One prompt for the session, none after it, and nothing downstream changes. It is opt-in per reference and useful beyond 1Password: `keychain` and `command` can prompt or be slow too.
+
+Name it whatever a plain `env` source would use for the same secret. Then moving between the two is a `source` edit, not a rename, and the variable a user already exports for CI works as a cache here.
+
 ### Resolution rules
 
 - Resolve **lazily** — only when a call actually needs the secret. Listing config shouldn't shell out to a password manager and trigger a Touch ID prompt.
+- Honour **`cacheVar`** before consulting `source`, so repeated invocations cost one prompt per shell session rather than one per process. Cache only in the environment: an env var dies with the shell, which is the property that makes it safe to hold a secret in. **Never write a resolved secret to disk** — no cache file, no TTL directory under `~/.cache`, no temp file. And never add a helper that prints the secret so the user can export it; the reference is already visible in `config show`, which is enough to write the `export` line by hand.
 - **Never print, log, or echo a resolved secret**, and never pass it as a command-line argument (argv is world-readable via `ps`). Pass it through the environment or stdin.
 - On failure, report *which* reference failed and how to fix it — `op read op://Vault/Item/field failed: not signed in — run 'op signin'` — never dump the raw error and leave the user guessing.
 
@@ -186,7 +205,7 @@ To migrate, move the directory (`mv .agents/skill-config/<name> .agents/config/<
 - [ ] Works with only the global layer (outside a git repo)
 - [ ] A plugin's skill and subagent load the same `<name>`
 - [ ] No secret is ever written to a config file
-- [ ] Secrets resolve lazily and never reach argv, logs, or stdout
+- [ ] Secrets resolve lazily, honour `cacheVar` before their source, and never reach argv, logs, stdout, or disk
 - [ ] Missing config triggers onboarding in a skill — and in a subagent, a report naming the missing keys and their path, never a question
 - [ ] A subagent with an unresolvable credential exits non-zero naming the reference, rather than blocking on a prompt
 - [ ] Onboarding gitignores `.agents/config/*/config.local.json` and verifies with a real call

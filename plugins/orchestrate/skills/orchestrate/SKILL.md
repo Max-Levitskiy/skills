@@ -98,7 +98,10 @@ rather than types.
    task files such as Obsidian TaskNotes (`tasknotes`), or GitHub / Jira / Linear. If nothing
    exists, recommend `file` with a new `tasks.md` next to the work — no credential, no setup.
 2. **Where does the credential live** — only for `github`, `jira`, `linear`. GitHub needs
-   none at all when `gh auth status` already succeeds; offer that first.
+   none at all when `gh auth status` already succeeds; offer that first. If the source can
+   prompt (1Password, Keychain), add `cacheVar` to the reference and give the user the
+   one-line `export` that seeds it: orchestrate runs many short-lived processes, and without
+   it each one re-resolves the secret and raises its own Touch ID prompt.
 3. **Where do question docs collect, and who answers them** — `questions.path`,
    `questions.human`.
 4. **Model tiering** — which model for judgment-heavy drafting versus mechanical work. Offer

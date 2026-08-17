@@ -58,7 +58,7 @@ bun "$O" verify    # resolve the credential and make one real call
 | Jira | `jira` | `jiraToken` (+ `tracker.email`) |
 | Linear | `linear` | `linearToken` |
 
-Credentials are stored as *references* — 1Password, an env var, a `.env` file, macOS Keychain, or a shell command — never as values. They resolve lazily, so `check` and `show` never trigger a password-manager prompt, and a resolved secret never reaches argv, logs, or stdout. Writing the local layer gitignores it for you, and `write` refuses any config with a token inlined.
+Credentials are stored as *references* — 1Password, an env var, a `.env` file, macOS Keychain, or a shell command — never as values. They resolve lazily, so `check` and `show` never trigger a password-manager prompt, and a resolved secret never reaches argv, logs, or stdout. Add `"cacheVar": "GITHUB_TOKEN"` to a reference and export that variable once per shell session to skip re-resolving (and re-prompting) in every one of the short-lived processes an orchestration spawns; nothing is cached to disk. Writing the local layer gitignores it for you, and `write` refuses any config with a token inlined.
 
 Every supported key is documented in [`config.example.json`](skills/orchestrate/config.example.json).
 

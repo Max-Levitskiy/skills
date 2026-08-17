@@ -16,5 +16,6 @@ Then:
 
 - Write the config with the `Write` tool. `bun "$F" config path --layer global` prints the exact destination. Copy the shape from `../config.example.json` next to this file.
 - Verify with `bun "$F" config check`, which makes a real `/me` call — show the user the authenticated identity it returns. Configured means that call succeeded, not that a file exists.
+- If the credential came from 1Password, Keychain, or a command, add `"cacheVar": "FELLOW_API_KEY"` to it and tell the user to seed the variable once per shell session — `export FELLOW_API_KEY="$(op read '<their ref>')"`. Without it every command re-resolves the secret from scratch: ~5s and a fresh Touch ID prompt each time. Print the `export` line for them to run; never run it yourself and never echo the key.
 
 Layering, merge rules, and credential-reference shapes are in the [Agent Config Standard](../../../../../standards/agent-config.md); read it for anything the four questions above don't cover.

@@ -36,7 +36,7 @@ Missing config is the expected first-run state, not a failure — never report i
 1. **Detect before doing any work.** Run the calling skill's config check — `fellow.ts config check`, `orchestrate-config.ts check`. It either says proceed or names exactly which keys are missing. A skill with no CLI does the same with `loadConfig()` and its own `validate()`.
 
 2. **Ask only the questions that matter**, with `AskUserQuestion` so the user picks rather than types. Skip any that don't apply — a component with no credential (a file-backed tracker) asks none of the first one:
-   - **Where does the credential live?** 1Password (`op`), an environment variable, a gitignored `.env` file, macOS Keychain, or any shell command that prints the secret (Bitwarden, pass, Doppler, `vault`). **Never accept the secret itself as text.** The exact JSON for each source is in the standard. Read a `command` source back to the user before saving — it runs on every call.
+   - **Where does the credential live?** 1Password (`op`), an environment variable, a gitignored `.env` file, macOS Keychain, or any shell command that prints the secret (Bitwarden, pass, Doppler, `vault`). **Never accept the secret itself as text.** The exact JSON for each source is in the standard. Read a `command` source back to the user before saving — it runs on every call. When the source prompts or is slow — 1Password raises a Touch ID prompt on every process — add `cacheVar` to the reference and show the user the one-line `export` that seeds it for the shell session.
    - **Which account, workspace, or project?** Whatever identifies the target of the call.
    - **What gets written, and where?** Say plainly that anything not configured simply isn't written, and that bulky or sensitive output can stay out of the repo entirely via an absolute path.
 
@@ -77,7 +77,7 @@ A subagent reads config exactly as a skill does and fails differently, because i
 ## Two rules with no exceptions
 
 - **A config file never holds a secret**, only a reference to where one lives. The repo layer is committed, so an inlined token leaks eventually. `assertNoInlineSecrets` enforces this on every write — don't route around it.
-- **A resolved secret never reaches argv, logs, or stdout.** argv is world-readable through `ps`; pass secrets by environment or stdin. Resolve lazily, so listing config never fires a password-manager prompt.
+- **A resolved secret never reaches argv, logs, stdout, or disk.** argv is world-readable through `ps`; pass secrets by environment or stdin. Resolve lazily, so listing config never fires a password-manager prompt, and cache only in the environment via `cacheVar` — never in a file.
 
 ## Legacy path
 

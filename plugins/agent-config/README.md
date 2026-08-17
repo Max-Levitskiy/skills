@@ -32,6 +32,8 @@ A config file never contains a secret, only a reference to where one lives — t
 | `keychain` | macOS Keychain, via `security find-generic-password` |
 | `command` | any shell command — the escape hatch for Bitwarden, `pass`, Vault, and the rest |
 
+Any reference can also carry `"cacheVar": "MY_API_KEY"`. When that environment variable holds a non-empty value the resolver uses it and never touches the source — one Touch ID prompt per shell session instead of one per command, since every CLI invocation is a fresh process. Nothing is cached to disk: the variable dies with the shell, which is what makes it safe.
+
 ## Vendoring
 
 The library is copied into each consuming plugin verbatim rather than imported across plugins. A runtime dependency between plugins breaks the moment a user has one installed and not the other; a copy always works. Drift is caught by diffing the vendored file's body against the canonical one — not a commit hash, which churns on every sync even when nothing changed and misses the case that actually happens, someone editing the copy.
@@ -50,7 +52,7 @@ agent-config/
 │   ├── SKILL.md                 the onboarding flow — detect missing config, ask, write, gitignore, verify
 │   ├── lib/
 │   │   ├── config.ts            layer paths, deep merge, gitignore handling, credential validation
-│   │   └── credentials.ts       lazy resolution for all five sources; never logs a resolved secret
+│   │   └── credentials.ts       lazy resolution for all five sources, plus the cacheVar session cache; never logs a resolved secret or writes one to disk
 │   └── scripts/vendor.sh        sync/check the copies vendored into fellow and orchestrate
 └── LICENSE
 ```

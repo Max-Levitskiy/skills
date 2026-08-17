@@ -27,6 +27,15 @@ bun "$F" config check
 - **Reports missing config** → **read `references/onboarding.md`** and follow it. Missing config is the expected first-run state, not a failure — don't report it to the user as an error.
 - **Credential fails to resolve** → the config is fine but the secret isn't reachable (`op` not signed in, env var unset). Tell the user exactly which reference failed and what to run; don't rewrite their config.
 
+If the credential resolves through 1Password, Keychain, or a command, `config show` prints both the reference and the variable it is cached in. Seed that variable **once per shell session** and every later command skips the prompt entirely — a `1password` reference otherwise costs ~5s and a Touch ID tap on *every* invocation:
+
+```bash
+bun "$F" config show                     # prints the op:// ref and the cache variable
+export FELLOW_API_KEY="$(op read 'op://Vault/Fellow API key/credential')"
+```
+
+If `cacheVar` isn't in the config yet, add it to `credentials.apiKey` (see `config.example.json`). Never echo the resolved key back to the user or into the transcript — the `export` above is the only place it belongs.
+
 ## Project scoping
 
 Most workspaces mix several unrelated streams — a client engagement, an internal product, a daily standup for something else entirely. When the user asks about "the project", returning all of it is noise.
