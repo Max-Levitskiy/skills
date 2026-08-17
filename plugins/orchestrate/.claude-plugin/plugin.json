@@ -1,7 +1,7 @@
 {
   "name": "orchestrate",
   "description": "Run a multi-part task as small, tracked, parallel work packages — one agent, one output file each — with an async question protocol so waiting on human decisions never blocks progress.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "license": "MIT",
   "author": {
     "name": "Max Levitskiy",

@@ -1,7 +1,7 @@
 {
   "name": "fellow",
   "description": "Query Fellow meeting notes, transcripts, AI summaries, and action items via the Fellow REST API. Search past meetings, write recaps into a repo, and bulk-export to markdown. Read-only, no MCP server required.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "license": "MIT",
   "author": {
     "name": "Max Levitskiy",
