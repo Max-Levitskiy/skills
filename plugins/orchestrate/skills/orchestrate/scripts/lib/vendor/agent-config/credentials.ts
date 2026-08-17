@@ -46,6 +46,14 @@ function assertGitignored(p: string, name: string): void {
 }
 
 export function resolveCredential(ref: CredentialRef, name = "credential"): string {
+  // A seeded cacheVar short-circuits every source, so a shell session pays for one Touch ID
+  // prompt rather than one per process. Whitespace-only counts as unseeded: a stray `export X=`
+  // must fall through to the real source, not resolve to an empty secret.
+  if (ref.cacheVar) {
+    const cached = process.env[ref.cacheVar];
+    if (cached && cached.trim()) return cached;
+  }
+
   let value: string;
 
   switch (ref.source) {
@@ -104,6 +112,13 @@ export function resolveCredential(ref: CredentialRef, name = "credential"): stri
 
 /** Describe a reference for display without revealing anything secret. */
 export function describeCredential(ref: CredentialRef): string {
+  const base = describeSource(ref);
+  // A variable *name* is not a secret, and `config show` is where an operator looks to find out
+  // the session cache exists at all.
+  return ref.cacheVar ? `${base}; cached in $${ref.cacheVar}` : base;
+}
+
+function describeSource(ref: CredentialRef): string {
   const f = (v: string | undefined, field: string) => v ?? `(${field} unset)`;
   switch (ref.source) {
     case "1password":

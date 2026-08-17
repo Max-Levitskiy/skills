@@ -31,6 +31,12 @@ export interface CredentialRef {
   path?: string;
   service?: string;
   command?: string;
+  /**
+   * Optional session cache. When this environment variable holds a non-empty value the
+   * resolver uses it and never touches `source` — one prompt per shell session instead of one
+   * per process. Opt-in per reference, and valid for every source.
+   */
+  cacheVar?: string;
 }
 
 /** The two keys ACS reserves. Consumers extend this with their own namespace. */
