@@ -1,0 +1,23 @@
+{
+  "name": "atlassian",
+  "description": "Work with Jira and Confluence through their REST APIs using a bundled TypeScript CLI. Search issues with JQL, read and create tickets, comment, transition status, manage sprints and boards, and read, write, and update Confluence pages. Works against Atlassian Cloud and Data Center/Server. No MCP server required.",
+  "version": "0.1.0",
+  "license": "MIT",
+  "author": {
+    "name": "Max Levitskiy",
+    "url": "https://github.com/Max-Levitskiy"
+  },
+  "homepage": "https://github.com/Max-Levitskiy/skills/tree/main/plugins/atlassian",
+  "keywords": [
+    "atlassian",
+    "jira",
+    "confluence",
+    "tickets",
+    "issues",
+    "backlog",
+    "sprint",
+    "wiki",
+    "api",
+    "claude-skill"
+  ]
+}

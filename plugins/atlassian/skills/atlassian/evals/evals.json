@@ -1,0 +1,104 @@
+{
+  "skill_name": "atlassian",
+  "note": "Prompts a real user would type. Running these needs a reachable instance — either real credentials or the stub server pattern used in scripts/lib/client.test.ts. Assertions describe what the run should demonstrate, not exact output text.",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "how many tickets are still open in NEO right now, and what are the oldest three?",
+      "expected_output": "A count and three issues, obtained without silently truncating the result set.",
+      "files": [],
+      "assertions": [
+        "Runs `config check` before making any product call",
+        "Uses `jira search --count` (or `--all`) rather than reporting the length of a single default page as the total",
+        "If the instance is Cloud, describes the count as approximate rather than exact",
+        "Orders by created ascending in JQL rather than sorting a partial page in its head"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "file a bug in NEO: the /export endpoint returns 500s under burst traffic, we saw it on the 28th. assign it to me and put it in the current sprint",
+      "expected_output": "A created issue with a markdown description, assigned to the authenticated user.",
+      "files": [],
+      "assertions": [
+        "Runs `jira meta NEO` (or `jira fields`) to learn the accepted issue types and required fields before creating",
+        "Passes the description via --description-file rather than embedding a long quoted string",
+        "Uses --assignee me instead of hardcoding an accountId",
+        "Shows the user what it is about to create, or reports the created key and URL afterwards",
+        "Does not invent a custom field id it has not looked up"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "add a rollback section to the export runbook page on confluence — https://acme.atlassian.net/wiki/spaces/NEO/pages/98765/Export+runbook",
+      "expected_output": "The page gains a rollback section with its existing content intact.",
+      "files": [],
+      "assertions": [
+        "Uses `confluence append`, or reads the page first and passes --expect-version on update",
+        "Never sends an update body reconstructed from memory of the page",
+        "Passes markdown and lets the CLI convert, rather than hand-writing storage XHTML",
+        "Reports the resulting version number or URL"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "set up jira for me — we're on jira.mashreqbank.local, self-hosted. my personal access token is in 1password under 'Mashreq Jira PAT'",
+      "expected_output": "A working global config using a 1password credential reference, verified with a real call.",
+      "files": [],
+      "assertions": [
+        "Writes the config to ~/.agents/skill-config/atlassian/config.json (global layer)",
+        "Stores a { source: '1password', ref: 'op://...' } reference, never the token value",
+        "Infers or sets deployment 'server' and bearer auth for a non-atlassian.net host, and does not ask for an account email",
+        "Recognises that Confluence on a self-hosted instance needs its own baseUrl, and asks rather than guessing one",
+        "Finishes by running `config check` and reporting the authenticated identity"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "NEO-12 shipped in 2.4.1, close it out and note that in the ticket",
+      "expected_output": "The issue transitioned to a closed status with a comment recording the version.",
+      "files": [],
+      "assertions": [
+        "Lists available transitions before attempting one, rather than guessing a status name",
+        "Uses the transition whose destination is the closed status, even when the transition itself is named differently",
+        "Attaches the note as a comment (via --comment or `jira comment`) rather than editing the description",
+        "Does not delete or otherwise modify the issue beyond what was asked"
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "we work on two things here — neochain (jira NEO and NEOINF, wiki space NEO) and adi (the ADI project). set that up so I stop repeating myself",
+      "expected_output": "A scopes block in the config with both streams, a chosen default, and the pairing confirmed with the user.",
+      "files": [],
+      "assertions": [
+        "Runs `jira projects` and `confluence spaces` to check the keys against what actually exists rather than taking them on faith",
+        "Writes a `scopes` map with jira.projects and confluence.space per stream, plus `defaultScope`",
+        "Asks the user which stream should be the default instead of picking silently",
+        "Confirms the resulting config with `config scopes`",
+        "Does not put a Jira project key in the confluence.space field without checking the space exists"
+      ]
+    },
+    {
+      "id": 7,
+      "prompt": "what's open across everything right now — all projects, not just neochain",
+      "expected_output": "An unscoped search, explicitly covering every project.",
+      "files": [],
+      "assertions": [
+        "Passes --no-scope so the configured default scope does not narrow the result",
+        "Also passes --all or --count rather than reporting a single page as the whole picture",
+        "Does not silently return only the default scope's projects"
+      ]
+    },
+    {
+      "id": 8,
+      "prompt": "what did dana say about the gateway config on NEO-1?",
+      "expected_output": "The relevant comment, attributed, in readable text.",
+      "files": [],
+      "assertions": [
+        "Fetches comments (`jira get --comments` or `jira comments`)",
+        "Reads the ADF comment body as text rather than dumping raw JSON at the user",
+        "Attributes the quote to the comment author and does not paraphrase it as fact if the wording matters",
+        "Makes no write calls"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,101 @@
+{
+  "version": 1,
+
+  "_comment_credentials": "A config file never contains a secret — only a reference to one. Sources: 1password | env | dotenv | keychain | command. Use credentials.token for both products; add jiraToken/confluenceToken only when the two are separate systems with separate tokens, which is normal on Data Center.",
+  "credentials": {
+    "token": {
+      "source": "1password",
+      "ref": "op://Private/Atlassian API token/credential",
+      "account": "OPTIONAL_1PASSWORD_ACCOUNT_ID"
+    },
+    "jiraToken": { "source": "env", "var": "JIRA_PAT" },
+    "confluenceToken": { "source": "keychain", "service": "confluence-pat", "account": "me@acme.com" }
+  },
+
+  "_comment_auth": "Cloud API tokens are the password half of basic auth, so the account email is required. Data Center personal access tokens are bearer tokens and need no email. Both are inferred from the base URL unless set here.",
+  "auth": {
+    "mode": "basic",
+    "email": "me@acme.com"
+  },
+
+  "jira": {
+    "baseUrl": "https://acme.atlassian.net",
+    "deployment": "cloud",
+    "_comment_defaultProject": "Used when no scope applies and --project is omitted.",
+    "defaultProject": "NEO"
+  },
+
+  "confluence": {
+    "_comment": "On Cloud this can be omitted — it is derived from jira.baseUrl with /wiki appended. On Data Center, Confluence is a separate host and must be set explicitly.",
+    "baseUrl": "https://acme.atlassian.net/wiki",
+    "deployment": "cloud",
+    "defaultSpace": "NEO"
+  },
+
+  "_comment_scopes": "A scope is one stream of work as a human names it, bound to the Jira projects and Confluence space that carry it. Called 'scope' because 'project' already means something specific in Jira. Commands take --scope <name>, or --no-scope to ignore the default. Every command prints what a scope narrowed, so a filtered answer is never mistaken for the whole picture. Scopes are optional: with none configured, nothing is filtered.",
+  "defaultScope": "neochain",
+  "scopes": {
+    "neochain": {
+      "label": "NeoChain — Mashreq",
+      "jira": {
+        "_comment_projects": "Project keys, which double as the issue-key prefixes (NEO → NEO-123). The first is the project new issues go to.",
+        "projects": ["NEO", "NEOINF"],
+        "defaultIssueType": "Task",
+        "labels": ["neochain"],
+        "components": ["api"],
+        "board": 42
+      },
+      "confluence": {
+        "space": "NEO",
+        "_comment_parentPage": "New pages are created under this page unless --parent says otherwise.",
+        "parentPage": "98765"
+      }
+    },
+    "adi": {
+      "label": "ADI Chain",
+      "_comment": "A scope can be a slice of a shared project rather than a whole one — jqlFilter and cqlFilter are AND-ed into every search.",
+      "jira": {
+        "projects": ["PLATFORM"],
+        "jqlFilter": "labels = adi",
+        "defaultIssueType": "Story"
+      },
+      "confluence": {
+        "space": "PLAT",
+        "cqlFilter": "label = \"adi\""
+      }
+    }
+  },
+
+  "_comment_fields": "Friendly name → Jira field id, so callers write --field points=5 instead of looking customfield_10016 up again. Find ids with 'jira fields --search \"story points\"'. Ids are per-instance, so this belongs in the repo layer where a team shares it.",
+  "fields": {
+    "points": "customfield_10016",
+    "epic": "customfield_10014",
+    "team": "customfield_10001"
+  },
+
+  "_comment_people": "Shorthand → accountId (Cloud) or username (Data Center). Skips the user search, which matters on Cloud where privacy settings can hide the email a search would match on.",
+  "people": {
+    "dana": "5f8a1b2c3d4e5f6a7b8c9d0e",
+    "sam": "5a1b2c3d4e5f6a7b8c9d0e1f"
+  },
+
+  "_comment_safety": "Standing limits, independent of any --yes passed at the call site. Omit to allow everything (destructive commands still gated by --yes). Set allowDelete/allowPurge false where nothing should ever be destroyed; set readOnly true where the instance is a reference source rather than somewhere you file work — that refuses every mutating subcommand, not only the destructive ones.",
+  "safety": {
+    "readOnly": false,
+    "allowDelete": false,
+    "allowPurge": false
+  },
+
+  "defaults": {
+    "pageSize": 50,
+    "maxResults": 50,
+    "issueType": "Task"
+  },
+
+  "storage": {
+    "exports": {
+      "enabled": false,
+      "path": "docs/atlassian"
+    }
+  }
+}
