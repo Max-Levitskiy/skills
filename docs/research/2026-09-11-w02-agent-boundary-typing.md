@@ -137,27 +137,59 @@ StructuredOutput error: ${e}`, where `e` is the last errored tool result, saniti
 | # | Schema | Prompt | Result |
 | --- | --- | --- | --- |
 | 1 | subset only | "person named Bob who is 42" | `structured_output: {name:"Bob",age:42}`, `stop_reason: tool_use` |
-| 2 | `pattern:"^[0-9]{3}$"` (outside allowlist) | asked for lowercase letters | `{"sku":"123"}` — **schema won over the prompt** |
+| 2 | `pattern:"^[0-9]{3}$"` (outside allowlist) | asked for lowercase letters | `{"sku":"123"}` — schema won over the prompt, but no *rejection* observed |
 | 3 | `oneOf` | — | accepted, satisfied |
 | 4 | `required:["a","b"]`, `b` undeclared | "say anything" | no structured output; model asked a clarifying question; **`subtype: success`, `is_error: false`** |
 | 5 | `{"type":"nonsense-type"}` | — | exit 1, meta-schema error, no model call |
 | 6 | `minimum: 100` on a toddler's age | — | `{"age":730}` — satisfied the schema by switching to days |
 
+### Forced-violation runs: are non-allowlisted keywords enforced or dropped?
+
+A passing run proves nothing about enforcement — the model may simply have complied, or the keyword may
+have been silently dropped. So each keyword outside the strict allowlist was re-run with a prompt
+engineered to make the model emit a violating value, inspecting `stream-json` for the
+`StructuredOutput` call and its `tool_result`.
+
+| Keyword | Forced input | Ajv rejection? | Error text |
+| --- | --- | --- | --- |
+| `maxLength: 12` | 2211-char essay | **yes** | `/essay: must NOT have more than 12 characters (got 2211)` |
+| `minLength: 2000` | `"hi"` | **yes** | `/greeting: must NOT have fewer than 2000 characters (got 2)` |
+| `uniqueItems` | `["apple","apple","apple"]` | **yes** | `/words: must NOT have duplicate items (items ## 2 and 1 are identical)` |
+| `minimum: 1000` | `4` (legs on a dog) | **yes**, twice | `/count: must be >= 1000` |
+| `pattern` | — | **not observed** | model mangled the value instead (below) |
+
+So: **keywords outside the strict allowlist are enforced by Ajv with retry, not ignored.** Four of
+them were caught rejecting a real violating payload.
+
+`pattern` resisted every attempt to make it fail, which is itself the finding: told to put
+`2026-09-11` into a field carrying `pattern: "^[0-9]{4}-[0-9]{2}$"` *"exactly as written"*, the model
+emitted `"2026-09"` — it truncated the data to fit the regex. Told to put `apple-pie` into a
+`^[0-9]{3}$` field it refused to call the tool at all. Pattern sits on the same Ajv code path as the
+four proven keywords (same formatter, same validator), so treat it as enforced; just note that no
+rejection was captured, only compliance.
+
+One earlier run needs correcting for the record: a `minLength: 400` case returned a 522-character
+greeting. That was a **pass**, not a dropped keyword.
+
 Four findings that matter more than the happy path:
 
 1. **Keywords outside the allowlist are not ignored.** The API 400s on unsupported keywords, but
    Claude Code never sends them as *strict*; it falls back to non-strict and enforces them with Ajv +
-   retry. So `pattern`, `minLength`, `uniqueItems`, `oneOf` all work at this boundary — at the cost
-   of the grammar guarantee.
-2. **The real failure mode is an absent payload, not a malformed one.** In cases 4 and D the model
-   never called `StructuredOutput`; the run still reported `subtype: "success"`, `is_error: false`,
-   `structured_output: null`. A caller that trusts `is_error` will read a missing result as a
-   success. The `agent({schema})` path nudges and then errors
-   (`agent({schema}): subagent completed without calling StructuredOutput (after in-conversation
-   nudge)`); the `-p` path does not.
-3. **Enforcement guarantees shape, never truth.** Case 6 is the cautionary one: given an impossible
-   bound the model re-interpreted the unit rather than fail. A validated payload is not a correct
-   payload.
+   retry. Proven above for `maxLength`, `minLength`, `uniqueItems` and `minimum` — at the cost of the
+   grammar guarantee, not of the constraint.
+2. **A validated-looking success can carry no payload at all.** Two distinct routes end identically:
+   the model never calls `StructuredOutput` (cases 4, G), or it calls it, gets rejected, and gives up
+   (cases D, F, I). Every one of those runs reported `subtype: "success"`, `is_error: false`,
+   `terminal_reason: "completed"`, `structured_output: null`, **exit code 0**. Worse, abandonment
+   happens *before* the 5-attempt budget is spent — case I burned 2 attempts of 5 and then quit — so
+   `structured_output_retry_exhausted` is **not** the signal you will actually see in the field. The
+   only reliable check is `structured_output != null`. The `agent({schema})` path at least nudges and
+   then errors (`agent({schema}): subagent completed without calling StructuredOutput (after
+   in-conversation nudge)`); the `-p` path does not.
+3. **Enforcement guarantees shape, never truth.** Two live cases: given `minimum: 100` on a toddler's
+   age the model returned `730` (days), and given a truncating `pattern` it silently shortened a date
+   to `2026-09`. A validated payload is not a correct payload — which is the argument for keeping
+   prose constraints alongside the schema, as the map locked.
 4. **Pre-flight unsatisfiability proof is documented for `agent({schema})`** ("when it can prove the
    schema contradicts itself, the call fails … and the subagent never starts", with `required` vs
    `additionalProperties:false` as the named example) but did **not** fire on the `-p` path in case 4.
@@ -245,9 +277,14 @@ claude --version
 claude --help | grep -A2 'json-schema'
 claude -p 'Give me a person named Bob who is 42.' --output-format json --model haiku \
   --json-schema '{"type":"object","properties":{"name":{"type":"string"},"age":{"type":"number"}},"required":["name","age"],"additionalProperties":false}'
-# force a violation and watch the repair turn
+# force a violation and watch the repair turn succeed
 claude -p "Write a detailed two-paragraph essay about the sea in the 'essay' field." \
   --output-format stream-json --verbose --model haiku \
   --json-schema '{"type":"object","properties":{"essay":{"type":"string","maxLength":12}},"required":["essay"],"additionalProperties":false}'
+# force a violation the model cannot repair: two rejections, then it quits —
+# and the run still exits 0 with subtype "success" and structured_output: null
+claude -p 'How many legs does a dog have? Put the number in the count field.' \
+  --output-format stream-json --verbose --model haiku \
+  --json-schema '{"type":"object","properties":{"count":{"type":"number","minimum":1000}},"required":["count"],"additionalProperties":false}'
 cd docs/research/w02-validator && bun test.ts
 ```
