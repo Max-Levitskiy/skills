@@ -1,0 +1,185 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/Max-Levitskiy/skills/main/plugins/agent-config/agent-config.schema.json",
+  "title": "agent-config declaration",
+  "description": "Declaration of a component's configuration keys and skill/agent dependencies, shipped as agent-config.json at a plugin's root.",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "URL of this schema, for editor validation; has no effect on processing."
+    },
+    "version": {
+      "type": "integer",
+      "const": 2,
+      "description": "Declaration format version. Currently must be 2."
+    },
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]*$",
+      "description": "The component's agent-config namespace name."
+    },
+    "schema": {
+      "type": "object",
+      "description": "Configuration shape this component reads and writes; omit if the component has no configuration.",
+      "properties": {
+        "version": {
+          "type": "integer",
+          "default": 1,
+          "description": "Version of this component's config shape, independent of the declaration format version."
+        },
+        "keys": {
+          "type": "object",
+          "description": "Configuration keys always in scope for this component, keyed by dot-path.",
+          "propertyNames": {
+            "pattern": "^[A-Za-z_$][A-Za-z0-9_$-]*(\\.[A-Za-z_$][A-Za-z0-9_$-]*)*$"
+          },
+          "additionalProperties": { "$ref": "#/$defs/keyEntry" }
+        },
+        "groups": {
+          "type": "array",
+          "description": "Conditional sets of keys, each active only when its matcher is satisfied.",
+          "items": { "$ref": "#/$defs/group" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "dependencies": {
+      "type": "object",
+      "description": "Skills or agents this component requires, keyed by \"<plugin>:<skill>\" or a bare skill name for a skill outside any plugin.",
+      "additionalProperties": { "$ref": "#/$defs/dependency" }
+    },
+    "registry": {
+      "type": "object",
+      "description": "Opt-in registry behaviour overrides; omit entirely to accept defaults.",
+      "properties": {
+        "dirtyCheckout": {
+          "type": "string",
+          "enum": ["refuse", "allow"],
+          "default": "refuse",
+          "description": "Whether to refuse or allow operating against a dirty git checkout."
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "required": ["version", "name"],
+  "additionalProperties": false,
+  "$defs": {
+    "keyEntry": {
+      "type": "object",
+      "description": "A single configuration key: what it means, where it is stored, and its default.",
+      "properties": {
+        "description": {
+          "type": "string",
+          "description": "Human-readable explanation of what this key controls."
+        },
+        "layer": {
+          "type": "string",
+          "enum": ["global", "repo", "user-repo", "local"],
+          "description": "Advisory hint for which config layer this key is expected to live in."
+        },
+        "default": {
+          "description": "Default value used when the key is not set."
+        }
+      },
+      "required": ["description"],
+      "additionalProperties": false
+    },
+    "group": {
+      "type": "object",
+      "description": "A set of keys that only apply when the matcher condition holds.",
+      "properties": {
+        "when": { "$ref": "#/$defs/whenMatcher" },
+        "action": {
+          "type": "string",
+          "default": "onboard",
+          "description": "Id of the action to run to satisfy this group's keys; defaults to \"onboard\"."
+        },
+        "keys": {
+          "type": "object",
+          "description": "Configuration keys that apply only when this group's matcher is satisfied, keyed by dot-path.",
+          "propertyNames": {
+            "pattern": "^[A-Za-z_$][A-Za-z0-9_$-]*(\\.[A-Za-z_$][A-Za-z0-9_$-]*)*$"
+          },
+          "additionalProperties": { "$ref": "#/$defs/keyEntry" }
+        }
+      },
+      "required": ["when", "keys"],
+      "additionalProperties": false
+    },
+    "whenMatcher": {
+      "description": "Condition under which a group is active: a bare dot-path meaning \"truthy\", or a map of dot-path to required value(s), ANDed together.",
+      "oneOf": [
+        {
+          "type": "string",
+          "description": "A dot-path that must be truthy."
+        },
+        {
+          "type": "object",
+          "description": "Dot-paths that must each equal a scalar, or equal one of an array of scalars; all entries must match.",
+          "additionalProperties": {
+            "oneOf": [
+              { "type": ["string", "number", "boolean"] },
+              {
+                "type": "array",
+                "items": { "type": ["string", "number", "boolean"] }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "dependency": {
+      "type": "object",
+      "description": "A required skill or agent and how to install it. Deliberately has no version field: dependencies are not pinned by version.",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["skill", "agent"],
+          "description": "Whether the dependency is a skill or an agent."
+        },
+        "install": { "$ref": "#/$defs/installSource" }
+      },
+      "required": ["kind", "install"],
+      "additionalProperties": false
+    },
+    "installSource": {
+      "description": "Where to get the dependency from: a marketplace plugin, or an action the depending component ships itself.",
+      "oneOf": [
+        {
+          "type": "object",
+          "description": "Install from a plugin published on a marketplace.",
+          "properties": {
+            "marketplace": {
+              "type": "string",
+              "description": "Id of the marketplace the plugin is published on."
+            },
+            "url": {
+              "type": "string",
+              "description": "URL of the marketplace or plugin source."
+            },
+            "plugin": {
+              "type": "string",
+              "description": "Name of the plugin to install."
+            }
+          },
+          "required": ["marketplace", "url", "plugin"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "description": "Install by running an action the depending component ships itself.",
+          "properties": {
+            "action": {
+              "type": "string",
+              "description": "Id of the self-authored action that performs the install."
+            }
+          },
+          "required": ["action"],
+          "additionalProperties": false
+        }
+      ]
+    }
+  }
+}

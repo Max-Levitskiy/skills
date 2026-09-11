@@ -1,0 +1,15 @@
+#!/usr/bin/env bun
+// The whole interface. v2 exports no library: consumers spawn this, so a credential resolver
+// cannot spread by copy the way v1's did, and a credential-holding process can appear behind the
+// CLI later without touching a single consumer (D4).
+//
+// Claude Code prepends every installed plugin's `bin/` to PATH at session start, so the agent's
+// entry point is the bare name `agent-config`. A consumer script inherits that PATH; when it does
+// not have one (a cron, CI, a dev checkout), `AGENT_CONFIG_ROOT` names the plugin root and
+// `$AGENT_CONFIG_ROOT/bin/agent-config` is the same entry point. See docs/working-actions.md.
+//
+// Self-location is `import.meta.dir` — it resolves through symlinks and ignores cwd, which is why
+// nothing here reads `$CLAUDE_PLUGIN_ROOT` (R3: it never expands in agent-run bash).
+import { main } from "../src/cli.ts";
+
+process.exit(main(process.argv.slice(2)));
