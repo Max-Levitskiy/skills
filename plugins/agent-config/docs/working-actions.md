@@ -10,7 +10,7 @@ Read this when a `start` came back with `ready: false`.
 ## What `start` returns
 
 ```json
-{ "acs": 2, "name": "fellow", "harness": "claude",
+{ "acs": 2, "name": "<name>", "harness": "claude",
   "repo": { "checkout": "…", "root": "…", "identity": "github.com/Owner/Name",
             "registered": true, "alias": "skills" },
   "ready": false,
@@ -50,7 +50,7 @@ alongside actions it has no edge to.
 Sort it yourself, or let the helper beside this file do it:
 
 ```bash
-agent-config start fellow > /tmp/plan.json
+agent-config start <name> > /tmp/plan.json
 bun <dir-of-this-file>/plan-actions.ts < /tmp/plan.json
 ```
 
@@ -144,7 +144,7 @@ stamps and snapshots — and the snapshot is what the next migration diffs again
 A script reads config with `load`, never `start`:
 
 ```bash
-agent-config load fellow --secrets credentials.apiKey 3>&1 1>/dev/null
+agent-config load <name> --secrets credentials.apiKey 3>&1 1>/dev/null
 ```
 
 - Config and provenance on **stdout**; requested secrets as one JSON object on **fd 3**. One
@@ -194,7 +194,7 @@ Last resort, when agent-config is not installed at all and installing it is not 
 now — **always pinned**, because the unpinned form freezes on its first resolved commit forever:
 
 ```sh
-bunx github:Max-Levitskiy/skills#<commit-sha> agent-config start fellow
+bunx github:Max-Levitskiy/skills#<commit-sha> agent-config start <name>
 ```
 
 This re-downloads on every fresh `$TMPDIR`, so it is an escape hatch and never the install path.
@@ -209,7 +209,7 @@ Run this first, before anything else:
 ```bash
 AC=$(command -v agent-config || ls -d "$HOME"/.claude/plugins/cache/*/agent-config/*/bin/agent-config \
      "${CODEX_HOME:-$HOME/.codex}"/plugins/cache/*/agent-config/*/bin/agent-config 2>/dev/null | tail -1)
-"$AC" start fellow
+"$AC" start <name>
 ```
 
 Prints JSON. `ready: true` → proceed. `ready: false` → read the file at `guide` and follow it to

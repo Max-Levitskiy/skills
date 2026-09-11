@@ -5,7 +5,7 @@
 // the agent orders it. This is that sort, written once, so no consumer reimplements it and no two
 // consumers disagree about what `parallel` means.
 //
-//   agent-config start fellow | bun plan-actions.ts
+//   agent-config start <name> | bun plan-actions.ts
 //
 // Reads `start` output (or a bare action array) on stdin, prints ordered steps on stdout.
 
