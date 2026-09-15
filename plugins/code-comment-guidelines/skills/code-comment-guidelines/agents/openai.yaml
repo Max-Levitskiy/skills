@@ -1,0 +1,6 @@
+interface:
+  display_name: "Code Comment Guidelines"
+  short_description: "Apply strict guidelines for when code comments are justified."
+
+policy:
+  allow_implicit_invocation: false
