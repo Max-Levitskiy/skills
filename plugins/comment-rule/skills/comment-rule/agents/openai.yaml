@@ -1,6 +1,6 @@
 interface:
-  display_name: "Comment Rule"
-  short_description: "Apply strict rules for when code comments are justified."
+  display_name: "Code Comment Guidelines"
+  short_description: "Apply strict guidelines for when code comments are justified."
 
 policy:
   allow_implicit_invocation: false
