@@ -132,6 +132,23 @@
         "wiki",
         "api"
       ]
+    },
+    {
+      "name": "comment-rule",
+      "source": "./plugins/comment-rule",
+      "description": "Explicit-only code-commenting rule for Claude Code and OpenAI Codex. Allows comments only for non-obvious why, constraints, invariants, workarounds, or surprising behavior.",
+      "version": "0.1.0",
+      "license": "MIT",
+      "author": { "name": "Max Levitskiy" },
+      "category": "development",
+      "keywords": [
+        "comments",
+        "code-comments",
+        "code-quality",
+        "claude",
+        "codex",
+        "explicit-invocation"
+      ]
     }
   ]
 }
