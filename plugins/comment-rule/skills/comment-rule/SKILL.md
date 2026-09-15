@@ -1,12 +1,12 @@
 ---
-name: comment-rule
+name: code-comment-guidelines
 description: Defines when Claude should and should NOT write code comments. Apply only when explicitly invoked by the user.
 disable-model-invocation: true
 metadata:
   mcpmarket-version: 1.0.0
 ---
 
-# The code commenting rule
+# Code comment guidelines
 
 **Default: write no comments.** A comment must justify its existence; the absence of a comment is the right answer almost always.
 
