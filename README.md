@@ -60,6 +60,7 @@ Prefer a UI? Run `/plugin` to open the interactive browser, pick a plugin, and i
 | [`agent-config`](plugins/agent-config) | Give a skill or subagent layered settings — global, repo, and a gitignored local layer — plus credentials referenced from 1Password, the environment, a dotenv file, Keychain, or any command, so a secret never lands in a config file. Includes a re-runnable onboarding flow and a zero-dependency loader other plugins vendor instead of rewriting. | `/plugin install agent-config@max-skills` |
 | [`herdr`](plugins/herdr) | Run and manage AI subagents in herdr panes from presets stored in agent config - start, ask, read, converse, list, stop - and drive the workspace manager itself: workspaces, worktrees, tabs, panes, and "which one am I in". | `/plugin install herdr@max-skills` |
 | [`atlassian`](plugins/atlassian) | Jira and Confluence over their REST APIs from a bundled `bun` CLI - JQL search, read and create issues, comment, transition, sprints and boards, and read, write, and update Confluence pages. Cloud and Data Center, no MCP server. | `/plugin install atlassian@max-skills` |
+| [`comment-rule`](plugins/comment-rule) | Explicit-only code-commenting rule for Claude Code and OpenAI Codex. Comments are reserved for non-obvious constraints, invariants, workarounds, or surprising behavior. | `/plugin install comment-rule@max-skills` |
 
 ## Standards
 
