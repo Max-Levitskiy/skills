@@ -1,0 +1,18 @@
+{
+  "name": "code-comment-guidelines",
+  "description": "Explicitly apply strict code-comment guidelines: comments should explain only non-obvious why, constraints, invariants, or workarounds, and redundant comments should be omitted or removed.",
+  "version": "0.1.0",
+  "license": "MIT",
+  "author": {
+    "name": "Max Levitskiy",
+    "url": "https://github.com/Max-Levitskiy"
+  },
+  "homepage": "https://github.com/Max-Levitskiy/skills/tree/main/plugins/code-comment-guidelines",
+  "keywords": [
+    "comments",
+    "code-comments",
+    "code-quality",
+    "claude-skill",
+    "codex-skill"
+  ]
+}
