@@ -37,6 +37,8 @@ Most instances mix unrelated streams: a client engagement, an internal platform,
 A **scope** is one stream as you name it, bound to the Jira projects and Confluence space that carry it. It supplies project, issue type, labels, space, parent page, and board, so none of that is repeated per command:
 
 ```bash
+A=skills/atlassian/scripts/atlassian.ts
+
 bun $A config scopes             # what's configured; * marks the default
 bun $A config scope NEO-123      # which scope owns a ticket prefix
 ```
@@ -102,7 +104,7 @@ bun $F project undecided --since 30      # series the free tiers can't settle
 bun $F project classify <key> <project> --why "…"   # remember it
 ```
 
-Keying is on a derived series id, not `event_guid` — the raw value is per-occurrence, so a daily standup would otherwise need re-judging every single day. See [`references/api.md`](skills/fellow/references/api.md#calendar-ids-and-recurring-meetings).
+Keying is on a derived series id, not `event_guid` — the raw value is per-occurrence, so a daily standup would otherwise need re-judging every single day. See [`skills/fellow/references/api.md`](skills/fellow/references/api.md#calendar-ids-and-recurring-meetings).
 
 ### Requirements
 

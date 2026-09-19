@@ -113,17 +113,17 @@ Ask Claude to run another agent, or to move your terminal around, and it will:
 
 ### Running subagents
 
-`scripts/herdr-agent.ts` (bun) collapses the whole exchange into one command per step:
+`skills/herdr/scripts/herdr-agent.ts` (bun) collapses the whole exchange into one command per step:
 
 ```bash
-scripts/herdr-agent.ts presets                     # configured subagents, and what is installed
-scripts/herdr-agent.ts start reviewer --prompt "…" # spawn, wait for boot, ask once, print the reply
-scripts/herdr-agent.ts ask rev "and then?"         # next turn, same context
-scripts/herdr-agent.ts running                     # who is alive, and their status
-scripts/herdr-agent.ts stop rev --force            # close the pane
+skills/herdr/scripts/herdr-agent.ts presets                     # configured subagents, and what is installed
+skills/herdr/scripts/herdr-agent.ts start reviewer --prompt "…" # spawn, wait for boot, ask once, print the reply
+skills/herdr/scripts/herdr-agent.ts ask rev "and then?"         # next turn, same context
+skills/herdr/scripts/herdr-agent.ts running                     # who is alive, and their status
+skills/herdr/scripts/herdr-agent.ts stop rev --force            # close the pane
 ```
 
-Which agents exist is configuration, not a guessed command line. Presets live under `agents` in [agent config](../../standards/agent-config.md) (`~/.agents/config/herdr/config.json`, or the repo/local layers), each holding argv plus cwd, env, herdr session, pane placement, timeouts, and the TUI markers used to scrape replies. Eight are built in - claude, codex, omp, gemini, opencode, droid, copilot, cursor - so it works with no config file; `config.example.json` shows how to override one or add a role such as `reviewer` or `scratch`.
+Which agents exist is configuration, not a guessed command line. Presets live under `agents` in [agent config](../../standards/agent-config.md) (`~/.agents/config/herdr/config.json`, or the repo/local layers), each holding argv plus cwd, env, herdr session, pane placement, timeouts, and the TUI markers used to scrape replies. Eight are built in - claude, codex, omp, gemini, opencode, droid, copilot, cursor - so it works with no config file; `skills/herdr/config.example.json` shows how to override one or add a role such as `reviewer` or `scratch`.
 
 ### Why a skill and not just `herdr --help`
 
@@ -148,12 +148,12 @@ herdr agent read        <pane> --lines 60 --format text
 
 | File | Covers |
 | --- | --- |
-| `references/workspaces.md` | workspace and worktree verbs; `create` vs `open`; which delete removes what |
-| `references/tabs-and-panes.md` | tab verbs; pane split, move, zoom, resize, swap, read, and the three input verbs |
-| `references/agents.md` | subagent presets and config; the one-shot runner; raw `agent` verbs; status semantics |
-| `references/sessions.md` | the literal session/server: list, attach, stop, `--session`, `--remote` |
+| `skills/herdr/references/workspaces.md` | workspace and worktree verbs; `create` vs `open`; which delete removes what |
+| `skills/herdr/references/tabs-and-panes.md` | tab verbs; pane split, move, zoom, resize, swap, read, and the three input verbs |
+| `skills/herdr/references/agents.md` | subagent presets and config; the one-shot runner; raw `agent` verbs; status semantics |
+| `skills/herdr/references/sessions.md` | the literal session/server: list, attach, stop, `--session`, `--remote` |
 
-Scripts: `scripts/herdr-agent.ts` (subagents, needs `bun`), `scripts/herdr_here.py` (label-to-id resolution).
+Scripts: `skills/herdr/scripts/herdr-agent.ts` (subagents, needs `bun`), `skills/herdr/scripts/herdr_here.py` (label-to-id resolution).
 
 ### Resolving "current"
 
@@ -163,13 +163,13 @@ herdr sets `$HERDR_PANE_ID` in every pane, so the native call is exact even from
 herdr pane current --current
 ```
 
-The bundled `scripts/herdr_here.py` adds label-to-id lookup and a rename that defaults to the current object, which is the common request:
+The bundled `skills/herdr/scripts/herdr_here.py` adds label-to-id lookup and a rename that defaults to the current object, which is the common request:
 
 ```bash
-scripts/herdr_here.py whoami                  # workspace + tab + pane + agent + cwd
-scripts/herdr_here.py resolve <label>         # label to workspace id, errors on ambiguity
-scripts/herdr_here.py rename backups          # renames the CURRENT workspace
-scripts/herdr_here.py rename api --what pane  # ...or the current tab / pane / agent
+skills/herdr/scripts/herdr_here.py whoami                  # workspace + tab + pane + agent + cwd
+skills/herdr/scripts/herdr_here.py resolve <label>         # label to workspace id, errors on ambiguity
+skills/herdr/scripts/herdr_here.py rename backups          # renames the CURRENT workspace
+skills/herdr/scripts/herdr_here.py rename api --what pane  # ...or the current tab / pane / agent
 ```
 
 ### Safety

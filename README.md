@@ -77,6 +77,8 @@ updates; swap them once:
 /plugin install ml-workplace@max-skills        # repeat for each new plugin you want
 ```
 
+If the marketplace already updated and the old plugin no longer appears in the browser, `/plugin uninstall <old-name>@max-skills` still works by name.
+
 Saved settings under `~/.agents/config/` keep working; nothing there moves.
 
 ## Standards
