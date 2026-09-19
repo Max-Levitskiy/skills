@@ -1,5 +1,5 @@
 ---
-name: agent-config
+name: setup
 description: >-
   Set up, repair, or relocate the settings and credentials a skill, subagent, command, or
   hook depends on — layered `.agents/config` files plus credential *references* (1Password,
@@ -53,7 +53,7 @@ A failure at step 5 means the config is fine and the secret isn't reachable. Nam
 
 ## Wiring config into a component
 
-1. **Vendor the library.** Add the component's vendor directory to `CONSUMERS` in `plugins/agent-config/skills/agent-config/scripts/vendor.sh`, then run `vendor.sh sync`. It writes `lib/config.ts` and `lib/credentials.ts` into `<skill>/scripts/lib/vendor/agent-config/` under a provenance header. Copies, not a cross-plugin import: a runtime dependency breaks for anyone who installed one plugin and not the other.
+1. **Vendor the library.** Add the component's vendor directory to `CONSUMERS` in `plugins/ml-agent-config/skills/setup/scripts/vendor.sh`, then run `vendor.sh sync`. It writes `lib/config.ts` and `lib/credentials.ts` into `<skill>/scripts/lib/vendor/agent-config/` under a provenance header. Copies, not a cross-plugin import: a runtime dependency breaks for anyone who installed one plugin and not the other.
 
 2. **Write the component's own `scripts/lib/config.ts`** holding three things and nothing else — its config interface extending `BaseConfig`, a `validate(c)` returning human-readable problems (empty array = ready), and thin wrappers binding `<name>` so callers keep their zero-argument call shape. Re-export what the rest of the skill needs (`repoRoot`, `expandPath`, `Layer`) from there, so nothing else ever imports the vendor path. Worked example, 87 lines: `plugins/ml-workplace/skills/fellow/scripts/lib/config.ts`.
 
@@ -61,7 +61,7 @@ A failure at step 5 means the config is fine and the secret isn't reachable. Nam
 
 4. **Ship a `config.example.json`** next to the component documenting every supported key, once per `<name>`. Never ship a populated `config.json` — the user would act on settings they never chose.
 
-The API, in `plugins/agent-config/skills/agent-config/lib/` — read the signatures there rather than trusting any prose copy:
+The API, in `plugins/ml-agent-config/skills/setup/lib/` — read the signatures there rather than trusting any prose copy:
 
 - `config.ts` — `loadConfig<T>(name)` → `{ config, found, missing, legacy }`, `layerPath`, `legacyLayerPath`, `writeLayer`, `ensureGitignored`, `assertNoInlineSecrets`, `validateCredentialRef`, `expandPath`, `repoRoot`.
 - `credentials.ts` — `resolveCredential(ref, name?)`, `describeCredential(ref)`.

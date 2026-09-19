@@ -172,11 +172,11 @@ agent_config() {
   if [ -n "$AGENT_CONFIG_ROOT" ]; then "$AGENT_CONFIG_ROOT/bin/agent-config" "$@"; return; fi
   if command -v agent-config >/dev/null 2>&1; then agent-config "$@"; return; fi
   for candidate in \
-    "$HOME"/.claude/plugins/cache/*/agent-config/*/bin/agent-config \
-    "${CODEX_HOME:-$HOME/.codex}"/plugins/cache/*/agent-config/*/bin/agent-config; do
+    "$HOME"/.claude/plugins/cache/*/ml-agent-config/*/bin/agent-config \
+    "${CODEX_HOME:-$HOME/.codex}"/plugins/cache/*/ml-agent-config/*/bin/agent-config; do
     [ -x "$candidate" ] && { "$candidate" "$@"; return; }
   done
-  echo "agent-config is not installed: https://github.com/Max-Levitskiy/skills/tree/main/plugins/agent-config" >&2
+  echo "agent-config is not installed: https://github.com/Max-Levitskiy/skills/tree/main/plugins/ml-agent-config" >&2
   return 127
 }
 ```
@@ -207,8 +207,8 @@ Five lines. Nothing more belongs there, because everything else is in this file.
 Run this first, before anything else:
 
 ```bash
-AC=$(command -v agent-config || ls -d "$HOME"/.claude/plugins/cache/*/agent-config/*/bin/agent-config \
-     "${CODEX_HOME:-$HOME/.codex}"/plugins/cache/*/agent-config/*/bin/agent-config 2>/dev/null | tail -1)
+AC=$(command -v agent-config || ls -d "$HOME"/.claude/plugins/cache/*/ml-agent-config/*/bin/agent-config \
+     "${CODEX_HOME:-$HOME/.codex}"/plugins/cache/*/ml-agent-config/*/bin/agent-config 2>/dev/null | tail -1)
 "$AC" start <name>
 ```
 
