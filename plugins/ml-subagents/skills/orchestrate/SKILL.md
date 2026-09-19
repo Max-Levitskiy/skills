@@ -88,7 +88,7 @@ three hosted trackers engage the credential path at all. Orchestrate's own keys 
 
 ### Onboarding
 
-Only when `check` reports missing configuration. **The `agent-config` skill owns the
+Only when `check` reports missing configuration. **The `ml-agent-config:setup` skill owns the
 walkthrough** — which layer, credential-reference sources and their shapes, writing,
 gitignoring. Four questions are orchestrate's own; use `AskUserQuestion` so the user picks
 rather than types.

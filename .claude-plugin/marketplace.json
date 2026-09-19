@@ -26,47 +26,6 @@
       ]
     },
     {
-      "name": "orchestrate",
-      "source": "./plugins/orchestrate",
-      "description": "Run a multi-part task as small, tracked, parallel work packages — one agent, one output file each — with an async question protocol so waiting on human decisions never blocks progress.",
-      "version": "0.2.0",
-      "license": "MIT",
-      "author": {
-        "name": "Max Levitskiy"
-      },
-      "category": "productivity",
-      "keywords": [
-        "orchestration",
-        "subagents",
-        "parallel-agents",
-        "async",
-        "work-packages",
-        "task-tracking",
-        "autonomous"
-      ]
-    },
-    {
-      "name": "herdr",
-      "source": "./plugins/herdr",
-      "description": "Run and manage AI subagents in herdr panes from named presets stored in agent config - start, ask, read, converse, list, stop - and drive the herdr terminal workspace manager: workspaces, worktrees, tabs, panes, and \"which one am I in\".",
-      "version": "0.2.0",
-      "license": "MIT",
-      "author": {
-        "name": "Max Levitskiy"
-      },
-      "category": "development",
-      "keywords": [
-        "herdr",
-        "terminal",
-        "workspace",
-        "worktree",
-        "multi-agent",
-        "agent-orchestration",
-        "subagents",
-        "panes"
-      ]
-    },
-    {
       "name": "ml-slop",
       "source": "./plugins/ml-slop",
       "description": "Find and score AI-generation slop. text measures information density and semantic repetition in prose, and can rewrite to remove it; code scores a git diff or standalone files for duplication, dead code, redundant comments, verbosity, over-abstraction, error masking, convention violations, hallucinated dependencies, and performance waste.",
@@ -119,6 +78,35 @@
         "action-items",
         "meeting-recap",
         "api",
+        "claude-skill"
+      ]
+    },
+    {
+      "name": "ml-subagents",
+      "source": "./plugins/ml-subagents",
+      "description": "Run and coordinate AI subagents. orchestrate runs a multi-part task as small, tracked, parallel work packages with an async question protocol, so waiting on human decisions never blocks progress. herdr starts, messages, reads, and stops subagents in herdr panes from named presets, and drives the herdr terminal workspace manager: workspaces, worktrees, tabs, and panes.",
+      "version": "0.3.0",
+      "license": "MIT",
+      "author": {
+        "name": "Max Levitskiy"
+      },
+      "category": "development",
+      "keywords": [
+        "subagents",
+        "orchestration",
+        "parallel-agents",
+        "async",
+        "work-packages",
+        "task-tracking",
+        "autonomous",
+        "herdr",
+        "terminal",
+        "workspace",
+        "worktree",
+        "tmux-alternative",
+        "multi-agent",
+        "agent-orchestration",
+        "panes",
         "claude-skill"
       ]
     },
