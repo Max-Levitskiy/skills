@@ -11,7 +11,9 @@
       "description": "The Agent Config Standard (ACS v1) as a reusable skill: layered global/repo/local settings, credential references that keep secrets out of git, and a re-runnable onboarding flow. Other skills and subagents invoke it instead of restating the rules, and vendor its zero-dependency loader instead of copying their own.",
       "version": "0.2.0",
       "license": "MIT",
-      "author": { "name": "Max Levitskiy" },
+      "author": {
+        "name": "Max Levitskiy"
+      },
       "category": "development",
       "keywords": [
         "config",
@@ -24,29 +26,14 @@
       ]
     },
     {
-      "name": "text-density-analyzer",
-      "source": "./plugins/text-density-analyzer",
-      "description": "Detect repeated information and measure information density in text. Score or fix AI-generated bloat, semantic repetition, and filler content.",
-      "version": "0.1.0",
-      "license": "MIT",
-      "author": { "name": "Web-Tree" },
-      "category": "content",
-      "keywords": [
-        "text-density",
-        "information-density",
-        "ai-slop",
-        "redundancy",
-        "writing",
-        "editing"
-      ]
-    },
-    {
       "name": "fellow",
       "source": "./plugins/fellow",
       "description": "Query Fellow meeting notes, transcripts, AI summaries, and action items via the Fellow REST API. Search past meetings, write recaps into a repo, and bulk-export to markdown. Read-only, no MCP server required.",
       "version": "0.2.0",
       "license": "MIT",
-      "author": { "name": "Max Levitskiy" },
+      "author": {
+        "name": "Max Levitskiy"
+      },
       "category": "productivity",
       "keywords": [
         "fellow",
@@ -64,7 +51,9 @@
       "description": "Run a multi-part task as small, tracked, parallel work packages — one agent, one output file each — with an async question protocol so waiting on human decisions never blocks progress.",
       "version": "0.2.0",
       "license": "MIT",
-      "author": { "name": "Max Levitskiy" },
+      "author": {
+        "name": "Max Levitskiy"
+      },
       "category": "productivity",
       "keywords": [
         "orchestration",
@@ -77,30 +66,14 @@
       ]
     },
     {
-      "name": "code-density-analyzer",
-      "source": "./plugins/code-density-analyzer",
-      "description": "Detect AI-generation slop in code — duplication, dead code, redundant comments, verbosity, over-abstraction, error masking, convention violations, hallucinated dependencies, and performance waste. Scores a git diff or standalone files with a weighted composite density score via 10 parallel analysis methods.",
-      "version": "0.1.0",
-      "license": "MIT",
-      "author": { "name": "Max Levitskiy" },
-      "category": "development",
-      "keywords": [
-        "code-density",
-        "ai-slop",
-        "code-quality",
-        "code-review",
-        "duplication",
-        "dead-code",
-        "code-smell"
-      ]
-    },
-    {
       "name": "herdr",
       "source": "./plugins/herdr",
       "description": "Run and manage AI subagents in herdr panes from named presets stored in agent config - start, ask, read, converse, list, stop - and drive the herdr terminal workspace manager: workspaces, worktrees, tabs, panes, and \"which one am I in\".",
       "version": "0.2.0",
       "license": "MIT",
-      "author": { "name": "Max Levitskiy" },
+      "author": {
+        "name": "Max Levitskiy"
+      },
       "category": "development",
       "keywords": [
         "herdr",
@@ -119,7 +92,9 @@
       "description": "Work with Jira and Confluence through their REST APIs using a bundled TypeScript CLI. Search issues with JQL, read and create tickets, comment, transition status, manage sprints and boards, and read, write, and update Confluence pages. Works against Atlassian Cloud and Data Center/Server. No MCP server required.",
       "version": "0.1.0",
       "license": "MIT",
-      "author": { "name": "Max Levitskiy" },
+      "author": {
+        "name": "Max Levitskiy"
+      },
       "category": "productivity",
       "keywords": [
         "atlassian",
@@ -134,12 +109,41 @@
       ]
     },
     {
+      "name": "ml-slop",
+      "source": "./plugins/ml-slop",
+      "description": "Find and score AI-generation slop. text measures information density and semantic repetition in prose, and can rewrite to remove it; code scores a git diff or standalone files for duplication, dead code, redundant comments, verbosity, over-abstraction, error masking, convention violations, hallucinated dependencies, and performance waste.",
+      "version": "0.2.0",
+      "license": "MIT",
+      "author": {
+        "name": "Max Levitskiy"
+      },
+      "category": "development",
+      "keywords": [
+        "ai-slop",
+        "text-density",
+        "information-density",
+        "redundancy",
+        "content-quality",
+        "writing",
+        "editing",
+        "code-density",
+        "code-quality",
+        "code-review",
+        "duplication",
+        "dead-code",
+        "code-smell",
+        "claude-skill"
+      ]
+    },
+    {
       "name": "code-comment-guidelines",
       "source": "./plugins/code-comment-guidelines",
       "description": "Explicit-only code comment guidelines for Claude Code and OpenAI Codex. Comments are reserved for non-obvious constraints, invariants, workarounds, or surprising behavior.",
       "version": "0.1.0",
       "license": "MIT",
-      "author": { "name": "Max Levitskiy" },
+      "author": {
+        "name": "Max Levitskiy"
+      },
       "category": "development",
       "keywords": [
         "comments",

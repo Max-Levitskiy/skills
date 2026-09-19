@@ -1,5 +1,5 @@
 ---
-name: analyze-code-density
+name: code
 description: >
   Analyze code for AI-generation slop: duplication, dead code, redundant
   comments, verbosity inflation, over-abstraction, error masking, convention
