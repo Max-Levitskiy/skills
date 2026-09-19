@@ -12,7 +12,7 @@ Then browse and install plugins:
 
 ```bash
 /plugin                                          # open the interactive plugin browser
-/plugin install <plugin-name>@max-skills
+/plugin install ml-<domain>@max-skills
 ```
 
 ---
@@ -38,7 +38,7 @@ This repo is a [Claude Code](https://code.claude.com) **plugin marketplace** —
 **2. Install a plugin:**
 
 ```bash
-/plugin install <plugin-name>@max-skills
+/plugin install ml-<domain>@max-skills
 ```
 
 **3. Keep it current:**
@@ -49,18 +49,35 @@ This repo is a [Claude Code](https://code.claude.com) **plugin marketplace** —
 
 Prefer a UI? Run `/plugin` to open the interactive browser, pick a plugin, and install it there.
 
-## Plugins
+Every skill is invoked as `/ml-<plugin>:<skill>`.
 
-| Plugin | Description | Install |
-| ------ | ----------- | ------- |
-| [`text-density-analyzer`](plugins/text-density-analyzer) | Detect repeated information and measure information density in text. Score or fix AI-generated bloat, semantic repetition, and filler content. | `/plugin install text-density-analyzer@max-skills` |
-| [`fellow`](plugins/fellow) | Query Fellow meeting notes, transcripts, AI summaries, and action items via the Fellow REST API. Search past meetings, write recaps into a repo, bulk-export to markdown. | `/plugin install fellow@max-skills` |
-| [`orchestrate`](plugins/orchestrate) | Run a multi-part task as small, tracked, parallel work packages — one agent, one output file each — with an async question protocol so waiting on human decisions never blocks progress. | `/plugin install orchestrate@max-skills` |
-| [`code-density-analyzer`](plugins/code-density-analyzer) | Detect AI-generation slop in code — duplication, dead code, redundant comments, verbosity, over-abstraction, error masking, convention violations, hallucinated dependencies, and performance waste. Scores a git diff or standalone files via 10 parallel analysis methods. | `/plugin install code-density-analyzer@max-skills` |
-| [`agent-config`](plugins/agent-config) | Give a skill or subagent layered settings — global, repo, and a gitignored local layer — plus credentials referenced from 1Password, the environment, a dotenv file, Keychain, or any command, so a secret never lands in a config file. Includes a re-runnable onboarding flow and a zero-dependency loader other plugins vendor instead of rewriting. | `/plugin install agent-config@max-skills` |
-| [`herdr`](plugins/herdr) | Run and manage AI subagents in herdr panes from presets stored in agent config - start, ask, read, converse, list, stop - and drive the workspace manager itself: workspaces, worktrees, tabs, panes, and "which one am I in". | `/plugin install herdr@max-skills` |
-| [`atlassian`](plugins/atlassian) | Jira and Confluence over their REST APIs from a bundled `bun` CLI - JQL search, read and create issues, comment, transition, sprints and boards, and read, write, and update Confluence pages. Cloud and Data Center, no MCP server. | `/plugin install atlassian@max-skills` |
-| [`code-comment-guidelines`](plugins/code-comment-guidelines) | Explicit-only code comment guidelines for Claude Code and OpenAI Codex. Comments are reserved for non-obvious constraints, invariants, workarounds, or surprising behavior. | `/plugin install code-comment-guidelines@max-skills` |
+| Plugin | Skills | What it's for | Install |
+| ------ | ------ | ------------- | ------- |
+| [`ml-slop`](plugins/ml-slop) | `/ml-slop:text` · `/ml-slop:code` | Find and score AI-generation slop in prose and in code: repeated meaning, filler, duplication, dead code, over-abstraction. Text can also be rewritten to remove it. | `/plugin install ml-slop@max-skills` |
+| [`ml-workplace`](plugins/ml-workplace) | `/ml-workplace:atlassian` · `/ml-workplace:fellow` | The tools a team works in. Jira and Confluence over REST (Cloud and Data Center), and read-only Fellow meeting notes, transcripts, and action items. Bundled `bun` CLIs, no MCP server. | `/plugin install ml-workplace@max-skills` |
+| [`ml-subagents`](plugins/ml-subagents) | `/ml-subagents:orchestrate` · `/ml-subagents:herdr` | Run and coordinate AI subagents: split a task into tracked parallel work packages with an async question protocol, or drive subagents in herdr panes from named presets. | `/plugin install ml-subagents@max-skills` |
+| [`ml-agent-config`](plugins/ml-agent-config) | `/ml-agent-config:setup` | Layered settings for any skill or subagent — global, repo, and a gitignored local layer — plus credentials referenced from 1Password, the environment, a dotenv file, Keychain, or any command, so a secret never lands in a config file. | `/plugin install ml-agent-config@max-skills` |
+| [`code-comment-guidelines`](plugins/code-comment-guidelines) | `/code-comment-guidelines:code-comment-guidelines` | Explicit-only code comment guidelines for Claude Code and OpenAI Codex. Comments are reserved for non-obvious constraints, invariants, workarounds, or surprising behavior. | `/plugin install code-comment-guidelines@max-skills` |
+
+### Migrating from the old plugin names
+
+On 2026-09-19 the seven single-skill plugins were regrouped. Old installs stop receiving
+updates; swap them once:
+
+| Old plugin | Now |
+| --- | --- |
+| `text-density-analyzer`, `code-density-analyzer` | `ml-slop` → `/ml-slop:text`, `/ml-slop:code` |
+| `atlassian`, `fellow` | `ml-workplace` → `/ml-workplace:atlassian`, `/ml-workplace:fellow` |
+| `orchestrate`, `herdr` | `ml-subagents` → `/ml-subagents:orchestrate`, `/ml-subagents:herdr` |
+| `agent-config` | `ml-agent-config` → `/ml-agent-config:setup` |
+
+```bash
+/plugin uninstall fellow@max-skills            # repeat for each old name you have installed
+/plugin marketplace update max-skills
+/plugin install ml-workplace@max-skills        # repeat for each new plugin you want
+```
+
+Saved settings under `~/.agents/config/` keep working; nothing there moves.
 
 ## Standards
 
@@ -68,14 +85,14 @@ Conventions shared by plugins in this marketplace.
 
 | Standard | What it covers |
 | -------- | -------------- |
-| [Agent Config Standard](standards/agent-config.md) | How a skill or subagent stores settings across global / repo / local layers, and references secrets without ever committing one. Canonical implementation: [`agent-config`](plugins/agent-config). Reference implementations: [`fellow`](plugins/fellow) (credential-backed) and [`orchestrate`](plugins/orchestrate) (optional config, credential only for hosted trackers). |
+| [Agent Config Standard](standards/agent-config.md) | How a skill or subagent stores settings across global / repo / local layers, and references secrets without ever committing one. Canonical implementation: [`ml-agent-config`](plugins/ml-agent-config). Reference implementations: [`fellow`](plugins/ml-workplace/skills/fellow) (credential-backed) and [`orchestrate`](plugins/ml-subagents/skills/orchestrate) (optional config, credential only for hosted trackers). |
 
 ## Add your own plugin
 
 Contributions welcome. In short:
 
-1. Drop your plugin under `plugins/<your-plugin>/` with a `.claude-plugin/plugin.json`.
-2. Register it in `.claude-plugin/marketplace.json` with a `./plugins/<your-plugin>` source.
+1. Drop your plugin under `plugins/ml-<domain>/` with a `.claude-plugin/plugin.json` whose `name` is `ml-<domain>`. Name `<domain>` for what the plugin is for, so a second skill can join it later.
+2. Register it in `.claude-plugin/marketplace.json` with the same `name` and a `./plugins/ml-<domain>` source, then run `bash scripts/validate-naming.sh`.
 3. Open a pull request.
 
 See **[CONTRIBUTING.md](CONTRIBUTING.md)** for the full, copy-pasteable steps.

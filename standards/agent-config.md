@@ -2,7 +2,7 @@
 
 How a skill or subagent stores per-user and per-project settings, and how it gets hold of secrets without ever committing one.
 
-Status: **active**. Applies to any skill, subagent, command, or hook in this marketplace that needs configuration. Canonical implementation: [`plugins/agent-config`](../plugins/agent-config). Reference implementations: [`fellow`](../plugins/fellow) (credential-backed), [`orchestrate`](../plugins/orchestrate) (optional config), and [`herdr`](../plugins/herdr) (no credential at all — presets only).
+Status: **active**. Applies to any skill, subagent, command, or hook in this marketplace that needs configuration. Canonical implementation: [`plugins/ml-agent-config`](../plugins/ml-agent-config). Reference implementations: [`fellow`](../plugins/ml-workplace/skills/fellow) (credential-backed), [`orchestrate`](../plugins/ml-subagents/skills/orchestrate) (optional config), and [`herdr`](../plugins/ml-subagents/skills/herdr) (no credential at all — presets only).
 
 ## Why this exists
 
@@ -25,7 +25,7 @@ Three layers. Later layers override earlier ones.
 
 `<repo>` is the git top level (`git rev-parse --show-toplevel`). Outside a git repo, only the global layer applies — a component must still work in that case, since plenty of useful work happens in a scratch directory.
 
-`<name>` is the skill name, the subagent name, or the plugin name — one namespace, deliberately. A plugin's skill and its subagent are the same tool wearing two hats, and they should read the same file: forcing two configs would make the user answer the same questions twice and then keep both copies in sync by hand. Pick one name per plugin and use it from every component in it. Names are directory names, so different plugins never collide.
+`<name>` names one tool — the skill name, or the name a skill and its subagent share. One namespace, deliberately: a skill and its subagent are the same tool wearing two hats, and they should read the same file. Forcing two configs would make the user answer the same questions twice and then keep both copies in sync by hand. Pick one name per tool and use it from every component that serves that tool. A plugin holding several tools uses several names (`ml-workplace` reads both `fellow` and `atlassian`), and a name never changes when its plugin is renamed or regrouped. Names are directory names, so different tools never collide.
 
 Within each layer the legacy path is read first, so a value in the current path wins over the same value in the legacy one. That ordering is the safe one — a user who has written the new file has clearly chosen it, while the old file may be months stale, and letting it win would silently undo an edit the user just made.
 
@@ -163,9 +163,9 @@ Relative paths resolve from the repo root; `~` expands to home. Supporting both 
 
 ## Using the shared library
 
-The canonical implementation is [`plugins/agent-config`](../plugins/agent-config): a skill that teaches this protocol, plus `lib/config.ts` (layer paths, merge, gitignore, validation) and `lib/credentials.ts` (resolution) beside it. Those files define the API — read the signatures there rather than trusting a copy of them in prose.
+The canonical implementation is [`plugins/ml-agent-config`](../plugins/ml-agent-config): a skill that teaches this protocol, plus `lib/config.ts` (layer paths, merge, gitignore, validation) and `lib/credentials.ts` (resolution) beside it. Those files define the API — read the signatures there rather than trusting a copy of them in prose.
 
-Consumers **vendor** both files verbatim into `scripts/lib/vendor/agent-config/`, under a provenance header naming the canonical path plus the sync and check commands, then a sentinel line — everything below it is canonical bytes. A runtime dependency between plugins would break whenever a user has one installed and not the other; a copy always works. Drift is caught by diffing below the sentinel rather than against a recorded commit hash: a hash churns the vendored file on every sync even when the content is identical, and it misses the case that actually happens — someone editing the copy. Run `plugins/agent-config/skills/agent-config/scripts/vendor.sh sync` to refresh every copy, and `vendor.sh check` to fail when any has drifted.
+Consumers **vendor** both files verbatim into `scripts/lib/vendor/agent-config/`, under a provenance header naming the canonical path plus the sync and check commands, then a sentinel line — everything below it is canonical bytes. A runtime dependency between plugins would break whenever a user has one installed and not the other; a copy always works. Drift is caught by diffing below the sentinel rather than against a recorded commit hash: a hash churns the vendored file on every sync even when the content is identical, and it misses the case that actually happens — someone editing the copy. Run `plugins/ml-agent-config/skills/setup/scripts/vendor.sh sync` to refresh every copy, and `vendor.sh check` to fail when any has drifted.
 
 A component's own `lib/config.ts` then holds three things and nothing else — its config interface, its `validate()`, and thin re-exports so callers never import the vendor path directly:
 
