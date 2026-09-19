@@ -1,0 +1,29 @@
+{
+  "name": "ml-subagents",
+  "description": "Run and coordinate AI subagents. orchestrate runs a multi-part task as small, tracked, parallel work packages with an async question protocol, so waiting on human decisions never blocks progress. herdr starts, messages, reads, and stops subagents in herdr panes from named presets, and drives the herdr terminal workspace manager: workspaces, worktrees, tabs, and panes.",
+  "version": "0.3.0",
+  "license": "MIT",
+  "author": {
+    "name": "Max Levitskiy",
+    "url": "https://github.com/Max-Levitskiy"
+  },
+  "homepage": "https://github.com/Max-Levitskiy/skills/tree/main/plugins/ml-subagents",
+  "keywords": [
+    "subagents",
+    "orchestration",
+    "parallel-agents",
+    "async",
+    "work-packages",
+    "task-tracking",
+    "autonomous",
+    "herdr",
+    "terminal",
+    "workspace",
+    "worktree",
+    "tmux-alternative",
+    "multi-agent",
+    "agent-orchestration",
+    "panes",
+    "claude-skill"
+  ]
+}
