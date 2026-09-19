@@ -1,13 +1,13 @@
 {
-  "name": "agent-config",
+  "name": "ml-agent-config",
   "description": "The Agent Config Standard (ACS v1) as a reusable skill: layered global/repo/local settings, credential references that keep secrets out of git, and a re-runnable onboarding flow. Other skills and subagents invoke it instead of restating the rules, and vendor its zero-dependency loader instead of copying their own.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "license": "MIT",
   "author": {
     "name": "Max Levitskiy",
     "url": "https://github.com/Max-Levitskiy"
   },
-  "homepage": "https://github.com/Max-Levitskiy/skills/tree/main/plugins/agent-config",
+  "homepage": "https://github.com/Max-Levitskiy/skills/tree/main/plugins/ml-agent-config",
   "keywords": [
     "config",
     "configuration",

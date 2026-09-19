@@ -6,26 +6,6 @@
   },
   "plugins": [
     {
-      "name": "agent-config",
-      "source": "./plugins/agent-config",
-      "description": "The Agent Config Standard (ACS v1) as a reusable skill: layered global/repo/local settings, credential references that keep secrets out of git, and a re-runnable onboarding flow. Other skills and subagents invoke it instead of restating the rules, and vendor its zero-dependency loader instead of copying their own.",
-      "version": "0.2.0",
-      "license": "MIT",
-      "author": {
-        "name": "Max Levitskiy"
-      },
-      "category": "development",
-      "keywords": [
-        "config",
-        "configuration",
-        "credentials",
-        "secrets",
-        "onboarding",
-        "standard",
-        "skill-authoring"
-      ]
-    },
-    {
       "name": "ml-slop",
       "source": "./plugins/ml-slop",
       "description": "Find and score AI-generation slop. text measures information density and semantic repetition in prose, and can rewrite to remove it; code scores a git diff or standalone files for duplication, dead code, redundant comments, verbosity, over-abstraction, error masking, convention violations, hallucinated dependencies, and performance waste.",
@@ -107,6 +87,27 @@
         "multi-agent",
         "agent-orchestration",
         "panes",
+        "claude-skill"
+      ]
+    },
+    {
+      "name": "ml-agent-config",
+      "source": "./plugins/ml-agent-config",
+      "description": "The Agent Config Standard (ACS v1) as a reusable skill: layered global/repo/local settings, credential references that keep secrets out of git, and a re-runnable onboarding flow. Other skills and subagents invoke it instead of restating the rules, and vendor its zero-dependency loader instead of copying their own.",
+      "version": "0.3.0",
+      "license": "MIT",
+      "author": {
+        "name": "Max Levitskiy"
+      },
+      "category": "development",
+      "keywords": [
+        "config",
+        "configuration",
+        "credentials",
+        "secrets",
+        "onboarding",
+        "standard",
+        "skill-authoring",
         "claude-skill"
       ]
     },

@@ -1,14 +1,14 @@
-# agent-config
+# ml-agent-config
 
 The Agent Config Standard (ACS v1) — layered settings, secret-free credential references, and a re-runnable onboarding flow — packaged as a skill plus a zero-dependency TypeScript loader. `fellow` and `orchestrate` both vendor it instead of maintaining their own copy; see [`standards/agent-config.md`](../../standards/agent-config.md) for the full spec this implements.
 
 ```bash
-/plugin install agent-config@max-skills
+/plugin install ml-agent-config@max-skills
 ```
 
 ## Who it is for
 
-**Your skill needs a setting or a credential right now.** Ask Claude. It invokes this skill, walks you through which layer each value belongs in and where the credential lives, writes the file, and verifies it with a real call.
+**Your skill needs a setting or a credential right now.** Ask Claude. It invokes `/ml-agent-config:setup`, walks you through which layer each value belongs in and where the credential lives, writes the file, and verifies it with a real call.
 
 **You're building a skill or subagent that needs configuration.** Read the standard and vendor `lib/config.ts` and `lib/credentials.ts` — see [Vendoring](#vendoring) — instead of writing a loader, a merge function, and five credential resolvers from scratch.
 
@@ -39,16 +39,16 @@ Any reference can also carry `"cacheVar": "MY_API_KEY"`. When that environment v
 The library is copied into each consuming plugin verbatim rather than imported across plugins. A runtime dependency between plugins breaks the moment a user has one installed and not the other; a copy always works. Drift is caught by diffing the vendored file's body against the canonical one — not a commit hash, which churns on every sync even when nothing changed and misses the case that actually happens, someone editing the copy.
 
 ```bash
-plugins/agent-config/skills/agent-config/scripts/vendor.sh sync   # refresh every vendored copy
-plugins/agent-config/skills/agent-config/scripts/vendor.sh check  # fail if any copy has drifted
+plugins/ml-agent-config/skills/setup/scripts/vendor.sh sync   # refresh every vendored copy
+plugins/ml-agent-config/skills/setup/scripts/vendor.sh check  # fail if any copy has drifted
 ```
 
 ## What's in the box
 
 ```
-agent-config/
+ml-agent-config/
 ├── .claude-plugin/plugin.json   name, description, keywords
-├── skills/agent-config/
+├── skills/setup/
 │   ├── SKILL.md                 the onboarding flow — detect missing config, ask, write, gitignore, verify
 │   ├── lib/
 │   │   ├── config.ts            layer paths, deep merge, gitignore handling, credential validation
