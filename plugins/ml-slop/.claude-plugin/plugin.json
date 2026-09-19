@@ -1,0 +1,27 @@
+{
+  "name": "ml-slop",
+  "description": "Find and score AI-generation slop. text measures information density and semantic repetition in prose, and can rewrite to remove it; code scores a git diff or standalone files for duplication, dead code, redundant comments, verbosity, over-abstraction, error masking, convention violations, hallucinated dependencies, and performance waste.",
+  "version": "0.2.0",
+  "license": "MIT",
+  "author": {
+    "name": "Max Levitskiy",
+    "url": "https://github.com/Max-Levitskiy"
+  },
+  "homepage": "https://github.com/Max-Levitskiy/skills/tree/main/plugins/ml-slop",
+  "keywords": [
+    "ai-slop",
+    "text-density",
+    "information-density",
+    "redundancy",
+    "content-quality",
+    "writing",
+    "editing",
+    "code-density",
+    "code-quality",
+    "code-review",
+    "duplication",
+    "dead-code",
+    "code-smell",
+    "claude-skill"
+  ]
+}

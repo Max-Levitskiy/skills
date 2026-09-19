@@ -1,6 +1,6 @@
 # Smoke run log
 
-End-to-end validation of the `analyze-code-density` skill (Plan 1, Task 6).
+End-to-end validation of the `code` skill (named `analyze-code-density` at the time) (Plan 1, Task 6).
 
 **Method note:** each fixture was run by one orchestrator agent (model `sonnet`) that
 executed the applicable analysis methods *inline* and aggregated per SKILL.md's formula,

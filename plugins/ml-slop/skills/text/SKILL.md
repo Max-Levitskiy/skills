@@ -1,5 +1,5 @@
 ---
-name: analyze-density
+name: text
 description: >
   Analyze text for information density, semantic repetition, and filler content.
   Two modes: "score" (read-only audit with per-method breakdown) and "fix" (rewrite

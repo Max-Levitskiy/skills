@@ -1,9 +1,9 @@
-code-density-analyzer
-=====================
+ml-slop — code skill (formerly the code-density-analyzer plugin)
+=================================================================
 
 Authored by Max Levitskiy and distributed under the MIT License (see LICENSE).
 
-Adapts the methodology of the text-density-analyzer plugin — parallel analysis
+Adapts the methodology of the text skill (formerly text-density-analyzer) — parallel analysis
 subagents feeding a weighted composite score, validated against human-edited
 references — from prose to code. The ten code-analysis methods are new; five
 inherit the prompt patterns of their text-density counterparts (duplication ←
@@ -12,5 +12,5 @@ verbosity ← compression-ratio, boilerplate ← structure-template) and five ar
 code-specific (over-abstraction, error-masking, convention-adherence,
 hallucinated-deps, perf-waste).
 
-text-density-analyzer was originally authored by Web-Tree
-(https://github.com/Web-tree) and is distributed in this same marketplace.
+The text skill was originally authored by Web-Tree
+(https://github.com/Web-tree) and ships in the same ml-slop plugin.
