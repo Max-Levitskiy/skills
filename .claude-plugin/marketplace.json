@@ -26,26 +26,6 @@
       ]
     },
     {
-      "name": "fellow",
-      "source": "./plugins/fellow",
-      "description": "Query Fellow meeting notes, transcripts, AI summaries, and action items via the Fellow REST API. Search past meetings, write recaps into a repo, and bulk-export to markdown. Read-only, no MCP server required.",
-      "version": "0.2.0",
-      "license": "MIT",
-      "author": {
-        "name": "Max Levitskiy"
-      },
-      "category": "productivity",
-      "keywords": [
-        "fellow",
-        "meetings",
-        "meeting-notes",
-        "transcripts",
-        "action-items",
-        "meeting-recap",
-        "api"
-      ]
-    },
-    {
       "name": "orchestrate",
       "source": "./plugins/orchestrate",
       "description": "Run a multi-part task as small, tracked, parallel work packages — one agent, one output file each — with an async question protocol so waiting on human decisions never blocks progress.",
@@ -87,28 +67,6 @@
       ]
     },
     {
-      "name": "atlassian",
-      "source": "./plugins/atlassian",
-      "description": "Work with Jira and Confluence through their REST APIs using a bundled TypeScript CLI. Search issues with JQL, read and create tickets, comment, transition status, manage sprints and boards, and read, write, and update Confluence pages. Works against Atlassian Cloud and Data Center/Server. No MCP server required.",
-      "version": "0.1.0",
-      "license": "MIT",
-      "author": {
-        "name": "Max Levitskiy"
-      },
-      "category": "productivity",
-      "keywords": [
-        "atlassian",
-        "jira",
-        "confluence",
-        "tickets",
-        "issues",
-        "backlog",
-        "sprint",
-        "wiki",
-        "api"
-      ]
-    },
-    {
       "name": "ml-slop",
       "source": "./plugins/ml-slop",
       "description": "Find and score AI-generation slop. text measures information density and semantic repetition in prose, and can rewrite to remove it; code scores a git diff or standalone files for duplication, dead code, redundant comments, verbosity, over-abstraction, error masking, convention violations, hallucinated dependencies, and performance waste.",
@@ -132,6 +90,35 @@
         "duplication",
         "dead-code",
         "code-smell",
+        "claude-skill"
+      ]
+    },
+    {
+      "name": "ml-workplace",
+      "source": "./plugins/ml-workplace",
+      "description": "The tools a team works in, driven from Claude Code through bundled zero-dependency bun CLIs, no MCP server. atlassian: Jira and Confluence over REST — JQL search, create, comment, and transition issues, sprints and boards, read and write Confluence pages, Cloud and Data Center. fellow: read-only Fellow meeting notes, transcripts, AI summaries, and action items, with recaps filed into a repo.",
+      "version": "0.3.0",
+      "license": "MIT",
+      "author": {
+        "name": "Max Levitskiy"
+      },
+      "category": "productivity",
+      "keywords": [
+        "atlassian",
+        "jira",
+        "confluence",
+        "tickets",
+        "issues",
+        "backlog",
+        "sprint",
+        "wiki",
+        "fellow",
+        "meetings",
+        "meeting-notes",
+        "transcripts",
+        "action-items",
+        "meeting-recap",
+        "api",
         "claude-skill"
       ]
     },
