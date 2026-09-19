@@ -211,7 +211,7 @@ onboarding move: the sites, cloud ids, emails, and auth types are all sitting in
 
 ## Where to read
 
-Everything below is `plugins/atlassian/skills/atlassian/`:
+Everything below is `plugins/ml-workplace/skills/atlassian/`:
 
 | What | Where |
 | --- | --- |

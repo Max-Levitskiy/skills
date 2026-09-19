@@ -18,3 +18,9 @@ The five canonical triage roles, each label string equal to its name. See `docs/
 
 Single-context: `CONTEXT.md` at the repo root, ADRs under `docs/adr/` (created lazily, when the
 first decision needs one). See `docs/agents/domain.md`.
+
+## Plugin naming
+
+Plugins are `ml-<domain>` and skills are bare, giving `/ml-<domain>:<skill>`. The rules are
+in CONTRIBUTING.md § Naming and ADR 0001. Run `bash scripts/validate-naming.sh` after adding,
+renaming, or moving any plugin or skill.
