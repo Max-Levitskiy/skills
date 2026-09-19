@@ -13,7 +13,14 @@ KEBAB='^[a-z0-9]+(-[a-z0-9]+)*$'
 fail=0
 bad() { echo "✗ $*"; fail=1; }
 
-count=$(jq '.plugins | length' "$MARKETPLACE")
+if [[ ! -f "$MARKETPLACE" ]]; then
+  bad "$MARKETPLACE: not found"
+  echo; echo "Naming is invalid."; exit 1
+fi
+if ! count=$(jq '.plugins | length' "$MARKETPLACE" 2>/dev/null); then
+  bad "$MARKETPLACE: invalid JSON"
+  echo; echo "Naming is invalid."; exit 1
+fi
 for ((i = 0; i < count; i++)); do
   name=$(jq -r ".plugins[$i].name" "$MARKETPLACE")
   source=$(jq -r ".plugins[$i].source" "$MARKETPLACE")
@@ -27,8 +34,10 @@ for ((i = 0; i < count; i++)); do
   pj=$(jq -r '.name' "$manifest")
   [[ "$pj" == "$name" ]] || { bad "plugins/$name: plugin.json name '$pj' must be '$name'"; entry_ok=0; }
 
+  skill_count=0
   for skill_md in "$ROOT/plugins/$name"/skills/*/SKILL.md; do
     [[ -e "$skill_md" ]] || continue
+    skill_count=$((skill_count + 1))
     dir=$(basename "$(dirname "$skill_md")")
     fm=$(awk '/^---[[:space:]]*$/ { n++; next } n == 1 && /^name:/ { sub(/^name:[[:space:]]*/, ""); print; exit }' "$skill_md" | tr -d '\r')
     skill_ok=$entry_ok
@@ -36,6 +45,7 @@ for ((i = 0; i < count; i++)); do
     [[ "$fm" == "$dir" ]] || { bad "plugins/$name/skills/$dir: frontmatter name '$fm' must be '$dir' (bare — Claude Code adds '$name:')"; skill_ok=0; }
     if [[ $skill_ok -eq 1 ]]; then echo "✓ /$name:$dir"; fi
   done
+  [[ $skill_count -gt 0 ]] || bad "plugins/$name: no skills/<skill>/SKILL.md found"
 done
 
 for d in "$ROOT"/plugins/*/; do
