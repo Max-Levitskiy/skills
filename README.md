@@ -53,12 +53,11 @@ Every skill is invoked as `/ml-<plugin>:<skill>`.
 
 | Plugin | Skills | What it's for | Install |
 | ------ | ------ | ------------- | ------- |
-| [`ml-slop`](plugins/ml-slop) | `/ml-slop:text` · `/ml-slop:code` | Find and score AI-generation slop in prose and in code: repeated meaning, filler, duplication, dead code, over-abstraction. Text can also be rewritten to remove it. | `/plugin install ml-slop@max-skills` |
+| [`ml-slop`](plugins/ml-slop) | `/ml-slop:text` · `/ml-slop:code` · `/ml-slop:comments` | Find and score AI-generation slop in prose and in code: repeated meaning, filler, duplication, dead code, over-abstraction. Text can also be rewritten to remove it, and `comments` is the rule for not writing the slop in the first place. | `/plugin install ml-slop@max-skills` |
 | [`ml-workplace`](plugins/ml-workplace) | `/ml-workplace:atlassian` · `/ml-workplace:fellow` | The tools a team works in. Jira and Confluence over REST (Cloud and Data Center), and read-only Fellow meeting notes, transcripts, and action items. Bundled `bun` CLIs, no MCP server. | `/plugin install ml-workplace@max-skills` |
 | [`ml-subagents`](plugins/ml-subagents) | `/ml-subagents:orchestrate` · `/ml-subagents:herdr` | Run and coordinate AI subagents: split a task into tracked parallel work packages with an async question protocol, or drive subagents in herdr panes from named presets. | `/plugin install ml-subagents@max-skills` |
 | [`ml-ship`](plugins/ml-ship) | `/ml-ship:pr-gate` | Get a change landed. Validate a pull request against artifacts instead of prose, diagnose a red pipeline, triage what the review bots found, and merge on the commit you checked. | `/plugin install ml-ship@max-skills` |
 | [`ml-agent-config`](plugins/ml-agent-config) | `/ml-agent-config:setup` | Layered settings for any skill or subagent — global, repo, and a gitignored local layer — plus credentials referenced from 1Password, the environment, a dotenv file, Keychain, or any command, so a secret never lands in a config file. | `/plugin install ml-agent-config@max-skills` |
-| [`code-comment-guidelines`](plugins/code-comment-guidelines) | `/code-comment-guidelines:code-comment-guidelines` | Explicit-only code comment guidelines for Claude Code and OpenAI Codex. Comments are reserved for non-obvious constraints, invariants, workarounds, or surprising behavior. | `/plugin install code-comment-guidelines@max-skills` |
 
 ### Migrating from the old plugin names
 
@@ -71,6 +70,7 @@ updates; swap them once:
 | `atlassian`, `fellow` | `ml-workplace` → `/ml-workplace:atlassian`, `/ml-workplace:fellow` |
 | `orchestrate`, `herdr` | `ml-subagents` → `/ml-subagents:orchestrate`, `/ml-subagents:herdr` |
 | `agent-config` | `ml-agent-config` → `/ml-agent-config:setup` |
+| `code-comment-guidelines` | `ml-slop` → `/ml-slop:comments` |
 
 ```bash
 /plugin uninstall fellow@max-skills            # repeat for each old name you have installed
