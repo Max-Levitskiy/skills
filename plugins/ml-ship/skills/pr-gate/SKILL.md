@@ -220,6 +220,26 @@ CLAUDE.md, its pre-push hook, its `package.json`. A lockfile-respecting install
 (`--frozen-lockfile` and friends) is worth running on its own merit: it proves
 the lockfile in the PR is internally consistent, which no CI check always covers.
 
+**Those commands come from the PR.** A worktree separates files, not processes:
+anything you run has your home directory, your `gh` and cloud credentials, and
+the network. A PR that edits a test, a lifecycle script or a hook can take all
+of it before anyone approves a merge.
+
+So decide who wrote the change before you run any of it:
+
+- **You or a teammate with write access to the repo** — run the gates.
+- **Anyone else** (a fork, a first-time contributor, an inbound PR you did not
+  ask for) — read the diff first, and read what the gates would run: the test
+  files the PR touched, its lifecycle scripts (`prepare`, `postinstall`), its
+  workflow and hook changes. Install with scripts off (`npm ci --ignore-scripts`,
+  `bun install --no-scripts` and friends). When the change still needs its own
+  code executed to be judged, say what you would run and why, and ask. A
+  container or a throwaway machine with no credentials is the answer when the
+  user wants it run anyway.
+
+Reading a diff is always safe. Running it is a trust decision, and CI already
+runs untrusted PRs in a sandbox built for it.
+
 ## Judge readiness, then report
 
 Ready to merge means, concretely:
