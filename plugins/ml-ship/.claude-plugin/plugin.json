@@ -1,0 +1,26 @@
+{
+  "name": "ml-ship",
+  "description": "Get a change landed. pr-gate validates a pull request end to end: what it actually changes and who it breaks, why the pipeline is red, what the agent reviewers found and whether each finding is real, whether it is genuinely ready, and the merge itself when you ask for it.",
+  "version": "0.1.0",
+  "license": "MIT",
+  "author": {
+    "name": "Max Levitskiy",
+    "url": "https://github.com/Max-Levitskiy"
+  },
+  "homepage": "https://github.com/Max-Levitskiy/skills/tree/main/plugins/ml-ship",
+  "keywords": [
+    "pull-request",
+    "pr-review",
+    "merge",
+    "github",
+    "ci",
+    "pipeline",
+    "code-review",
+    "review-comments",
+    "renovate",
+    "dependabot",
+    "dependency-bump",
+    "release",
+    "claude-skill"
+  ]
+}
