@@ -8,7 +8,7 @@
     {
       "name": "ml-slop",
       "source": "./plugins/ml-slop",
-      "description": "Find and score AI-generation slop. text measures information density and semantic repetition in prose, and can rewrite to remove it; code scores a git diff or standalone files for duplication, dead code, redundant comments, verbosity, over-abstraction, error masking, convention violations, hallucinated dependencies, and performance waste.",
+      "description": "Find and score AI-generation slop. text measures information density and semantic repetition in prose, and can rewrite to remove it; code scores a git diff or standalone files for duplication, dead code, redundant comments, verbosity, over-abstraction, error masking, convention violations, hallucinated dependencies, and performance waste. comments is the writing-side rule: a comment only for a non-obvious why, constraint, invariant, or workaround, and explicit invocation only.",
       "version": "0.2.0",
       "license": "MIT",
       "author": {
@@ -29,6 +29,9 @@
         "duplication",
         "dead-code",
         "code-smell",
+        "comments",
+        "code-comments",
+        "codex-skill",
         "claude-skill"
       ]
     },
@@ -135,25 +138,6 @@
         "dependency-bump",
         "release",
         "claude-skill"
-      ]
-    },
-    {
-      "name": "code-comment-guidelines",
-      "source": "./plugins/code-comment-guidelines",
-      "description": "Explicit-only code comment guidelines for Claude Code and OpenAI Codex. Comments are reserved for non-obvious constraints, invariants, workarounds, or surprising behavior.",
-      "version": "0.1.0",
-      "license": "MIT",
-      "author": {
-        "name": "Max Levitskiy"
-      },
-      "category": "development",
-      "keywords": [
-        "comments",
-        "code-comments",
-        "code-quality",
-        "claude",
-        "codex",
-        "explicit-invocation"
       ]
     }
   ]

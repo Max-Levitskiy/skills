@@ -1,7 +1,8 @@
 # ml-slop
 
-Find and score AI-generation slop — in prose and in code. Both skills run their analysis
-methods as parallel subagents and aggregate a weighted 0–100 density score.
+Find and score AI-generation slop — in prose and in code — and keep it out of the
+comments you write. The two analyzers run their methods as parallel subagents and
+aggregate a weighted 0–100 density score.
 
 ```bash
 /plugin install ml-slop@max-skills
@@ -11,6 +12,7 @@ methods as parallel subagents and aggregate a weighted 0–100 density score.
 | --- | --- |
 | `/ml-slop:text` | Score or fix repeated meaning, filler, and low density in any text |
 | `/ml-slop:code` | Score a diff or files for duplication, dead code, over-abstraction, and other code slop |
+| `/ml-slop:comments` | The rule for writing comments: only a non-obvious why, constraint, invariant, or workaround |
 
 ## `/ml-slop:text`
 
@@ -114,6 +116,22 @@ scores are pre-calibration; only relative separation (sloppy vs clean) is
 validated so far. The bundled `skills/code/workspace/` holds the smoke fixtures and the
 first calibration finding; a full evaluation harness against real
 AI-authored-then-human-fixed code is planned.
+
+## `/ml-slop:comments`
+
+The writing-side counterpart to the analyzers: a comment must justify its existence,
+and the default is no comment at all. It fires only when you ask for it, in Claude Code
+and in Codex.
+
+```text
+/ml-slop:comments          # Claude Code
+$comments                  # Codex
+```
+
+Implicit invocation is off in both harnesses: `disable-model-invocation: true` in
+[`skills/comments/SKILL.md`](skills/comments/SKILL.md), and
+`policy.allow_implicit_invocation: false` in
+[`skills/comments/agents/openai.yaml`](skills/comments/agents/openai.yaml).
 
 ## License & attribution
 

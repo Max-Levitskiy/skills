@@ -1,5 +1,5 @@
 ---
-name: code-comment-guidelines
+name: comments
 description: Defines when Claude should and should NOT write code comments. Apply only when explicitly invoked by the user.
 disable-model-invocation: true
 metadata:
