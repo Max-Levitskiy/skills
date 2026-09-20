@@ -95,13 +95,24 @@ used is not yet a reproduction.
 Prefer fixing the cause on current versions over reverting a bump: a revert hides
 the break, strands neighbouring packages, and grows code against an old API.
 
+The branch lives in the PR's head repository, which is the contributor's fork on
+a cross-repo PR. Push there, not to `origin`, or the commit lands in the base
+repo and the PR never moves:
+
 ```bash
-git fetch origin <head-branch> -q
-git worktree add -q /tmp/prfix "origin/<head-branch>"   # or checkout, if you own the branch
+HEAD_REPO=$(gh pr view <PR> --json headRepositoryOwner,headRepository \
+  --jq '"\(.headRepositoryOwner.login)/\(.headRepository.name)"')
+HEAD_URL=$(gh repo view "$HEAD_REPO" --json sshUrl --jq .sshUrl)
+
+git fetch "$HEAD_URL" <head-branch> -q
+git worktree add -q /tmp/prfix FETCH_HEAD        # or checkout, if you own the branch
 # ... make the fix, run the repo's gates ...
 git -C /tmp/prfix commit -m "<repo's commit convention>"
-git -C /tmp/prfix push origin HEAD:<head-branch>
+git -C /tmp/prfix push "$HEAD_URL" HEAD:<head-branch>
 ```
+
+For a PR from a branch in the same repo, `$HEAD_REPO` is that repo and the same
+commands work unchanged.
 
 Before pushing to someone else's PR branch, make sure that is wanted. Pushing to
 a colleague's branch mid-review is surprising; ask unless the user has told you
@@ -124,7 +135,8 @@ changing the config that governs the bot, or land your fix as a separate PR to
 the base branch and let the bot rebase onto it. A commit pushed straight onto a
 bot branch can simply vanish.
 
-**Fork PRs** can only be pushed to when the author enabled maintainer edits:
+**Fork PRs** live in the author's repository. Push to that fork's URL, as above,
+and only when the author enabled maintainer edits:
 
 ```bash
 gh pr view <PR> --json maintainerCanModify,headRepositoryOwner

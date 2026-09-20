@@ -10,10 +10,15 @@
 set -uo pipefail
 
 PR="${1:-}"
-REPO=$(gh repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null) || {
-  echo "Not in a GitHub repo, or gh is not authenticated." >&2
+# The checkout only resolves a PR that was not named. Every later call uses the
+# repo the PR itself belongs to, so a URL from another repo cannot mix that
+# PR's checks with this checkout's merge policy.
+CWD_REPO=$(gh repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null) || CWD_REPO=""
+if [ -z "$CWD_REPO" ] && [ -z "$PR" ]; then
+  echo "Not in a GitHub repo, or gh is not authenticated. Pass a PR number or URL." >&2
   exit 1
-}
+fi
+REPO="$CWD_REPO"
 
 # Resolve which PR to work on. Everything downstream is wasted effort if it runs
 # against the wrong one, so an unresolved PR is a question for the user — never
@@ -25,7 +30,7 @@ if [ -z "$PR" ]; then
     echo "(Say so if you meant a different one.)"
     echo
   else
-    OPEN=$(gh pr list --state open --limit 30 \
+    OPEN=$(gh pr list --repo "$REPO" --state open --limit 30 \
       --json number,title,author,isDraft,updatedAt,headRefName,additions,deletions,changedFiles \
       --jq '.[] | "  #\(.number)  \(.author.login)\(if .author.is_bot then " (bot)" else "" end)  +\(.additions)/-\(.deletions) \(.changedFiles)f\(if .isDraft then "  [DRAFT]" else "" end)
       \(.title)
@@ -47,6 +52,10 @@ if [ -z "$PR" ]; then
 fi
 
 pr() { gh pr "$@" "$PR"; }
+
+PR_URL=$(pr view --json url --jq .url 2>/dev/null)
+IFS=/ read -r _ _ HOST OWNER NAME _ NUM <<<"$PR_URL"
+[ -n "${OWNER:-}" ] && [ -n "${NAME:-}" ] && REPO="$OWNER/$NAME"
 
 echo "═══ PR ═══"
 pr view --json number,title,author,state,isDraft,baseRefName,headRefName,headRefOid,additions,deletions,changedFiles,labels,reviewDecision \
@@ -122,10 +131,20 @@ pr view --json statusCheckRollup --jq '
 # still reads its own threads.
 echo
 echo "═══ REVIEW THREADS AND AGENT COMMENTS ═══"
-PR_URL=$(pr view --json url --jq .url 2>/dev/null)
-IFS=/ read -r _ _ _ OWNER NAME _ NUM <<<"$PR_URL"
+# Rulesets and classic branch protection each hold this setting in their own
+# place, and reading classic protection needs admin. Say "unknown" rather than
+# "false" when neither answered, so an open thread is not called harmless.
 RESOLUTION=$(gh api "repos/$REPO/rules/branches/$BASE" \
   --jq '[.[] | select(.type=="pull_request") | .parameters.required_review_thread_resolution] | any' 2>/dev/null)
+if [ "${RESOLUTION:-}" != "true" ]; then
+  CLASSIC=$(gh api "repos/$REPO/branches/$BASE/protection" \
+    --jq '.required_conversation_resolution.enabled' 2>&1)
+  case "$CLASSIC" in
+    true) RESOLUTION=true ;;
+    false|*"Branch not protected"*|*"Not Found"*) RESOLUTION="${RESOLUTION:-false}" ;;
+    *) RESOLUTION="${RESOLUTION:-unknown}, and classic branch protection is unreadable here" ;;
+  esac
+fi
 echo "thread resolution required to merge: ${RESOLUTION:-unknown}"
 read -r -d '' THREADS_PY <<'PY'
 import json, re, sys
@@ -199,7 +218,9 @@ NOTE
 echo
 echo "═══ REPO CONVENTION DOCS ═══"
 ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
-if [ -n "$ROOT" ]; then
+if [ -n "$ROOT" ] && [ "$REPO" != "$CWD_REPO" ]; then
+  echo "  (this checkout is $CWD_REPO, not $REPO — read the PR's own docs instead)"
+elif [ -n "$ROOT" ]; then
   for f in CLAUDE.md AGENTS.md CONTRIBUTING.md .github/PULL_REQUEST_TEMPLATE.md; do
     [ -f "$ROOT/$f" ] && echo "  $f ($(wc -l < "$ROOT/$f" | tr -d ' ') lines) — read it before merging"
   done
@@ -207,5 +228,5 @@ fi
 
 echo
 echo "═══ OTHER OPEN PRs (is someone shipping this same work?) ═══"
-gh pr list --state open --limit 15 --json number,title,headRefName \
+gh pr list --repo "$REPO" --state open --limit 15 --json number,title,headRefName \
   --jq '.[] | "  #\(.number)  \(.title)"' 2>/dev/null | head -15
