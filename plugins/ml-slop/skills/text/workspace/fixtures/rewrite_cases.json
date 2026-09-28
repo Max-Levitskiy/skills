@@ -1,0 +1,84 @@
+[
+  {
+    "id": "pilot_scope",
+    "mode": "fix",
+    "genre": "project_update",
+    "source": "In today's fast-paced environment, onboarding speed matters more than ever. In 12 Kraków pilot sessions during August, the median setup time fell from 18 to 11 minutes. This represents an improvement in the onboarding process. Only first-time sessions were measured; we have no data from repeat visits or other cities.",
+    "expected": {
+      "exact_spans": [
+        "12",
+        "Kraków",
+        "August",
+        "18",
+        "11"
+      ],
+      "semantic_invariants": [
+        "The 18-to-11-minute change is a median from 12 pilot sessions, not a guarantee for all users.",
+        "Only first-time sessions were measured; repeat visits and other cities have no data."
+      ],
+      "removable_spans": [
+        "In today's fast-paced environment",
+        "This represents an improvement in the onboarding process."
+      ],
+      "no_new_claims": true
+    }
+  },
+  {
+    "id": "qualified_claims",
+    "mode": "fix",
+    "genre": "technical_note",
+    "source": "The queue may delay notifications by up to 30 seconds when all workers are busy. It is important to note that notifications can sometimes be delayed. This does not affect order creation. We have not measured delivery latency during failover.",
+    "expected": {
+      "exact_spans": [
+        "30 seconds"
+      ],
+      "semantic_invariants": [
+        "The queue may delay notifications only when all workers are busy; it does not always do so.",
+        "Order creation is unaffected.",
+        "No delivery-latency measurement exists for failover."
+      ],
+      "removable_spans": [
+        "It is important to note that notifications can sometimes be delayed."
+      ],
+      "no_new_claims": true
+    }
+  },
+  {
+    "id": "protected_material",
+    "mode": "fix",
+    "genre": "release_note",
+    "source": "For more information about the update, see the guide. The migration guide is at https://example.org/docs/migrate?v=2. The maintainer wrote: “Keep the old key until the backfill completes.” Run `python -m app.migrate --dry-run` before applying changes. The table below tracks the supported modes:\n\n| Mode | Supported |\n| --- | --- |\n| dry-run | yes |\n| force | no |",
+    "expected": {
+      "exact_spans": [
+        "https://example.org/docs/migrate?v=2",
+        "“Keep the old key until the backfill completes.”",
+        "`python -m app.migrate --dry-run`",
+        "| force | no |"
+      ],
+      "semantic_invariants": [
+        "The dry-run command remains a preliminary step.",
+        "The table still states that force mode is unsupported."
+      ],
+      "removable_spans": [
+        "For more information about the update, see the guide."
+      ],
+      "no_new_claims": true
+    }
+  },
+  {
+    "id": "voice_negative_control",
+    "mode": "fix",
+    "genre": "personal_note",
+    "source": "I was frightened when the room went quiet. I waited by the door until the lights came back on. I was still frightened afterward, even though nothing had happened.",
+    "expected": {
+      "exact_spans": [],
+      "semantic_invariants": [
+        "The speaker was frightened both during and after the outage.",
+        "The wait by the door and restoration of the lights remain.",
+        "The account does not invent an event that did not happen."
+      ],
+      "removable_spans": [],
+      "no_new_claims": true
+    }
+  }
+]

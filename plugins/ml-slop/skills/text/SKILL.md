@@ -156,22 +156,24 @@ prose because the rewriter tries to preserve and edit simultaneously.
 
 ```
 PASS 1 — Remove (delete, do not rewrite):
-- Delete sentences flagged repetitive by Methods 1, 3, 4
-- Delete filler sentences from Method 6
-- Delete thematically-redundant sentences from Method 7 — keep only each
-  function group's survivor (the most concrete instance)
-- Delete template openings and template-closing paragraphs from structure-template
-- Delete purple-prose decoration (purple-prose) and cliché framing (cliche-detection)
-- Delete the weakest sentences in zero-anchor windows from specificity-quota
-- Drop any claim the source cannot support (do not carry forward hallucinations)
+- Delete only claims or spans that add no distinct content, even when a method
+  marks an entire sentence. Method 1 merge-candidates are not duplicates.
+- Delete filler from Method 6 and truly redundant instances from Method 7;
+  preserve every distinct fact, argumentative step, and intended emphasis.
+- Delete empty template bookends, decoration, and cliché framing, but keep the
+  factual part of a sentence that contains a cliché.
+- Delete the weakest sentences in zero-anchor windows only after checking for
+  a distinctive position, example, caveat, or useful transition.
+- Do not carry forward unsupported additions from an earlier generated draft.
 
 PASS 2 — Rewrite what remains:
-- Merge merge-candidates: keep the version with most concrete detail
+- Merge related claims while keeping each unique detail
 - Tighten remaining sentences for clarity
-- Preserve ALL unique facts, numbers, examples, constraints, decisions, mechanisms
-- Do not add information that wasn't in the original
-- Keep technical terms, domain language, and the heading structure
-- Verify against the original that no unique information was lost
+- Preserve facts, numbers, examples, constraints, decisions, mechanisms, scope,
+  uncertainty, attribution, stated feelings, and strength of claims
+- Preserve exact quotes, links, paths, code, and meaningful table/list structure
+- Do not add facts, certainty, experience, or conclusions absent from the source
+- Keep technical terms, domain language, the author's voice, and heading structure
 ```
 
 When the genre is creative/literary, lean on Method 7 + purple-prose in Pass 1
@@ -179,8 +181,14 @@ When the genre is creative/literary, lean on Method 7 + purple-prose in Pass 1
 informational/machine-generated, lean on structure-template + specificity-quota +
 the remove-first ordering (bookends and fact-free windows dominate).
 
-After fix subagents return, run a verification pass: compare original claims
-against rewritten text to ensure no unique information was lost. Report:
+After fix subagents return, compare the exact final text against the source.
+Make a source-to-output ledger for unique claims and protected details, including
+qualifiers (e.g. "may", "only in the pilot"), names, numbers, quotations, links,
+paths, and code. Check meaning and format separately: an exact-token check cannot
+catch a stronger or broader paraphrase. Repair any lost or invented detail, or
+leave the affected passage unchanged and report the limitation. For representative
+regression inputs and expectations, see `workspace/EVALUATION.md`.
+Report:
 
 ```
 ## Fix Summary
