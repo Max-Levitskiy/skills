@@ -1,50 +1,57 @@
-# Workspaces and worktrees
+# Isolate or organize work
 
-The workspace is the labeled sidebar item - the per-project or per-worktree unit. When a
-user says "session", this is almost always what they mean.
+A workspace is a labeled project/task location; a named session is another server.
+Resolve server scope first. Inventory distinguishes what the user called a session
+before a rename or close.
+
+## Create, find, rename
 
 ```bash
 herdr workspace list
-herdr workspace get <workspace_id>
-herdr workspace create [--cwd PATH] [--label TEXT] [--env KEY=VALUE] [--focus|--no-focus]
-herdr workspace focus <workspace_id>       # switch the UI to this workspace
-herdr workspace rename <workspace_id> <label>
-herdr workspace close <workspace_id>       # destructive - confirm
+herdr workspace get <workspace-id>
+herdr workspace create --cwd /path/to/repo --label review --no-focus
+herdr workspace rename <workspace-id> <label>
+herdr workspace focus <workspace-id>
 ```
 
-`workspace list` returns `workspace_id`, `label`, `number`, `active_tab_id`, `tab_count`,
-`pane_count`, `agent_status`, `focused`. The key is `workspace_id`, not `id` - a JSON
-filter written against `id` fails with `KeyError`.
+Creation returns result.workspace, result.tab and result.root_pane.
+List records use workspace_id, not id. Keep IDs with their server scope.
+Exact labels can collide; resolve by returned ID rather than first match.
+Focus changes presentation and may mark completion seen. Prefer no-focus creation
+for background delegation.
 
-## Worktrees
+Optional scripts/herdr_here.py resolves labels with list/resolve/whoami/rename.
+Session/machine/wsl/herdr-bin options select its target. Current uses injected pane
+identity only in its matching scope. Explicit pane/tab targets are required for those
+renames outside that context; a workspace cwd match cannot identify its current pane.
 
-A worktree-backed workspace ties a git worktree to a herdr workspace, so a branch gets
-its own sidebar entry, tabs and agents.
+## Give a branch its own checkout
 
 ```bash
-herdr worktree list   [--workspace ID | --cwd PATH]
-herdr worktree create [--workspace ID | --cwd PATH] [--branch NAME] [--base REF] \
-                      [--path PATH] [--label TEXT] [--focus|--no-focus]
-herdr worktree open   [--workspace ID | --cwd PATH] (--path PATH | --branch NAME) \
-                      [--label TEXT] [--focus|--no-focus]
-herdr worktree remove --workspace ID [--force]    # destructive - confirm
+herdr worktree list --cwd /path/to/repo
+herdr worktree create --cwd /path/to/repo --branch review --base main --no-focus
+herdr worktree open --cwd /path/to/repo --path /path/to/existing --no-focus
 ```
 
-"Make a new worktree for branch `feat/x`" → `herdr worktree create --branch feat/x`, run
-from inside the repo. From anywhere else, anchor the repo explicitly with `--cwd` or
-`--workspace`; without an anchor herdr has no way to know which repository you meant.
+Create makes a checkout; open adopts an existing checkout/branch. Anchor by cwd or
+workspace, not an unrelated current directory. Read help for supported branch/path forms.
+Remote cwd must be absolute, ~, or start with ~/; let the remote server expand it.
 
-`create` makes a new worktree; `open` adopts one that already exists on disk or on a
-branch. Reaching for `create` on an existing branch is the usual mistake.
+Inspect Git status and repository instructions; preserve modifications.
+Understand checkout/hooks when a repository trust decision is requested before using
+--trust-repository. It is not a routine workaround. Editing workers need file ownership
+or separate worktrees plus an integration plan. Worktrees share Git history and do not
+resolve task conflicts by themselves.
 
-## Gotchas
+## Remove exactly what was requested
 
-- **`worktree remove` deletes the git worktree from disk**, not just the workspace entry.
-  Uncommitted work in it is gone. Confirm, and prefer `workspace close` when the user
-  only wants the sidebar entry gone.
-- **`workspace close` leaves the worktree** on disk - the inverse. Say which one you are
-  about to do when the user's phrasing is ambiguous ("get rid of the feat/x one").
-- **Labels are free text and can collide.** Resolve to an id before acting;
-  `scripts/herdr_here.py resolve <label>` errors on ambiguity instead of guessing.
-- **`--focus` moves the user's screen.** Prefer `--no-focus` when creating things
-  mid-task so you do not yank them away from what they are reading.
+Workspace close closes running panes; its checkout remains.
+Worktree remove --workspace ID also deletes the checkout.
+Workspace close --group affects a group; inventory its members first.
+A sidebar entry, running processes and disk checkout are distinct removal outcomes.
+
+Check current target, running work, Git modifications and authorization. Preserve outputs
+and choose the removal matching the request. A failed creation can leave partial state:
+reconcile before retrying. Re-list after move/cleanup rather than reusing old layout facts.
+Workspace order/group moves and metadata have raw APIs; use advanced-api.md as needed.
+https://herdr.dev/docs/agent-automation/ supplies current response contracts.

@@ -14,7 +14,7 @@ import {
   writeLayer as libWriteLayer,
   type BaseConfig,
   type Layer,
-} from "./vendor/agent-config/config";
+} from "./vendor/agent-config/config.ts";
 
 export { expandPath, repoRoot, type Layer };
 
@@ -22,8 +22,10 @@ const NAME = "herdr";
 
 /** One launchable subagent: the argv herdr spawns, plus per-preset overrides. */
 export interface AgentPreset {
-  /** argv passed to `herdr agent start ... -- <argv>`. Required. */
+  /** Canonical executable plus its arguments. Required; managed start selects the executable by kind. */
   command?: string[];
+  /** Explicit managed agent kind; canonical command names otherwise infer it. */
+  kind?: string;
   /** One-line note shown by `presets`, so a user picking a preset knows what it is. */
   description?: string;
   /** Default cwd for this preset. `~` expands; a relative path resolves from the repo root. */
@@ -32,7 +34,7 @@ export interface AgentPreset {
   env?: Record<string, string>;
   /** herdr session (background server) to launch in. Unset = the caller's own session. */
   session?: string;
-  /** Where the new pane goes relative to the caller's. */
+  /** Split direction when an explicit anchor pane is selected. */
   split?: "right" | "down";
   /** Whether starting it steals the user's focus. */
   focus?: boolean;
@@ -42,23 +44,11 @@ export interface AgentPreset {
   replyTimeoutMs?: number;
   /** Pane lines to read back when extracting a reply. */
   readLines?: number;
-  /**
-   * Marker that prefixes an agent's own output lines in its TUI, used to find the reply.
-   * Claude Code uses "⏺". Unset means "take everything after the echoed prompt".
-   */
+  /** Legacy extraction fields: accepted for migration, unused by native reads. */
   replyMarker?: string;
-  /**
-   * Marker that prefixes the agent's input composer. Claude Code uses "❯", Codex "›".
-   * Used to tell "Enter never landed" from "the reply is just fast", so a missing one only
-   * costs a redundant Enter on an already-empty composer.
-   */
   composerMarker?: string;
-  /**
-   * Extra regexes (JS syntax, matched per line) for TUI furniture this agent prints around
-   * its answers — activity spinners, hint rows, the status bar. Replaces, not appends to,
-   * the entry it overrides, since arrays replace wholesale across config layers.
-   */
   chrome?: string[];
+
 }
 
 /** The defaults object is an AgentPreset minus `command`, plus which preset to use. */
@@ -78,7 +68,7 @@ export interface HerdrConfig extends BaseConfig {
  * name not listed here is purely theirs.
  *
  * Only agents herdr ships detection for are listed; `herdr integration status` is the
- * authority on what is actually installed, and `presets` cross-checks $PATH.
+ * authority on what is actually installed, but preset discovery does not prove binary or auth availability.
  */
 export const BUILTIN_AGENTS: Record<string, AgentPreset> = {
   claude: {
@@ -115,9 +105,9 @@ export const BUILTIN_DEFAULTS: Required<
   agent: "claude",
   split: "right",
   focus: false,
-  bootTimeoutMs: 90_000,
+  bootTimeoutMs: 30_000,
   replyTimeoutMs: 300_000,
-  readLines: 200,
+  readLines: 80,
 };
 
 export function layerPath(layer: Layer, root?: string | null): string | null {
@@ -168,22 +158,43 @@ export function resolvePreset(c: HerdrConfig, name?: string): AgentPreset & { na
   return { ...inherited, ...preset, name: key, command: preset.command };
 }
 
-/**
- * What's missing before the skill can launch. Empty array = ready — which is the
- * zero-config case, since the built-in presets are always launchable.
- */
+/** Validate stored values before writing or launching; availability/auth are separate. */
 export function validate(c: HerdrConfig): string[] {
   const problems: string[] = [];
-  for (const [name, preset] of Object.entries(c.agents ?? {})) {
+  const object = (v: unknown) => v !== null && typeof v === "object" && !Array.isArray(v);
+  if (!object(c)) return ["config must be an object"];
+  if (c.version !== undefined && c.version !== 1) problems.push("version must be 1");
+  if (c.agents !== undefined && !object(c.agents)) problems.push("agents must be an object");
+  if (c.defaults !== undefined && !object(c.defaults)) problems.push("defaults must be an object");
+  const check = (prefix: string, preset: any) => {
+    if (!object(preset)) { problems.push(prefix+" must be an object"); return; }
+    for (const field of ["kind","description","cwd","session","replyMarker","composerMarker"])
+      if (preset[field] !== undefined && (typeof preset[field] !== "string" || !preset[field].trim()))
+        problems.push(prefix+"."+field+" must be a nonempty string");
+    if (preset.split !== undefined && !["right","down"].includes(preset.split)) problems.push(prefix+".split must be right/down");
+    if (preset.focus !== undefined && typeof preset.focus !== "boolean") problems.push(prefix+".focus must be boolean");
+    for (const [field, min, max] of [["bootTimeoutMs",3001,300000],["replyTimeoutMs",1,3598000],["readLines",1,1000]] as const) {
+      const value = preset[field];
+      if (value !== undefined && (!Number.isInteger(value) || value < min || value > max))
+        problems.push(prefix+"."+field+" must be "+min+".."+max);
+    }
+    if (preset.env !== undefined && (!object(preset.env) || Object.entries(preset.env).some(([k,v])=>!/^[_A-Za-z][_A-Za-z0-9]*$/.test(k) || typeof v !== "string")))
+      problems.push(prefix+".env must map valid environment names to strings");
+    if (preset.chrome !== undefined && (!Array.isArray(preset.chrome) || preset.chrome.some((v:any)=>typeof v !== "string")))
+      problems.push(prefix+".chrome must be a string array");
+  };
+  const table = object(c.agents) ? c.agents! : {};
+  for (const [name, preset] of Object.entries(table)) {
+    check("agents."+name, preset);
+    if (!object(preset)) continue;
     const merged = { ...BUILTIN_AGENTS[name], ...preset };
-    if (!merged.command?.length) problems.push(`agents.${name}.command is not set (argv array, e.g. ["claude"])`);
-    else if (!Array.isArray(merged.command) || merged.command.some((a) => typeof a !== "string"))
-      problems.push(`agents.${name}.command must be an array of strings`);
-    if (merged.split && merged.split !== "right" && merged.split !== "down")
-      problems.push(`agents.${name}.split must be "right" or "down"`);
+    if (!Array.isArray(merged.command) || !merged.command.length || merged.command.some(a=>typeof a !== "string") || !merged.command[0]?.trim())
+      problems.push("agents."+name+".command must be nonempty argv with a nonempty executable");
   }
-  const d = c.defaults ?? {};
-  if (d.agent && !agents(c)[d.agent]) problems.push(`defaults.agent "${d.agent}" is not a configured preset`);
-  if (d.split && d.split !== "right" && d.split !== "down") problems.push('defaults.split must be "right" or "down"');
+  if (object(c.defaults)) {
+    check("defaults",c.defaults);
+    if (c.defaults!.agent !== undefined && (typeof c.defaults!.agent !== "string" || !(c.defaults!.agent in {...BUILTIN_AGENTS,...table})))
+      problems.push("defaults.agent must name a configured preset");
+  }
   return problems;
 }
