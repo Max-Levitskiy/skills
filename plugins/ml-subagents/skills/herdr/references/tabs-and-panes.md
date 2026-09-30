@@ -1,90 +1,66 @@
-# Tabs and panes
+# Navigate or control terminals
 
-## Tabs
-
-```bash
-herdr tab list [--workspace <workspace_id>]
-herdr tab get <tab_id>
-herdr tab create [--workspace <workspace_id>] [--cwd PATH] [--label TEXT] \
-                 [--env KEY=VALUE] [--focus|--no-focus]
-herdr tab focus <tab_id>
-herdr tab rename <tab_id> <label>
-herdr tab close <tab_id>          # destructive - takes its panes with it
-```
-
-## Panes
-
-A pane is a terminal. Most pane commands accept the pane id positionally, or
-`--pane ID`, or `--current` to mean the pane you are running in.
-
-### Inspect
+Within the selected server, inventory returned IDs:
 
 ```bash
-herdr pane list [--workspace <workspace_id>]
-herdr pane current [--pane ID|--current]      # ids + cwd + agent + status for one pane
-herdr pane get <pane_id>
-herdr pane layout       [--pane ID|--current]
-herdr pane process-info [--pane ID|--current]
-herdr pane edges        [--pane ID|--current]
-herdr pane neighbor --direction left|right|up|down [--pane ID|--current]
+herdr tab list --workspace <workspace-id>
+herdr pane list --workspace <workspace-id>
+herdr pane current --current
+herdr pane get <pane-id>
+herdr pane process-info --pane <pane-id>
+herdr pane layout --pane <pane-id>
 ```
 
-### Read output
+Current requires identity from this scope; outside Herdr or across machines, pass
+explicit returned IDs. Get/process-info establishes who receives subsequent input.
+
+## Navigate and arrange
+
+Tab create/get/focus/rename/close manages tabs; create returns result.root_pane.
+Use cwd and no-focus for background locations. Focus a tab/workspace explicitly;
+pane focus is directional, while agent focus selects a live agent.
+
+Pane neighbor/edges/layout exposes topology. Split right/down with optional ratio;
+resize/zoom/swap operate on explicit/current panes. Read specific help for destinations
+instead of reconstructing layout from ID patterns.
 
 ```bash
-herdr pane read <pane_id> [--source visible|recent|recent-unwrapped] [--lines N] [--format text|ansi]
+herdr pane split <pane-id> --direction right --cwd /path --no-focus
+herdr pane zoom <pane-id> --on
+herdr pane move <pane-id> --new-workspace --label review
 ```
 
-`visible` is the current viewport, `recent` includes scrollback, `recent-unwrapped` keeps
-long lines intact instead of hard-wrapping them to the pane width - use it when you need
-to grep or parse output rather than eyeball it.
+Cross-workspace moves change the ID: adopt result.move_result.pane.pane_id and retain
+previous_pane_id for reconciliation. Launch-time environment aliases remain usable for
+current, but an in-flight wait can end with agent_not_running.
+Recheck workspace/tab/occupant after moves. Raw tab/workspace ordering is in advanced-api.md.
 
-### Send input
+## Run, input, read, wait
+
+Pane run types a shell command plus Enter; send-text types literal text without Enter;
+send-keys sends keys. For recognized agents use agent prompt/send-keys (agents.md).
+Command text is destination-shell code: quote paths and untrusted text appropriately.
 
 ```bash
-herdr pane run       <pane_id> <command>      # types the command AND presses Enter
-herdr pane send-text <pane_id> <text>         # types literal text, no Enter
-herdr pane send-keys <pane_id> <key> [key...] # e.g. Enter, C-c
+herdr pane read <pane-id> --source visible --lines 80
+herdr pane wait-output <pane-id> --match "attempt-specific-marker" --timeout 30000
 ```
 
-`run` for executing a command; `send-text` for filling a prompt you do not want submitted
-yet; `send-keys` for control keys and for submitting what `send-text` or `herdr agent
-send` left sitting in the composer.
+Reads print text. Recent defaults to 80 rows; visible/detection are passive.
+Deep recent reads of idle alternate-screen agents can scroll their transcript.
+Bound rows/characters; use artifacts for long answers.
+Output waits search existing text immediately. Historical markers can match; verify
+attempt/current output independently. A text match does not establish command exit code.
+Rust regex matching is line-by-line. Always bound waits.
 
-### Rearrange
+## Interactive equivalents
 
-```bash
-herdr pane split  [<pane_id>|--current] --direction right|down [--ratio FLOAT] [--cwd PATH] \
-                  [--env KEY=VALUE] [--focus|--no-focus]
-herdr pane focus  --direction left|right|up|down [--pane ID|--current]
-herdr pane resize --direction left|right|up|down [--amount FLOAT] [--pane ID|--current]
-herdr pane zoom   [<pane_id>|--current] [--toggle|--on|--off]
-herdr pane swap   --direction left|right|up|down [--pane ID|--current]
-herdr pane swap   --source-pane ID --target-pane ID
-herdr pane move   <pane_id> --tab <tab_id> --split right|down [--target-pane ID] [--ratio FLOAT]
-herdr pane move   <pane_id> --new-tab [--workspace ID] [--label TEXT]
-herdr pane move   <pane_id> --new-workspace [--label TEXT] [--tab-label TEXT]
-herdr pane rename <pane_id> <label>|--clear
-herdr pane close  <pane_id>       # destructive - kills whatever runs in it
-```
+Choose machine/workspace before pane actions. Mouse menus split/focus, borders resize,
+tabs/sidebar navigate. Default prefix is ctrl+b; prefix+w opens workspace navigation.
+Arrows preview, Enter activates, Esc cancels. Activate a remote preview before other
+shortcuts. Custom bindings differ: consult configuration/keyboard rather than guessing.
+See sessions.md for attach/detach/resume and configuration for copy mode or prefix-free use.
 
-`pane move --new-workspace` promotes a pane to its own sidebar entry, which is how a
-side experiment that grew into real work gets its own home without restarting it.
-
-### Agent status reporting
-
-`herdr pane report-agent`, `report-agent-session`, `report-metadata` and `release-agent`
-exist for *agents reporting their own state* to herdr - that is how the sidebar knows an
-agent is working or blocked. They are for integration authors. Do not call them to fake
-or correct another pane's status; read `herdr pane --help` if you are wiring up an
-integration.
-
-## Gotchas
-
-- **`pane close` kills the process**, including a running agent mid-task. Confirm.
-- **`tab close` closes every pane in it.** Check `pane list` first when the tab is not
-  obviously single-pane.
-- **`--current` needs `$HERDR_PANE_ID`**, which herdr sets in every pane it spawns. It is
-  absent in a terminal not started by herdr; pass an explicit id there.
-- **A pane id outlives its content.** After `pane move`, ids stay valid but the tab and
-  workspace ids in earlier output are stale - re-read rather than reusing them.
+Input routing, copy/scroll/search/selection, links, graphics and terminal observers
+have advanced APIs. Tab close kills every pane; pane close kills its current occupant.
+Inventory and authorization must match the intended cleanup.

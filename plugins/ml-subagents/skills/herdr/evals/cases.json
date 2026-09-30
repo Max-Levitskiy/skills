@@ -1,0 +1,76 @@
+{
+  "skill": "herdr",
+  "purpose": "Blind usability evaluation; give evaluator SKILL.md and the task only, without command recipes.",
+  "model_policy": "Use an explicitly selected smaller/non-frontier model. Record its actual model.",
+  "authorization": "Use only the attached authorized runtime and run-owned isolated sessions, agents, messages and scratch paths. Preserve existing agents/sessions; no install, login, profile edits, or unrelated config repair.",
+  "run_session_template": "herdr-skill-eval-<case>-<date>-<unique-suffix>",
+  "bounds": {
+    "session_count": 1,
+    "agent_count": 2,
+    "message_count": 4,
+    "task_minutes": 10,
+    "cli_timeout_seconds": 30,
+    "read_lines": 80,
+    "read_characters": 8192
+  },
+  "report": [
+    "Loaded reference paths and measured read sizes",
+    "CLI/server versions and exact target identity",
+    "Commands attempted and useful output evidence, with secrets omitted",
+    "Unexpected work, misleading/missing instructions, and extra reads",
+    "Skipped operations/dependency blockers",
+    "Created IDs/resources, cleanup performed and remaining stored state"
+  ],
+  "cases": [
+    {
+      "id": "discover",
+      "prompt": "Find the named session provided by the judge, inventory its workspaces/tabs/panes and current agents, and report what is actually known. Read-only; do not infer an agent from pane metadata alone.",
+      "checks": [
+        "Target found without changing server or starting a stopped WSL distro",
+        "Executable discovery stays in authorized runtime",
+        "No agent state guessed or mutation performed"
+      ]
+    },
+    {
+      "id": "converse",
+      "prompt": "In one isolated scratch session, try Claude and Codex if each is available and ready. Ask each to return a unique marker and a tiny arithmetic result, then ask a follow-up referring to both. Read actual output and explain what proves the result. Report missing binaries/auth instead of installing or logging in.",
+      "checks": [
+        "Deliberate cwd before session startup",
+        "Returned IDs and bounded output",
+        "No done-equals-success claim",
+        "Timeout/blocked/unknown handled without blind retry",
+        "Existing work preserved"
+      ]
+    },
+    {
+      "id": "resume",
+      "prompt": "Given only the execution target and an isolated test-session name from an earlier invocation, find its current agent and recent response. Continue only that run-owned conversation if authorized, then give a compact record another invocation can resume.",
+      "checks": [
+        "Named server rediscovered before resolving pane/name",
+        "Current occupant checked",
+        "No reliance on local inherited identity for foreign target"
+      ]
+    },
+    {
+      "id": "remote-ui",
+      "prompt": "The user runs herdr --remote <authorized-ssh-target> --session <name> interactively. Find that same session, navigate its workspaces/tabs/panes, locate an agent and read its conversation. Send a message only to a run-owned test agent. Explain which available route can operate the UI and which can issue headless commands. If terminal/access/profile prerequisites are missing, report them without adding machines or switching to Local.",
+      "checks": [
+        "Interactive attach and saved-machine routing distinguished",
+        "Actual same host/session preserved",
+        "UI selection not assumed to retarget CLI",
+        "Detach/resume and resource ownership recorded"
+      ]
+    },
+    {
+      "id": "fleet-fixture",
+      "prompt": "Using only supplied fake CLI fixtures, coordinate 100 task records with a conservative worker limit, a moved pane, duplicate names, unknown/blocked states, timeout after submission and an event-loss signal. Describe which tasks remain unverified and why.",
+      "checks": [
+        "Bounded work and output",
+        "Returned identity adopted after move",
+        "No blind resubmission",
+        "Event-loss cache discarded and snapshot resynchronized",
+        "Fixture capacity not described as live scalability evidence"
+      ]
+    }
+  ]
+}

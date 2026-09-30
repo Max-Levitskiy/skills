@@ -1,66 +1,63 @@
-# Sessions and the server
+# Attach, detach, resume or recover
 
-Read this only when the user genuinely means the background server, not their workspace.
-See the trap in SKILL.md first.
+A session is a background server with independent sockets/layout, sharing local global
+config. List exact names (including case) with herdr session list --json.
 
-A **session** is a named server instance with its own unix socket and its own workspace
-tree. Sessions are isolated: workspace `w1` in one is unrelated to `w1` in another, and
-no ordinary `herdr` command crosses the boundary.
+## Interactive workflow
 
 ```bash
-herdr session list                # name, status, directory, socket
-herdr session attach <name>       # attach this terminal to a session (interactive)
-herdr session stop <name>         # stop a session's server ('default' targets the default)
-herdr session delete <name>       # remove the session entirely (destructive - confirm)
+herdr --session <name>
+herdr session attach <name>
+herdr --remote <authorized-ssh-target> --session <name>
 ```
 
-Typical output - note `default` stopped while named sessions carry the work:
+These open a terminal UI and can start sessions; remote setup may offer install/server
+replacement. Accept such prompts only within the requested authorization.
+Use a real PTY/UI control facility; help does not prove attachment. A status command
+reporting not_running does not create the server. Before opening a new session, set
+its intended project or disposable scratch cwd: initial startup can create a workspace
+there. Record initial inventory and every created session/workspace/pane for cleanup.
+Stop only run-owned sessions; deletion of stored state or scratch files is a separate
+requested cleanup action.
 
-```
-name        status    directory                          socket
-default     stopped   ~/.config/herdr                    ~/.config/herdr/herdr.sock
-neochain    running   ~/.config/herdr/sessions/neochain  ~/.config/herdr/sessions/neochain/herdr.sock
-personal    running   ~/.config/herdr/sessions/personal  ~/.config/herdr/sessions/personal/herdr.sock
-```
+Choose machine/workspace in the sidebar, then tab/pane. Mouse clicks/menus and border
+dragging work without shortcuts. Default ctrl+b is the prefix; ctrl+b q detaches while
+processes continue. Prefix+w opens workspace navigation; arrows preview, Enter selects,
+Esc cancels. Bindings may be customized. Agent conversations and layout operations map
+to their task references. For keyboard/copy mode/mobile/phone access:
+https://herdr.dev/docs/keyboard/ and https://herdr.dev/docs/how-to-work/.
 
-## Talking to another session, or another machine
+For parallel headless control of the same remote UI, use an existing saved profile or
+execute the CLI on that authorized remote host (targets.md). TUI selection does not
+retarget separate local CLI calls. Record session/profile and IDs, not “the open session”.
 
-```bash
-herdr --session <name> <subcommand> ...     # drive a different session's server
-herdr --remote <ssh-target> [--session <name>] ...
-```
+Agent attach TARGET or terminal attach TERMINAL_ID opens one terminal, not the whole UI.
+One writable owner controls input/resize; takeover replaces it and needs deliberate
+authorization. Native Windows direct attach is unsupported; Linux/WSL/macOS support differs.
+Read-only observers do not seize input ownership.
 
-This is the only way to list or address workspaces outside your own session. Without it,
-`herdr workspace list` shows *your* session's workspaces and silently omits the rest -
-which reads as "the workspace isn't there" when it is, one session over.
+## Resume across invocations
 
-## Server
+Detach preserves real processes. Reattach to the same host/session, inventory panes and
+agents, then match the occupant before continuing a conversation.
+Keep target/task/IDs/terminal occupant/output references. Names are temporary and
+layout IDs can change after moves.
 
-```bash
-herdr status [server|client]   # versions, protocol, socket path, whether a restart is due
-herdr server stop              # stop the running server via the API socket
-herdr server reload-config     # reload config.toml in place
-```
+Restart restores layout/cwd, not arbitrary running commands. Missing directories restore
+as error panes. Native agent restore needs valid integration session identity or a
+reported resume command. Claude/Codex hooks report identity, not successful task completion.
+Inspect integration status for current installed support.
+Pane history replay restores text, not a process/conversation; it is opt-in because
+history may contain sensitive data.
 
-`herdr status` prints the socket path, which tells you which session you are actually
-talking to - the fastest way to confirm before running something destructive.
+## Stop, update, recover
 
-## Other noun groups
+Stop kills every session pane; delete removes a stopped session's stored data.
+Scope precisely, preserve work, and apply the authorization for that cleanup.
+Compatible client/server versions need not match; an update may leave a server running.
+Experimental live handoff is opt-in/Unix-only, can interrupt requests/events/waits, and
+older sending servers may have a 64-pane transfer limit. Re-inventory after interruption.
 
-Rarely needed, listed so you know they exist rather than concluding a capability is
-missing. Use `herdr <noun> --help` for the subcommands.
-
-| Group | Covers |
-|-------|--------|
-| `herdr api` | socket API metadata and live runtime state; useful for discovering fields |
-| `herdr config` | `config.toml`, `config reset-keys` to back up and drop custom keybindings |
-| `herdr notification` | notification helpers |
-| `herdr integration` | editor / tool integrations |
-| `herdr channel` | stable vs preview update channel; `herdr update [--handoff]` |
-
-## Gotchas
-
-- **`session delete` is destructive** and `session stop` kills every agent running in
-  that session's panes. Confirm, and check `herdr session list` for `running` first.
-- **Don't stop the session you are in.** Your own pane dies with it. Check
-  `herdr status` for the socket path and compare against the target.
+Snapshots/backups/history are private session data. For requested recovery, follow the
+documented backup/stop/restore procedure; do not inspect unrelated agent session storage.
+https://herdr.dev/docs/session-state/ details preservation paths and limitations.
