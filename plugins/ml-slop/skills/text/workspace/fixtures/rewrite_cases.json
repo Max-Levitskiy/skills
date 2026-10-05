@@ -33,9 +33,9 @@
         "30 seconds"
       ],
       "semantic_invariants": [
-        "The queue may delay notifications only when all workers are busy; it does not always do so.",
+        "The queue may delay notifications by up to 30 seconds when all workers are busy; the source does not state that delays always occur.",
         "Order creation is unaffected.",
-        "No delivery-latency measurement exists for failover."
+        "The authors have not measured delivery latency during failover."
       ],
       "removable_spans": [
         "It is important to note that notifications can sometimes be delayed."
@@ -53,6 +53,9 @@
         "https://example.org/docs/migrate?v=2",
         "“Keep the old key until the backfill completes.”",
         "`python -m app.migrate --dry-run`",
+        "| Mode | Supported |",
+        "| --- | --- |",
+        "| dry-run | yes |",
         "| force | no |"
       ],
       "semantic_invariants": [
@@ -73,7 +76,7 @@
     "expected": {
       "exact_spans": [],
       "semantic_invariants": [
-        "The speaker was frightened both during and after the outage.",
+        "The speaker was frightened when the room went quiet and remained frightened after the lights came back on.",
         "The wait by the door and restoration of the lights remain.",
         "The account does not invent an event that did not happen."
       ],
