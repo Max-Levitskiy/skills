@@ -235,6 +235,7 @@ export function gitlab(target: string, wait: boolean): number {
     else if (ciState(view).phase === "none") {
       console.log(`ran on:        ${ranOn} — NOT the MR head ${sha.slice(0, 12)}. CI has not run on the current head.`);
     } else console.log(`ran on:        merge result ${ranOn} (${hp.ref})`);
+    if (hp.project_id && hp.project_id !== project.id) console.log(`runs in:       project ${hp.project_id}, not the MR's — read its jobs under projects/${hp.project_id}`);
     if (hp.yaml_errors) console.log(`yaml errors:   ${hp.yaml_errors}`);
   }
   const basePipelines: Json[] = api(`${P}/pipelines?ref=${encodeURIComponent(view.target_branch)}&per_page=5`) ?? [];

@@ -17,6 +17,7 @@ Every command below takes the project from the checkout:
 P="projects/:fullpath"          # glab fills :fullpath from the checkout's remote
 # For an MR in another project or on another host:
 #   P="projects/<group%2Fsubgroup%2Fproject>"  and add  --hostname <host>  to each glab api call
+#   add  -R <project URL>  to each glab mr call: without it glab looks the IID up in the checkout's project
 ```
 
 ---
@@ -81,6 +82,10 @@ default), then prints the facts. It
 follows the MR's head pipeline. `glab ci status --wait` follows a branch, and
 misses merge request pipelines.
 
+The exit code covers the pipeline alone. An `external status check` line under
+MERGE GATES that is not `passed` is a gate the watch did not wait for: exit 0
+beside one is not green.
+
 **Read the real failure.** Job IDs are in the `FAILING / STALLED` section:
 
 ```bash
@@ -88,6 +93,10 @@ glab api "$P/jobs/<job-id>/trace" | tail -200                        # the job l
 glab api "$P/pipelines/<pipeline-id>/jobs?scope[]=failed&per_page=100"
 glab ci config compile                                               # .gitlab-ci.yml with every include: merged in
 ```
+
+A pipeline can run in another project than the MR's: a fork's pipeline runs in
+the fork. The PIPELINE section then prints `runs in: project N`. Its jobs,
+traces and retries are under `projects/<N>`, and `$P` answers 404 for them.
 
 The trace ends with cleanup sections, so the failing command sits above the
 last screen. The job's `reason` separates the classes early: `script_failure`
@@ -187,6 +196,9 @@ glab mr merge <iid> --sha "$SHA" --auto-merge=false --yes
 
 # Auto-merge: GitLab lands it when the pipeline succeeds
 glab mr merge <iid> --sha "$SHA" --yes
+
+# An MR outside the checkout's project: add -R to either, and to mr rebase and mr note
+glab mr merge <iid> -R <project URL> --sha "$SHA" --yes
 ```
 
 - **`glab mr merge` schedules by default.** With a pipeline running it sets
