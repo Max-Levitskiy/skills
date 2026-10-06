@@ -23,7 +23,7 @@ const PLANS: Record<string, object> = {
   },
 }
 
-type World = { env: Record<string, string>; runs: string[][]; commands: string[]; prompts: string[] }
+type World = { env: Record<string, string>; runs: string[][]; commands: string[]; prompts: string[]; reloadAnswer: string }
 
 const ran = (exitCode: number, stdout: string, stderr = '') => ({
   value: { exitCode, stdout, stderr, isStdoutTruncated: false, isStderrTruncated: false },
@@ -31,7 +31,7 @@ const ran = (exitCode: number, stdout: string, stderr = '') => ({
 
 // Everything beneath the plugin: the CLI, the environment, and the engine's own answers.
 function world(on: On, loadExit = 0): World {
-  const w: World = { env: { AGENT_CONFIG_ROOT: '/ac' }, runs: [], commands: [], prompts: [] }
+  const w: World = { env: { AGENT_CONFIG_ROOT: '/ac' }, runs: [], commands: [], prompts: [], reloadAnswer: 'Reloaded 4 plugins.' }
   on('env.get', ($, e) => ({ value: w.env[e.name] }))
   on('env.set', ($, e) => {
     if (e.value === undefined) delete w.env[e.name]
@@ -54,7 +54,7 @@ function world(on: On, loadExit = 0): World {
   on('ui.status', () => ({ value: undefined }))
   on('command.run', ($, e) => {
     w.commands.push(e.command)
-    return { text: '' }
+    return { text: w.reloadAnswer }
   })
   on('prompt.submit', ($, e) => {
     w.prompts.push(e.text)
@@ -119,7 +119,7 @@ test('/agent-config unlock retries, and forget clears the cache', async ($, on) 
   expect(w.env[SECRET_CACHE_VAR]).toBeUndefined()
 })
 
-test('the reload tool runs /reload-plugins after the turn and resumes the work', async ($, on) => {
+test('the reload tool runs /reload-plugins after the turn and resumes with its answer', async ($, on) => {
   const clock = mock.clock(on)
   const w = world(on)
   const answer = await $.tool.call({ tool: 'mcp__ml-agent-config__reload_plugins', name: 'demo' })
@@ -127,5 +127,17 @@ test('the reload tool runs /reload-plugins after the turn and resumes the work',
   expect(w.commands).toEqual([])
   await clock.advance(1)
   expect(w.commands).toEqual(['reload-plugins'])
-  expect(w.prompts).toEqual(['Plugins reloaded. Run `agent-config start demo` again and continue.'])
+  expect(w.prompts[0]).toStartWith('Running /reload-plugins answered: Reloaded 4 plugins.')
+  expect(w.prompts[0]).toContain('run `agent-config start demo` again and continue')
+})
+
+// Seen live in a remote session: the command refuses, and the resume prompt must say so.
+test('a refused reload reaches the model as refused', async ($, on) => {
+  const clock = mock.clock(on)
+  const w = world(on)
+  w.reloadAnswer = "/reload-plugins isn't available over a remote connection in this session."
+  await $.tool.call({ tool: 'mcp__ml-agent-config__reload_plugins', name: 'demo' })
+  await clock.advance(1)
+  expect(w.prompts[0]).toContain("isn't available over a remote connection")
+  expect(w.prompts[0]).toContain('ask the person to run /reload-plugins')
 })

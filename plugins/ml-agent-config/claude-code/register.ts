@@ -98,6 +98,15 @@ export function summary(plan: Plan, cached: readonly Unlock[]): string {
   return lines.join('\n')
 }
 
+export function resumeText(answer: string, name: string | undefined): string {
+  const next = name ? `run \`agent-config start ${name}\` again and continue` : 'continue'
+  return [
+    `Running /reload-plugins answered: ${answer.trim() || '(no output)'}`,
+    `If that says the plugins reloaded, ${next}.`,
+    'If it says it could not, nothing was reloaded: ask the person to run /reload-plugins, or to restart the session where that command is not available.',
+  ].join('\n')
+}
+
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.command.register({
@@ -167,13 +176,17 @@ export const register: Register = on => {
   })
 
   // A command cannot run inside the tool call the turn waits on, so a timer queues it for idle.
+  // The command can refuse (a remote connection does), so its answer goes into the resume prompt.
   on('tool.call', { tool: 'mcp__ml-agent-config__reload_plugins' }, async ($, e) => {
     const name = typeof e.name === 'string' && e.name ? e.name : undefined
     $.clock.after(0, async () => {
-      await $.command.run({ command: 'reload-plugins' })
-      await $.prompt.submit({
-        text: name ? `Plugins reloaded. Run \`agent-config start ${name}\` again and continue.` : 'Plugins reloaded. Continue.',
-      })
+      let answer: string
+      try {
+        answer = (await $.command.run({ command: 'reload-plugins' })).text ?? ''
+      } catch (error) {
+        answer = `it did not run: ${String(error)}`
+      }
+      await $.prompt.submit({ text: resumeText(answer, name) })
     })
     return { result: 'Reload queued. End this turn now; a prompt resumes the work after the reload.' }
   })
