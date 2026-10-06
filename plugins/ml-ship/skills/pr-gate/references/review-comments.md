@@ -1,6 +1,6 @@
 # Review comment commands
 
-IDs come from the `REVIEW THREADS AND AGENT COMMENTS` section of `pr-facts.sh`.
+IDs come from the `REVIEW THREADS AND AGENT COMMENTS` section of `pr-facts.ts`.
 A thread ID starts with `PRRT_`, a top-level comment with `IC_`, a review body
 with `PRR_`.
 
@@ -57,7 +57,8 @@ a new fact about the code. Otherwise the thread stays resolved.
 ## Top-level comments and review bodies
 
 These have no thread to resolve. Some bots put findings here, for example
-"nitpick" lists inside a review body. Answer all the findings of one comment in
+"nitpick" lists inside a review body. A status notice (a review summary, a
+preview URL) is not a finding: leave it as it is. Answer all the findings of one comment in
 one PR comment, then hide the original as resolved:
 
 ```bash
@@ -81,5 +82,5 @@ gh api graphql -f id=IC_xxx -f query='query($id:ID!){ node(id:$id){
 
 ## Check that nothing is left
 
-Re-run `pr-facts.sh`. The agent threads still listed as unresolved must be
+Re-run `pr-facts.ts`. The agent threads still listed as unresolved must be
 exactly the ones you escalated.
