@@ -1,6 +1,6 @@
 # Review comment commands
 
-IDs come from the `REVIEW THREADS AND AGENT COMMENTS` section of `pr-facts.sh`.
+IDs come from the `REVIEW THREADS AND AGENT COMMENTS` section of `pr-facts.ts`.
 A thread ID starts with `PRRT_`, a top-level comment with `IC_`, a review body
 with `PRR_`.
 
@@ -81,5 +81,5 @@ gh api graphql -f id=IC_xxx -f query='query($id:ID!){ node(id:$id){
 
 ## Check that nothing is left
 
-Re-run `pr-facts.sh`. The agent threads still listed as unresolved must be
+Re-run `pr-facts.ts`. The agent threads still listed as unresolved must be
 exactly the ones you escalated.

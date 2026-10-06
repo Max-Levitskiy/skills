@@ -1,6 +1,6 @@
 ---
 name: pr-gate
-description: Validate a pull request end to end — work out what it actually changes and who it breaks, diagnose and fix a red pipeline, triage agent review comments (fix the valid ones, reply to and resolve the rest), judge whether it is genuinely ready, and merge it when asked. Use this whenever the user points at a PR (a number, a URL, "this PR", a Renovate/Dependabot bump) and wants to know whether it is safe, why a check is failing, whether it can be merged, or wants it merged. Use it for inbound PRs you did not write, dependency bumps, and any "is this ready to merge", "can you merge it", "fix the CI on this PR", "why is this check red", "address the review comments", or "does this break anything" request. For deploying and canary-verifying your own freshly shipped PR, use land-and-deploy instead; for a line-by-line code critique with no merge decision, use code-review.
+description: Validate a GitHub pull request or GitLab merge request end to end — work out what it actually changes and who it breaks, watch its CI to a settled result, diagnose and fix a red pipeline, triage agent review comments (fix the valid ones, reply to and resolve the rest), judge whether it is genuinely ready, and merge it when asked. Use this whenever the user points at a PR or MR (a number, a URL, "this PR", "this MR", a Renovate/Dependabot bump) and wants to know whether it is safe, why a check is failing, whether it can be merged, or wants it merged. Use it for inbound PRs you did not write, dependency bumps, and any "is this ready to merge", "can you merge it", "fix the CI on this PR", "why is this check red", "address the review comments", or "does this break anything" request. For deploying and canary-verifying your own freshly shipped PR, use land-and-deploy instead; for a line-by-line code critique with no merge decision, use code-review.
 ---
 
 # PR Gate
@@ -12,6 +12,10 @@ The failure mode this skill exists to prevent is the confident wrong answer in
 either direction: blocking a safe change because a changelog sounded scary, or
 merging a breaking one because the checkmarks were green. Both come from
 reasoning about what a change *says* it does instead of what it *does*.
+
+GitHub and GitLab are both covered. "PR" below also means a GitLab merge
+request; the commands shown are GitHub's, and `references/gitlab.md` has the
+GitLab side.
 
 ## Settle which PR, before anything else
 
@@ -26,8 +30,8 @@ runs against the wrong one. Resolve it first:
   find. List the open PRs and **ask the user which one to process** — use
   `AskUserQuestion` so the choice is one keystroke rather than a typed reply.
 
-`pr-facts.sh` does this resolution for you: given no argument it falls back to
-the current branch, and when even that fails it prints the open PRs and exits
+The facts script does this resolution for you: given no argument it falls back
+to the current branch, and when even that fails it prints the open PRs and exits
 **2**, which is your cue to ask rather than proceed. Exit **3** means the repo
 has no open PRs at all — say so instead of hunting.
 
@@ -39,10 +43,17 @@ number, author and subject — since a bare number means nothing to read past.
 ## Ground yourself
 
 ```bash
-F="<this-skill-dir>/scripts/pr-facts.sh"     # installed as a plugin:
-                                             # $CLAUDE_PLUGIN_ROOT/skills/pr-gate/scripts/pr-facts.sh
-"$F" [PR]                                    # number, URL, or omit to resolve
+F="<this-skill-dir>/scripts/pr-facts.ts"     # installed as a plugin:
+                                             # $CLAUDE_PLUGIN_ROOT/skills/pr-gate/scripts/pr-facts.ts
+bun "$F" [github|gitlab] [PR]                # number, URL, or omit to resolve
 ```
+
+The script takes the forge from the URL, or from the `origin` remote. Name it
+(`github` or `gitlab`) when that guess is wrong.
+
+On GitLab, read `references/gitlab.md` right after the facts: it maps each
+term and command in this file to GitLab's, and lists what misleads in the
+facts output there.
 
 One read-only pass: what changed, whether it is mergeable, which checks are
 **required** versus merely present, what is failing, this repo's squash/trailer
@@ -142,7 +153,7 @@ everything.
 
 Review bots (Codex, Copilot, CodeRabbit, Claude and others) comment on the PR.
 Each finding is a claim, the same as a changelog line: check it against the
-code before you act on it. `pr-facts.sh` lists the unresolved review threads,
+code before you act on it. The facts script lists the unresolved review threads,
 and the top-level bot comments and review bodies. Status notices (preview URLs,
 coverage tables, usage-limit notes, review summaries) are not findings.
 
@@ -161,7 +172,7 @@ one outcome:
   the same checks as the rest of the claim.
 - Put all fixes in one push, so CI runs once. The push mechanics are in
   `references/diagnosing-ci.md`, "Fix forward on the PR branch". After the
-  push, re-run `pr-facts.sh`: the head SHA moved, and bots may add new threads.
+  push, re-run the facts script: the head SHA moved, and bots may add new threads.
   Triage new threads that are there, without waiting for a re-review.
 - Human review threads: read them and put them in the report. The reviewer
   resolves those.
@@ -174,6 +185,75 @@ report, then ask before you push or resolve anything on their PR.
 The step is done when every agent finding has an outcome, and the only agent
 threads still unresolved are the ones you escalated. Commands for reading,
 replying, resolving and hiding comments are in `references/review-comments.md`.
+
+## CI is a gate: watch it to a settled result
+
+A verdict needs a **settled** CI result on the head SHA you validated. Three
+states are not that result, and each has its own answer:
+
+- **Running or queued.** Hand the watch to a [CI watcher](#hand-the-watch-to-a-ci-watcher)
+  and keep validating. If the user needs an answer before it settles, the
+  verdict is "pending on `<check>`", with what is already proven beside it.
+- **Nothing ran.** No check on the head SHA is not green. Find the reason — a
+  workflow awaiting approval, a path filter that skipped the change, a pipeline
+  that belongs to an older commit, a repo with no CI — and put that reason in
+  the verdict.
+- **Red.** The CI watcher brings back the failing logs. Classify them with the
+  next section before you fix or report anything.
+
+**Every push resets the gate.** Your review fix, a rebase and the author's new
+commit each move the head SHA, and the result on the old one proves nothing
+about the new one. Dispatch the watcher again, and re-run the facts script
+when it settles.
+
+This gate is wider than the forge's. Required checks on GitHub, and "pipelines
+must succeed" on GitLab, are what the forge refuses to merge over. A repo that
+enforces neither still has this gate: a failing check blocks the verdict until
+it is fixed, or shown pre-existing on the base branch and reported as that.
+
+When the user authorized a merge and CI is the only thing left, auto-merge is
+the watch: the forge lands the PR on the settled result (see
+[Merging](#merging)).
+
+### Hand the watch to a CI watcher
+
+Watching a pipeline and pulling its logs is waiting and extraction: it fills
+your context and asks for no judgment. Dispatch one background subagent as
+the **CI watcher** whenever CI is running or red, and keep validating while it
+works. Run it on a **workhorse** model: the tier your harness uses for routine
+work, a step below the top-tier model. The judgment stays with you.
+
+Its brief, with the values filled in:
+
+```text
+Watch CI on <PR URL> (head <sha>) until it settles. Read only: no push, re-run,
+comment or merge.
+
+1. Run `WAIT_TIMEOUT=540 bun <F> --wait <PR>`. Exit 12 means CI is still
+   running: run it again. Exit 0 is green, 10 red, 11 nothing ran.
+2. On red, read <this-skill-dir>/references/diagnosing-ci.md (on GitLab,
+   references/gitlab.md too). For each failing check, pull the failing job's
+   log and find the command that failed and its error.
+3. Look up how the same check went in its latest runs on <base branch>.
+
+Report the settled state and the SHA it ran on. Then, for each failing check:
+its name and link, the command that failed, the error lines verbatim (30 at
+most), and its result on <base branch>. Say plainly what you could not find.
+```
+
+The watcher is done when CI has settled on that SHA and every failing check
+has its error lines and its base-branch result. Its report is a claim like any
+other: it extracts, you classify. Open the log link before a fix or a verdict
+rests on its error lines.
+
+With no subagent tool, run the watch yourself in the background:
+
+```bash
+bun "$F" --wait [PR]      # exits 0 green, 10 red, 11 nothing ran, 12 still running at WAIT_TIMEOUT
+```
+
+On GitHub the watch turns red at the first failed check; on GitLab, when the
+pipeline finishes. Exit 11 also covers a pipeline waiting on a person.
 
 ## Not every red check is this PR's fault
 
@@ -244,8 +324,9 @@ runs untrusted PRs in a sandbox built for it.
 
 Ready to merge means, concretely:
 
-- the required checks pass (advisory ones in flight are a judgment call — say
-  which you waited for and why),
+- CI has settled on the current head SHA, and the required checks pass
+  (advisory ones in flight are a judgment call — say which you waited for and
+  why),
 - no unexplained failure remains,
 - it is mergeable and not a draft,
 - any review the repo demands has happened,
@@ -281,7 +362,9 @@ on its own is not.
 If the user authorized a merge conditionally ("merge it if nothing breaks") and
 you found something that does break, that condition failed. Report and stop.
 
-Before merging, re-read `references/merge-mechanics.md`. The essentials:
+Before merging, re-read `references/merge-mechanics.md`; on GitLab, the
+Merging section of `references/gitlab.md` has the same four rules with `glab`
+flags. The essentials:
 
 - **Pin to the commit you validated.** `--match-head-commit <sha>` refuses the
   merge if the PR moved while you were working, so you can never land code you
@@ -311,3 +394,6 @@ what shipped.
 - `references/merge-mechanics.md` — required vs advisory checks, squash and
   trailer behaviour, race safety, auto-merge, post-merge verification,
   bringing a stale/conflicting branch up to date.
+- `references/gitlab.md` — the GitLab side of all of the above: term mapping,
+  what misleads in the facts output, and the `glab` commands for CI, review
+  threads and merging.

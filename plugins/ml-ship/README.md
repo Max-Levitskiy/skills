@@ -8,14 +8,15 @@ Get a change landed.
 
 | Command | What it does |
 | --- | --- |
-| `/ml-ship:pr-gate` | Validate a pull request end to end, triage what the review bots said, and merge it when you ask |
+| `/ml-ship:pr-gate` | Validate a GitHub pull request or GitLab merge request end to end, watch its CI, triage what the review bots said, and merge it when you ask |
 
 ## `/ml-ship:pr-gate`
 
-A pull request is a proposal. This turns it into a verdict backed by evidence, and acts on that verdict only when you say so.
+A pull request is a proposal. This turns it into a verdict backed by evidence, and acts on that verdict only when you say so. It works on GitHub pull requests and GitLab merge requests.
 
 - *"Is #1043 safe to merge?"*
 - *"Why is this check red?"*
+- *"Is !49 ready? The pipeline was still running."*
 - *"Renovate bumped the worker image. Does that break anything?"*
 - *"Address the review comments on this PR."*
 - *"Merge it if nothing is broken."*
@@ -36,25 +37,29 @@ A pull request is a proposal. This turns it into a verdict backed by evidence, a
 
 Fixes go in one push, so CI runs once. Human review threads are reported, never resolved for the reviewer.
 
+**Treats CI as a gate.** A verdict needs a settled result on the commit that was validated. A running pipeline is watched until it settles by a background subagent on a mid-tier model, which also pulls the failing logs so the main agent only has to judge them, a head commit with no CI run is reported as that and never as green, and every push starts the watch again. The gate holds on repos that enforce nothing: a failing check blocks the verdict until it is fixed or shown to fail on the base branch too.
+
 **Separates the three kinds of red.** A regression from this PR, a pre-existing or environmental failure, and a mess your own validation made are three different answers. The discriminating move is cheap: reproduce on the base branch. A failure that cannot be explained is reported as unexplained, even when a re-run went green.
 
 **Validates in a throwaway worktree**, so a changed dependency tree never lands in your checkout, and runs the repo's own gates rather than invented ones.
 
-**Merges only when asked.** "Validate this" and "is this safe?" are requests for a verdict. "Merge it" is authorization. The merge pins to the commit that was validated (`--match-head-commit`), uses the repo's merge method, and passes the trailers a release tool depends on, which GitHub's squash body would otherwise eat.
+**Merges only when asked.** "Validate this" and "is this safe?" are requests for a verdict. "Merge it" is authorization. The merge pins to the commit that was validated (`--match-head-commit`), uses the repo's merge method, and passes the trailers a release tool depends on, which the forge's squash message would otherwise eat.
 
 ### Requirements
 
-`gh` (authenticated), `git`, `python3`.
+`git`, `bun`, and the CLI of your forge, authenticated: `gh` for GitHub, `glab` for GitLab.
 
 ### Files
 
 | Path | What is in it |
 | --- | --- |
-| `skills/pr-gate/scripts/pr-facts.sh` | The read-only fact pass: PR, mergeability, required vs advisory checks, failures, review threads with their IDs, merge conventions |
+| `skills/pr-gate/scripts/pr-facts.ts` | The read-only fact pass, with a `github` and a `gitlab` subcommand: PR, mergeability, required vs advisory checks, failures, review threads with their IDs, merge conventions. `--wait` watches CI to a settled result first |
+| `skills/pr-gate/scripts/lib/` | The two forge implementations and what they share |
 | `skills/pr-gate/references/verifying-changes.md` | Blast-radius technique per change class: dependency bumps, migrations, CI/infra, app code |
 | `skills/pr-gate/references/diagnosing-ci.md` | Real logs out of a failed run, classifying failures, reproducing locally, fixing forward on a PR branch |
 | `skills/pr-gate/references/review-comments.md` | Reading, replying to, resolving and hiding review comments by ID |
 | `skills/pr-gate/references/merge-mechanics.md` | Required vs advisory checks, squash and trailer behaviour, race safety, auto-merge, stale branches |
+| `skills/pr-gate/references/gitlab.md` | The GitLab side: term mapping, what misleads in the facts, and the `glab` commands for CI, review threads and merging |
 
 ## License
 

@@ -150,14 +150,24 @@ permissions — that is a supply-chain hazard, not a CI bug.
 
 ## Waiting without blocking
 
-To wait for checks, let `gh` do it rather than hand-rolling a poll loop:
+To wait for checks, use the facts script's watch rather than hand-rolling a
+poll loop:
 
 ```bash
-gh pr checks <PR> --watch --fail-fast          # all checks
-gh pr checks <PR> --watch --required           # only what actually gates merge
+bun "<this-skill-dir>/scripts/pr-facts.ts" --wait <PR>    # every check; exits 0 green, 10 red, 11 nothing ran, 12 still running
+gh pr checks <PR> --watch --required                      # only what actually gates merge
 ```
 
-Run it in the background so you can keep working while it settles. When the
+Run it in the background so you can keep working while it settles, or hand it
+to the CI watcher subagent described in the main skill file. Exit 12 means
+`WAIT_TIMEOUT` seconds passed (3600 by default) with CI still running: run it
+again.
+
+Exit 11 after a few minutes means no check was ever reported on the head
+commit. That is the "nothing ran" state, not a pass: look for a run awaiting
+approval (`gh run list --branch <head-branch>`) or a path filter that skipped
+the change. `gh pr checks --required` exits at once with `no required checks
+reported` on a repo that has none; watch them all there. When the
 verdict is otherwise clean and only the waiting remains, auto-merge is usually
 the better answer than watching at all — see `merge-mechanics.md`.
 
