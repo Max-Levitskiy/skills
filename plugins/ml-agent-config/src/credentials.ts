@@ -15,6 +15,7 @@ import { readFileSync } from "fs";
 import { dirname } from "path";
 import { expandPath } from "./repo";
 import type { ConfigValue } from "./layers";
+import { SECRET_CACHE_VAR, cachedSecret } from "./secret-cache";
 
 export interface CredentialRef {
   source: "1password" | "env" | "dotenv" | "keychain" | "command";
@@ -97,6 +98,9 @@ function assertGitignored(path: string, key: string): void {
 }
 
 export function resolveCredential(reference: CredentialRef, key: string, checkout: string | null): string {
+  const sessionCached = cachedSecret(reference, process.env[SECRET_CACHE_VAR]);
+  if (sessionCached) return sessionCached;
+
   // Whitespace-only counts as unseeded: a stray `export X=` must fall through to the real source
   // rather than resolve to an empty secret.
   if (reference.cacheVar) {

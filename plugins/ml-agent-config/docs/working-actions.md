@@ -95,6 +95,10 @@ A `manual` action cannot be completed by you or by any command — the canonical
 dispatch. So on reaching a `manual` action: deliver its instruction, attempt no further actions,
 and **do not re-run `start` in this turn**. There is nothing left you can do until the human acts.
 
+One exception, on Claude Code only: when the tool `mcp__ml-agent-config__reload_plugins` is
+available, the hooks module can run `/reload-plugins` itself. `actions/reload.md` says how. The
+turn still ends there; the difference is that the work resumes without the human typing anything.
+
 ### After the batch
 
 Re-run `agent-config start <name>`. **Always the full command, never a partial re-check of the
@@ -155,6 +159,12 @@ agent-config load <name> --secrets credentials.apiKey 3>&1 1>/dev/null
   subagent must not open an interview" structural rather than a rule in prose: a subagent's whole
   surface is `load`, so it has nothing to work. Its failures are reports — exit 2 names the missing
   keys, exit 3 names the unresolvable reference and the fix, exit 4 names both schema versions.
+- On Claude Code the hooks module asks 1Password once per session. When a skill of a ready
+  component expands, it runs one `load` for every `1password` reference, so the person approves
+  once, and puts the secrets in `AGENT_CONFIG_SECRETS` on the harness process. Every later `load`
+  finds them there and never calls `op`. A declined approval is not asked again on the next
+  skill; `/agent-config unlock <name>` retries, `/agent-config forget` clears it, and the session's
+  end clears it. Elsewhere, or with the variable unset, `load` resolves from the source as before.
 
 There is no importable library. The CLI is the only interface, which is what stops a credential
 resolver spreading by copy the way v1's did.
@@ -219,3 +229,8 @@ isn't installed; tell the user and offer to install it from <link>.
 
 It resolves the binary once and invokes it once, so a legitimate exit 2 is not re-run and the
 agent never sees two diagnoses. The glob branch is the normal case on Codex.
+
+On Claude Code the hooks module (`claude-code/register.ts`) runs this `start` itself when the skill
+expands, and puts its output in an `<agent-config>` block ahead of the skill's text. The block
+says the step already ran, so the five lines stay as they are: Codex, and any harness without
+hooks modules, never sees the block and runs them.
