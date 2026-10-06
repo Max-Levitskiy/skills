@@ -32,10 +32,17 @@ function who(author: Json): { login: string; bot: boolean } {
 
 function ciState(pr: string): Ci {
   // `gh pr checks` exits non-zero for pending and failed checks alike; the JSON is the answer.
+  const p = exec("gh", ["pr", "checks", pr, "--json", "name,bucket"]);
   let checks: Json[] = [];
   try {
-    checks = JSON.parse(exec("gh", ["pr", "checks", pr, "--json", "name,bucket"]).stdout);
-  } catch {}
+    checks = JSON.parse(p.stdout);
+  } catch {
+    // Only gh's own "no checks reported" means none. An API error or an old gh is
+    // an unread state, and the next poll may read it.
+    if (!/no checks reported/.test(p.stderr)) {
+      return { phase: "running", label: `could not read the checks, retrying (${p.stderr.trim().split("\n")[0]})` };
+    }
+  }
   if (!checks.length) return { phase: "none", label: "no checks reported" };
   const count = (bucket: string) => checks.filter((c) => c.bucket === bucket).length;
   const pending = count("pending");
@@ -46,13 +53,16 @@ function ciState(pr: string): Ci {
     return { phase: "red", label: `${bad} of ${checks.length} checks failed or were canceled${rest}` };
   }
   if (pending) return { phase: "running", label: `${pending} of ${checks.length} checks pending` };
+  if (!count("pass")) return { phase: "other", label: `all ${checks.length} checks were skipped` };
   return { phase: "green", label: `all ${checks.length} checks settled, none failed` };
 }
 
-function listOpen(repo: string): string[] {
-  const open: Json[] =
+/** The open PRs as printable lines, or null when they could not be listed. */
+function listOpen(repo: string): string[] | null {
+  const open: Json[] | null =
     gh("pr", "list", "--repo", repo, "--state", "open", "--limit", "30", "--json",
-      "number,title,author,isDraft,updatedAt,headRefName,additions,deletions,changedFiles") ?? [];
+      "number,title,author,isDraft,updatedAt,headRefName,additions,deletions,changedFiles");
+  if (!open) return null;
   return open.flatMap((p) => [
     `  #${p.number}  ${p.author.login}${p.author.is_bot ? " (bot)" : ""}  +${p.additions}/-${p.deletions} ${p.changedFiles}f${p.isDraft ? "  [DRAFT]" : ""}`,
     `      ${p.title}`,
@@ -83,9 +93,9 @@ function printFailing(pr: string) {
   if (!rollup) return console.log("  (unavailable)");
   const bad = rollup.filter(
     (c) =>
-      ["FAILURE", "TIMED_OUT", "CANCELLED", "STARTUP_FAILURE"].includes(c.conclusion) ||
-      ["QUEUED", "IN_PROGRESS"].includes(c.status) ||
-      ["FAILURE", "ERROR"].includes(c.state),
+      ["FAILURE", "TIMED_OUT", "CANCELLED", "STARTUP_FAILURE", "ACTION_REQUIRED"].includes(c.conclusion) ||
+      ["QUEUED", "IN_PROGRESS", "WAITING", "PENDING", "REQUESTED"].includes(c.status) ||
+      ["FAILURE", "ERROR", "PENDING", "EXPECTED"].includes(c.state),
   );
   if (!bad.length) console.log("  (nothing failing or in flight)");
   for (const c of bad) {
@@ -109,7 +119,8 @@ function threadResolutionRequired(repo: string, base: string, rules: Json[] | nu
     } catch {}
     return known || "false";
   }
-  if (/Branch not protected|Not Found/.test(p.stdout + p.stderr)) return known || "false";
+  // A plain "Not Found" is also what a token without admin rights gets on a protected branch.
+  if (/Branch not protected/.test(p.stdout + p.stderr)) return known || "false";
   return `${known || "unknown"}, and classic branch protection is unreadable here`;
 }
 
@@ -187,13 +198,18 @@ export function github(target: string, wait: boolean): number {
   // a guess, and never "the first open one".
   let pr = target;
   if (!pr) {
-    const current = gh("pr", "view", "--json", "number")?.number;
-    if (current) {
-      pr = String(current);
+    // `gh pr view` also answers with the branch's merged or closed PR.
+    const current = gh("pr", "view", "--json", "number,state");
+    if (current?.state === "OPEN") {
+      pr = String(current.number);
       console.log(`No PR given — using #${pr}, the open PR for the current branch.`);
       console.log("(Say so if you meant a different one.)\n");
     } else {
       const open = listOpen(cwdRepo);
+      if (!open) {
+        console.error(`Could not list the open PRs of ${cwdRepo}. Pass a PR number or URL.`);
+        return 1;
+      }
       console.log("═══ NO PR SPECIFIED ═══");
       if (!open.length) {
         console.log("Nothing was passed, the current branch has no open PR, and this repo");
@@ -212,37 +228,40 @@ export function github(target: string, wait: boolean): number {
     "number,title,author,state,isDraft,baseRefName,headRefName,headRefOid,additions,deletions,changedFiles,labels,reviewDecision,url";
   const read = () => gh("pr", "view", pr, "--json", fields);
   let view = read();
+  if (!view) {
+    console.error(`Could not read PR ${pr}: it does not exist here, or gh is not authenticated.`);
+    return 1;
+  }
   let waited: Ci | null = null;
-  if (wait && view?.state === "OPEN") {
-    waited = waitForCi(() => ciState(pr));
+  if (wait) {
+    waited = view.state === "OPEN"
+      ? waitForCi(() => ciState(pr))
+      : { phase: "none", label: `the PR is ${view.state}` };
     console.log();
-    view = read();
+    view = read() ?? view;
   }
   printFacts(pr, view, cwdRepo);
   return waited ? ciExitCode(waited) : 0;
 }
 
-function printFacts(pr: string, view: Json | null, cwdRepo: string) {
-  const [, , , owner, name, , num] = (view?.url ?? "").split("/");
-  const repo = owner && name ? `${owner}/${name}` : cwdRepo;
-  const base: string = view?.baseRefName ?? "";
+function printFacts(pr: string, view: Json, cwdRepo: string) {
+  const [, , , owner, name, , num] = view.url.split("/");
+  const repo = `${owner}/${name}`;
+  const base: string = view.baseRefName;
 
   console.log("═══ PR ═══");
-  if (!view) console.log("  (could not read PR)");
-  else {
-    console.log(`#${view.number} ${view.title}`);
-    console.log(`author:    ${view.author.login}${view.author.is_bot ? " (bot)" : ""}`);
-    console.log(`state:     ${view.state}${view.isDraft ? " [DRAFT]" : ""}`);
-    console.log(`branch:    ${view.headRefName} → ${view.baseRefName}`);
-    console.log(`head sha:  ${view.headRefOid}`);
-    console.log(`size:      +${view.additions} −${view.deletions} across ${view.changedFiles} files`);
-    console.log(`labels:    ${view.labels.map((l: Json) => l.name).join(", ") || "none"}`);
-    console.log(`review:    ${view.reviewDecision || "none required"}`);
-  }
+  console.log(`#${view.number} ${view.title}`);
+  console.log(`author:    ${view.author.login}${view.author.is_bot ? " (bot)" : ""}`);
+  console.log(`state:     ${view.state}${view.isDraft ? " [DRAFT]" : ""}`);
+  console.log(`branch:    ${view.headRefName} → ${view.baseRefName}`);
+  console.log(`head sha:  ${view.headRefOid}`);
+  console.log(`size:      +${view.additions} −${view.deletions} across ${view.changedFiles} files`);
+  console.log(`labels:    ${view.labels.map((l: Json) => l.name).join(", ") || "none"}`);
+  console.log(`review:    ${view.reviewDecision || "none required"}`);
   console.log(`you:       ${text("gh", ["api", "user", "--jq", ".login"]) || "?"}`);
 
   section("MERGEABILITY");
-  if (view?.state !== "OPEN") console.log(`PR is ${view?.state ?? "unreadable"} — mergeability does not apply.`);
+  if (view.state !== "OPEN") console.log(`PR is ${view.state} — mergeability does not apply.`);
   else {
     // mergeable/mergeStateStatus are computed lazily by GitHub. The first read after
     // a push routinely returns UNKNOWN; re-poll rather than reporting "unmergeable".
@@ -273,7 +292,7 @@ function printFacts(pr: string, view: Json | null, cwdRepo: string) {
       .flatMap((r) => r.parameters.required_status_checks.map((c: Json) => c.context));
     if (!required.length) console.log("  (none — no status check gates merge on this branch)");
     for (const context of required) console.log(`  ${context}`);
-    console.log(`  other rules: ${rules.map((r) => r.type).join(", ")}`);
+    console.log(`  other rules: ${rules.map((r) => r.type).join(", ") || "none"}`);
   }
 
   printChecks(pr);

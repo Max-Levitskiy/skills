@@ -124,6 +124,8 @@ exclude the work from a release.
 
 After pushing, the PR head moves. Any validation you did against the old SHA is
 now stale: re-check, and never carry a `--match-head-commit` value across a push.
+When the user's own checkout is on the PR branch, tell them it is now behind
+the remote.
 
 ---
 

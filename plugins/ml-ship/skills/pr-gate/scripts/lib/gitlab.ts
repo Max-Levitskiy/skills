@@ -44,8 +44,12 @@ query($path:ID!,$iid:String!){ project(fullPath:$path){ mergeRequest(iid:$iid){
       userPermissions{ resolveNote }
       position{ filePath newLine oldLine diffRefs{ headSha } } } } } } } } }`;
 
-/** Review bots on GitLab are often plain accounts, so the `bot` flag alone misses them. */
-const AGENT_NAME = /\[bot\]$|(^|[-_.])bot([-_.]|$)|^(gitlab-?duo|duo-|coderabbit|codex|copilot|claude|renovate|dependabot)/i;
+/**
+ * Review bots on GitLab are often plain accounts, so the `bot` flag alone misses them.
+ * Whole names only: an agent thread gets resolved without asking, so `claude.dupont`
+ * must stay human. AGENT_USERS names the rest.
+ */
+const AGENT_NAME = /\[bot\]$|(^|[-_.])bot([-_.]|$)|^(gitlab-?duo|coderabbit(ai)?|renovate|dependabot)$/i;
 const EXTRA_AGENTS = (process.env.AGENT_USERS ?? "").split(",").map((u) => u.trim().toLowerCase()).filter(Boolean);
 
 function isAgent(author: Json): boolean {
@@ -53,7 +57,8 @@ function isAgent(author: Json): boolean {
   return Boolean(author?.bot || AGENT_NAME.test(name) || EXTRA_AGENTS.includes(name.toLowerCase()));
 }
 
-const flag = (v: unknown) => (v === null || v === undefined ? "unset" : String(v));
+/** A setting the token cannot read is absent from the response; one never set is null. */
+const flag = (v: unknown) => (v === undefined ? "unknown" : v === null ? "unset" : String(v));
 const lastSegment = (gid: string) => gid.slice(gid.lastIndexOf("/") + 1);
 
 /** The head pipeline's state, or `none` when nothing ran on the head commit. */
@@ -121,6 +126,10 @@ export function gitlab(target: string, wait: boolean): number {
       : [];
     if (found.length) {
       iid = String(found[0].iid);
+      if (found.length > 1) {
+        const others = found.slice(1).map((m) => `!${m.iid}`).join(", ");
+        console.log(`${found.length} open MRs have '${branch}' as their source — using !${iid}, the newest. Also open: ${others}.\n`);
+      }
       if (!mr) {
         console.log(`No MR given — using !${iid}, the open MR for the current branch.`);
         console.log("(Say so if you meant a different one.)\n");
@@ -159,8 +168,10 @@ export function gitlab(target: string, wait: boolean): number {
   }
 
   let waited: Ci | null = null;
-  if (wait && view.state === "opened") {
-    waited = waitForCi(() => ciState((view = read() ?? view)));
+  if (wait) {
+    waited = view.state === "opened"
+      ? waitForCi(() => ciState((view = read() ?? view)))
+      : { phase: "none", label: `the MR is ${view.state}` };
     console.log();
   }
   const sha: string = view.sha ?? "";
@@ -220,7 +231,10 @@ export function gitlab(target: string, wait: boolean): number {
   for (const c of (api(`${MR}/status_checks`) ?? []) as Json[]) {
     console.log(`external status check:        ${c.name} [${c.status}]`);
   }
-  if (!mustPass) {
+  if (mustPass === undefined) {
+    console.log("\n  This token cannot read the project's merge settings, so what GitLab enforces");
+    console.log("  here is unknown. The pipeline below gates readiness either way.");
+  } else if (!mustPass) {
     console.log("\n  GitLab will merge this over a red or missing pipeline. That is the project's");
     console.log("  setting, not a verdict: the pipeline below still gates readiness.");
   }
@@ -235,7 +249,9 @@ export function gitlab(target: string, wait: boolean): number {
     else if (ciState(view).phase === "none") {
       console.log(`ran on:        ${ranOn} — NOT the MR head ${sha.slice(0, 12)}. CI has not run on the current head.`);
     } else console.log(`ran on:        merge result ${ranOn} (${hp.ref})`);
-    if (hp.project_id && hp.project_id !== project.id) console.log(`runs in:       project ${hp.project_id}, not the MR's — read its jobs under projects/${hp.project_id}`);
+    if (hp.project_id && hp.project_id !== project.id) {
+      console.log(`runs in:       project ${hp.project_id}, not the MR's — read its jobs under projects/${hp.project_id}`);
+    }
     if (hp.yaml_errors) console.log(`yaml errors:   ${hp.yaml_errors}`);
   }
   const basePipelines: Json[] = api(`${P}/pipelines?ref=${encodeURIComponent(view.target_branch)}&per_page=5`) ?? [];
@@ -312,8 +328,9 @@ export function gitlab(target: string, wait: boolean): number {
 
   section("PROJECT MERGE CONVENTIONS");
   const template = (t: string | null) => (t ? JSON.stringify(t) : "(GitLab default)");
-  console.log(`merge method:         ${project.merge_method} — ${MERGE_METHOD_NOTES[project.merge_method] ?? ""}`);
-  console.log(`squash:               project ${project.squash_option}; this MR ${Boolean(view.squash)}`);
+  const method = project.merge_method;
+  console.log(`merge method:         ${method ? `${method} — ${MERGE_METHOD_NOTES[method] ?? ""}` : "unknown"}`);
+  console.log(`squash:               project ${flag(project.squash_option)}; this MR ${Boolean(view.squash)}`);
   console.log(`delete source branch: project default ${flag(project.remove_source_branch_after_merge)}; ` +
     `this MR ${Boolean(view.force_remove_source_branch || view.should_remove_source_branch)}`);
   console.log(`squash commit template: ${template(project.squash_commit_template)}`);

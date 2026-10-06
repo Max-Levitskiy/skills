@@ -57,7 +57,8 @@ a new fact about the code. Otherwise the thread stays resolved.
 ## Top-level comments and review bodies
 
 These have no thread to resolve. Some bots put findings here, for example
-"nitpick" lists inside a review body. Answer all the findings of one comment in
+"nitpick" lists inside a review body. A status notice (a review summary, a
+preview URL) is not a finding: leave it as it is. Answer all the findings of one comment in
 one PR comment, then hide the original as resolved:
 
 ```bash

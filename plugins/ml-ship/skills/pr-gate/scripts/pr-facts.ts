@@ -31,9 +31,11 @@ function usage(): never {
 function detectForge(target: string): Forge {
   if (target.includes("/merge_requests/") || target.startsWith("!")) return "gitlab";
   if (target.includes("/pull/")) return "github";
+  // The host alone: a repo named github-mirror on a GitLab host is still GitLab's.
   const remote = text("git", ["remote", "get-url", "origin"]);
-  if (/github/i.test(remote)) return "github";
-  if (/gitlab/i.test(remote)) return "gitlab";
+  const host = /^(?:[a-z+]+:\/\/)?(?:[^@/]+@)?([^:/]+)/i.exec(remote)?.[1] ?? "";
+  if (/github/i.test(host)) return "github";
+  if (/gitlab/i.test(host)) return "gitlab";
   // A self-hosted forge under its own domain: ask each CLI whether the checkout is its.
   if (exec("gh", ["repo", "view", "--json", "name"]).status === 0) return "github";
   if (exec("glab", ["api", "projects/:fullpath"]).status === 0) return "gitlab";

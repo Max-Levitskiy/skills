@@ -164,7 +164,7 @@ one outcome:
 |---|---|---|
 | Fix | The claim is true and inside this PR's scope, big or small | Fix it, reply `Fixed in <sha>`, resolve |
 | Decline | The claim is false against the code, the code already handles it, or it goes against the repo's conventions | Reply with the reason and the evidence (`file:line`, a test, the convention doc), resolve |
-| Escalate | True, but outside this PR, or it needs a product or design decision | Leave it open, put it in the report |
+| Escalate | True, but outside this PR, or it needs a product or design decision | Reply with what you found, leave it open, put it in the report |
 
 - An outdated thread means its lines changed, not that the concern was fixed.
   Check the concern against the current head.
@@ -176,6 +176,10 @@ one outcome:
   Triage new threads that are there, without waiting for a re-review.
 - Human review threads: read them and put them in the report. The reviewer
   resolves those.
+- A review can still be in flight. A bot's "reviewing" notice with no findings
+  under it, or a head pushed minutes ago in a repo where bots review, means
+  the findings have not arrived. Wait for them when the user asked about
+  readiness; otherwise say in the report that the review had not finished.
 
 The user asked for this triage on every run, so fixing and resolving agent
 findings needs no extra permission, unlike a rebase or a merge. One exception:
@@ -194,10 +198,14 @@ states are not that result, and each has its own answer:
 - **Running or queued.** Hand the watch to a [CI watcher](#hand-the-watch-to-a-ci-watcher)
   and keep validating. If the user needs an answer before it settles, the
   verdict is "pending on `<check>`", with what is already proven beside it.
-- **Nothing ran.** No check on the head SHA is not green. Find the reason — a
-  workflow awaiting approval, a path filter that skipped the change, a pipeline
-  that belongs to an older commit, a repo with no CI — and put that reason in
-  the verdict.
+- **Nothing ran.** No check on the head SHA is not green. On a head pushed
+  minutes ago, run the watch first: its three-minute grace separates checks
+  that have not registered yet from checks that are never coming. Then find the
+  reason — a workflow awaiting approval, a path filter that skipped the change,
+  a pipeline that belongs to an older commit, a repo with no CI — and put that
+  reason in the verdict. A repo shown to have no CI stays that way for the rest
+  of the run: later pushes skip the watch, and the gates you ran yourself are
+  the CI evidence.
 - **Red.** The CI watcher brings back the failing logs. Classify them with the
   next section before you fix or report anything.
 
@@ -229,8 +237,10 @@ Its brief, with the values filled in:
 Watch CI on <PR URL> (head <sha>) until it settles. Read only: no push, re-run,
 comment or merge.
 
-1. Run `WAIT_TIMEOUT=540 bun <F> --wait <PR>`. Exit 12 means CI is still
-   running: run it again. Exit 0 is green, 10 red, 11 nothing ran.
+1. Run `WAIT_TIMEOUT=540 bun <F> --wait <PR>`. Exit 0 is green, 10 red, 11
+   nothing ran. Exit 12 means CI is still running: run it again, up to 6 times,
+   then report which checks are still pending and how old they are. On any
+   other exit, report the output as it is.
 2. On red, read <this-skill-dir>/references/diagnosing-ci.md (on GitLab,
    references/gitlab.md too). For each failing check, pull the failing job's
    log and find the command that failed and its error.
@@ -284,6 +294,7 @@ When validation needs an install, a build or a test run, do it in a throwaway
 worktree rather than the user's working tree:
 
 ```bash
+HEAD_BRANCH=<the head of the "branch:" line in the facts>
 WT=$(mktemp -d)/pr-check
 git fetch origin "$HEAD_BRANCH" --force -q
 git worktree add -q --detach "$WT" "origin/$HEAD_BRANCH"
