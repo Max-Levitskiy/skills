@@ -264,12 +264,12 @@ async function save($: EngineInterface, layer: string, path: string, value: Json
   }
   const detail = await describe($, component)
   const ready = (await start($, component.name, component.from))?.ready ?? null
-  await update($, panel, latest => ({
-    ...latest,
-    ...detail,
-    components: latest.components.map(one => (one.name === component.name ? { ...one, ready } : one)),
-    message: failed ? `Not saved: ${failed}` : detail.message,
-  }))
+  await update($, panel, latest => {
+    const components = latest.components.map(one => (one.name === component.name ? { ...one, ready } : one))
+    // Another component opened while this one saved: its settings are not this one's.
+    if (latest.selected !== component.name) return { ...latest, components }
+    return { ...latest, ...detail, components, message: failed ? `Not saved: ${failed}` : detail.message }
+  })
   return failed
 }
 
@@ -302,10 +302,15 @@ async function chooseSource($: EngineInterface, source: string): Promise<void> {
 
 // Saved, the screens it took close: the edit, and the level list when the value went elsewhere.
 async function saveHere($: EngineInterface, value: Json | undefined, layer?: string, close = 1): Promise<void> {
-  const edit = (await read($, panel)).edit
+  const now = await read($, panel)
+  const edit = now.edit
   if (!edit) return
   const at = layer ?? edit.layer
-  if (!(await save($, at, edit.path, value))) await back($, close, { message: savedAt(edit.path, at, value) })
+  if (await save($, at, edit.path, value)) return
+  // The person went elsewhere while it saved: the screen open now is not this save's to close.
+  const later = await read($, panel)
+  const isSameScreen = later.selected === now.selected && later.edit?.path === edit.path && later.stack.length === now.stack.length
+  if (isSameScreen) await back($, close, { message: savedAt(edit.path, at, value) })
 }
 
 // A plain value is read as its type; a credential keeps its other fields (an account, a cacheVar)
@@ -333,7 +338,11 @@ async function saveEdit($: EngineInterface, layer?: string, close = 1): Promise<
   const base = isReference(before) && before.source === edit.source ? before : { source: edit.source }
   const value: Stored = { ...base, source: edit.source }
   for (const field of fields) value[field.name] = edit.draft[field.name]!.trim()
-  if (edit.source === '1password' && edit.draft.account) value.account = edit.draft.account
+  // A 1Password account is the draft's, as editAt read it: a picked reference sets or drops it.
+  if (edit.source === '1password') {
+    delete value.account
+    if (edit.draft.account) value.account = edit.draft.account
+  }
   return saveHere($, value, at, close)
 }
 
@@ -414,11 +423,17 @@ async function pickField($: EngineInterface, picked: string): Promise<void> {
     edit: latest.edit && {
       ...latest.edit,
       source: '1password',
-      draft: { ...latest.edit.draft, ref: reference, ...(account ? { account } : {}) },
+      // One account: none is named, and one the old reference named is dropped.
+      draft: { ...withoutAccount(latest.edit.draft), ref: reference, ...(account ? { account } : {}) },
       isDirty: true,
     },
   }))
   await back($, 2, { message: `Picked ${reference}. Press Save here to keep it.`, focus: 'save' })
+}
+
+function withoutAccount(draft: Record<string, string>): Record<string, string> {
+  const { account: _, ...rest } = draft
+  return rest
 }
 
 /** The presses, bound to this engine, for the screens to call. */

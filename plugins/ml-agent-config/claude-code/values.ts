@@ -57,11 +57,16 @@ export function showValue(value: Json, names: Names = {}): string {
     .join(', ')
 }
 
+/** A list of text, typed as `a, b, c`. Any other list is typed as JSON, so its types survive. */
+function isTextList(value: Json): value is string[] {
+  return Array.isArray(value) && value.every(one => typeof one === 'string')
+}
+
 // The edit field's starting text, in the form parseText reads back.
 export function editText(value: Json): string {
   if (value === null) return ''
   if (typeof value === 'boolean') return value ? 'on' : 'off'
-  if (Array.isArray(value)) return value.map(String).join(', ')
+  if (isTextList(value)) return value.join(', ')
   if (typeof value === 'object') return JSON.stringify(value)
   return String(value)
 }
@@ -80,12 +85,12 @@ export function parseText(text: string, like: Json): { value?: Json; error?: str
     if (/^(off|false|no)$/i.test(trimmed)) return { value: false }
     return { error: 'type on or off' }
   }
-  if (Array.isArray(like)) return { value: trimmed.split(',').map(part => part.trim()).filter(Boolean) }
+  if (isTextList(like)) return { value: trimmed.split(',').map(part => part.trim()).filter(Boolean) }
   if (like !== null && typeof like === 'object') {
     try {
       return { value: JSON.parse(trimmed) as Json }
     } catch {
-      return { error: 'this key holds an object: type it as JSON' }
+      return { error: `this key holds ${Array.isArray(like) ? 'a list' : 'an object'}: type it as JSON` }
     }
   }
   return { value: trimmed }

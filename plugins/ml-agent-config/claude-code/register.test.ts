@@ -46,6 +46,8 @@ type World = {
   behind: string[]
   /** The layer file is there but cannot be read. */
   unreadable: boolean
+  /** 1Password lists one account instead of two. */
+  oneAccount: boolean
   /** What every `start` prints instead of a plan: exit 2 for a broken layer file, or not JSON at all. */
   broken: 'invalid' | 'garbled' | null
 }
@@ -58,7 +60,7 @@ const ran = (exitCode: number, stdout: string, stderr = '') => ({
 
 // Everything beneath the plugin: the CLI, the environment, and the engine's own answers.
 function world(on: On, loadExit = 0): World {
-  const w: World = { env: { AGENT_CONFIG_ROOT: '/ac', HOME: '/home/me' }, runs: [], commands: [], prompts: [], reloadAnswer: 'Reloaded 4 plugins.', banner: true, layer: undefined, writes: [], layers: ['global', 'repo', 'user-repo', 'local'], apiKey: REF, subdomain: { value: 'acme', source: 'repo', levels: { repo: 'acme' } }, store: {}, behind: [], unreadable: false, broken: null }
+  const w: World = { env: { AGENT_CONFIG_ROOT: '/ac', HOME: '/home/me' }, runs: [], commands: [], prompts: [], reloadAnswer: 'Reloaded 4 plugins.', banner: true, layer: undefined, writes: [], layers: ['global', 'repo', 'user-repo', 'local'], apiKey: REF, subdomain: { value: 'acme', source: 'repo', levels: { repo: 'acme' } }, store: {}, behind: [], unreadable: false, oneAccount: false, broken: null }
   on('store.get', ($, e) => ({ value: w.store[e.key] }))
   on('store.set', ($, e) => {
     w.store[e.key] = e.value
@@ -89,6 +91,7 @@ function world(on: On, loadExit = 0): World {
           { id: 'IH', title: 'Goohost activity', category: 'PASSWORD', vault: { id: 'V1', name: 'Private' }, account: 'A1' },
         ]
         const accounts = [{ id: 'A1', label: 'me@home', short: 'home' }, { id: 'A2', label: 'me@work', short: 'work' }]
+        if (w.oneAccount) return ran(0, JSON.stringify({ accounts: accounts.slice(0, 1), items, problems: [] }))
         return ran(0, JSON.stringify({ accounts, items: [...items, ...github], problems: [] }))
       }
       return ran(0, JSON.stringify({ fields: [{ id: 'credential', label: 'credential', section: null, type: 'CONCEALED', reference: 'op://V2/IG/credential' }] }))
@@ -585,6 +588,22 @@ test('Pick from 1Password lists every item once, filters and searches it, and fi
   await ui.unmount()
 })
 
+test('with one 1Password account, a picked reference drops the account the old one named', async ($, on) => {
+  const w = world(on)
+  w.layer = '{}'
+  w.oneAccount = true
+  w.apiKey = { ...REF, account: 'A9' }
+  const ui = await open($)
+  await ui.press({ key: 'component:demo' })
+  await ui.press({ key: 'setting:credentials.apiKey' })
+  await ui.press({ key: 'pick' })
+  await ui.press({ key: 'item:I0' })
+  await ui.press({ key: 'ref:op://V2/IG/credential' })
+  await ui.press({ key: 'save' })
+  expect(JSON.parse(w.writes.at(-1)!).credentials.apiKey.account).toBeUndefined()
+  await ui.unmount()
+})
+
 test('values read and write as plain text, typed by the current value', () => {
   expect(showValue({ source: 'keychain', service: 'app', account: 'me' })).toBe('Keychain: app / me')
   expect(showValue(['a', 'b'])).toBe('a, b')
@@ -595,6 +614,10 @@ test('values read and write as plain text, typed by the current value', () => {
   expect(parseText('many', 7).error).toBe('many is not a number')
   expect(parseText('off', true)).toEqual({ value: false })
   expect(parseText('a, b,, c', [])).toEqual({ value: ['a', 'b', 'c'] })
+  // A list of anything but text is typed as JSON, so a save keeps its types.
+  for (const list of [[1, true], [{ host: 'a', port: 1 }]]) {
+    expect(parseText(editText(list), list)).toEqual({ value: list })
+  }
   expect(parseText('true', 'text')).toEqual({ value: 'true' })
   expect(parseText('  ', 'text')).toEqual({})
 })
