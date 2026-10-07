@@ -81,6 +81,8 @@ export type Panel = {
   onePassword: OnePassword
   /** The first row each list shows, by the list's name; ↑ more and ↓ more move it a page. */
   pages: Record<string, number>
+  /** 1Password vault and item names by id, from the last listing, so a reference reads by name. */
+  names: Record<string, string>
   message: string | null
   isLoading: boolean
 }

@@ -6,11 +6,11 @@ import type { Json } from '../../types'
 import { editing, layerNames, selected } from '../panel'
 import { levelStack } from '../ui/levels'
 import { note, row, screen } from '../ui/screen'
-import { lastPart, showValue } from '../values'
+import { lastPart, showValue, type Names } from '../values'
 import type { Ctx } from './context'
 
-function levelValue(value: Json | undefined): string {
-  return value === undefined ? 'not set' : value === null ? 'blocked' : showValue(value)
+function levelValue(value: Json | undefined, names: Names): string {
+  return value === undefined ? 'not set' : value === null ? 'blocked' : showValue(value, names)
 }
 
 export function levels({ now, ui, act }: Ctx): RenderElement {
@@ -23,12 +23,12 @@ export function levels({ now, ui, act }: Ctx): RenderElement {
     ...levelStack(setting, layerNames(now)).map(level =>
       row(ui, {
         key: `level:${level.layer}`,
-        label: `${level.layer === chosen ? '◉' : '○'} ${level.label}  ${levelValue(level.value)}${level.isWinner ? '  wins' : ''}`,
+        label: `${level.layer === chosen ? '◉' : '○'} ${level.label}  ${levelValue(level.value, now.names)}${level.isWinner ? '  wins' : ''}`,
         detail: level.hint,
         onPress: () => act.chooseLevel(level.layer),
       }),
     ),
-    note(ui, `  Default  ${setting.default === null ? 'none' : showValue(setting.default)}${setting.source === 'default' ? '  wins' : ''}`),
+    note(ui, `  Default  ${setting.default === null ? 'none' : showValue(setting.default, now.names)}${setting.source === 'default' ? '  wins' : ''}`),
     layerNames(now).length === 1 && note(ui, 'Outside a repository only Everywhere is offered.'),
   ])
 }

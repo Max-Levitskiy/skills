@@ -7,19 +7,19 @@ import type { Setting } from '../../types'
 import { layerNames, selected } from '../panel'
 import { LEVELS, levelLabel, under } from '../ui/levels'
 import { note, row, screen } from '../ui/screen'
-import { showValue } from '../values'
+import { showValue, type Names } from '../values'
 import type { Ctx } from './context'
 
 /** The value line: in effect and from where, or what one level sets. */
-export function valueLine(setting: Setting, show: string, layers: readonly string[]): string {
+export function valueLine(setting: Setting, show: string, layers: readonly string[], names: Names = {}): string {
   if (show !== 'effective') {
     const here = setting.levels[show]
-    return here === undefined ? 'not set here' : here === null ? 'blocked here' : showValue(here)
+    return here === undefined ? 'not set here' : here === null ? 'blocked here' : showValue(here, names)
   }
   if (setting.value === null) return setting.required ? 'missing' : 'not set'
   const below = setting.source && setting.source !== 'default' ? under(setting, setting.source, layers) : undefined
-  const overrides = below && showValue(below.value) !== showValue(setting.value) ? `, overrides ${showValue(below.value)}` : ''
-  return `${showValue(setting.value)} · ${levelLabel(setting.source)}${overrides}`
+  const overrides = below && showValue(below.value, names) !== showValue(setting.value, names) ? `, overrides ${showValue(below.value, names)}` : ''
+  return `${showValue(setting.value, names)} · ${levelLabel(setting.source)}${overrides}`
 }
 
 export function settings({ now, ui, Input, act }: Ctx): RenderElement {
@@ -30,7 +30,7 @@ export function settings({ now, ui, Input, act }: Ctx): RenderElement {
     row(ui, {
       key: `setting:${setting.path}`,
       label: `› ${setting.path}`,
-      detail: valueLine(setting, now.show, layers),
+      detail: valueLine(setting, now.show, layers, now.names),
       color: setting.value === null && setting.required && now.show === 'effective' ? 'red' : undefined,
       onPress: () => act.openEdit(setting),
     })

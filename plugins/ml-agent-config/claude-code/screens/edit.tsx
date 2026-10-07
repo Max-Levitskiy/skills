@@ -1,10 +1,10 @@
-// One setting at one level. The level sits on the title line, the file it writes under it; the
-// value is typed (or for a credential, its source picked and filled in). Save, Remove and Block act
-// on that level alone; Save to… writes the value at another.
+// One setting at one level. The level sits on the title line; the value is typed (or for a
+// credential, its source picked and filled in). Save, Remove and Block act on that level alone;
+// Save to… writes the value at another.
 
 import type { RenderElement } from 'claude-code'
 
-import { editing, fileOf, layerNames, selected } from '../panel'
+import { editing, layerNames, selected } from '../panel'
 import { LEVELS, ORDER, effect, openAbove, under } from '../ui/levels'
 import { note, row, screen } from '../ui/screen'
 import { SOURCES, isBoolean, showValue } from '../values'
@@ -25,9 +25,9 @@ export function edit({ now, ui, Input, act }: Ctx): RenderElement {
   // On or off is picked like any value, and saved with Save here or Save to….
   const isOn = draft.text === 'on'
 
+  const said = effect(setting, draft.layer, layers, now.names)
   // The level sits on the title line, at the right; a press opens the level list. With one level
   // there is nothing to pick, so it is only named.
-  const said = effect(setting, draft.layer, layers)
   const others = ORDER.filter(layer => layers.includes(layer) && layer !== draft.layer)
   const tools =
     others.length > 0
@@ -39,13 +39,14 @@ export function edit({ now, ui, Input, act }: Ctx): RenderElement {
         ]
 
   return screen(ui, { path, onBack: () => act.back(), tools, message: now.message }, [
-    note(ui, setting.description),
-    <Box key="where" flexDirection="column" marginBottom={1}>
-      <Text dimColor>{fileOf(now, draft.layer)}</Text>
-      {/* Only when it says more than the level's name: an override, a block, what saving would hide. */}
-      {said ? <Text dimColor>{said}</Text> : null}
-      {others.length === 0 && <Text dimColor>The only level outside a git repo. Open Claude Code in one for the project levels.</Text>}
-    </Box>,
+    // A line only when it says something: an override, a block, what saving would hide, or why
+    // there is only one level.
+    (said || others.length === 0) && (
+      <Box key="where" flexDirection="column" marginBottom={1}>
+        {said ? <Text dimColor>{said}</Text> : null}
+        {others.length === 0 && <Text dimColor>The only level outside a git repo. Open Claude Code in one for the project levels.</Text>}
+      </Box>
+    ),
     isBoolean(setting) && (
       <Box key="booleans">
         <Text>Value </Text>
@@ -102,7 +103,7 @@ export function edit({ now, ui, Input, act }: Ctx): RenderElement {
     here !== undefined &&
       row(ui, {
         key: 'remove',
-        label: below ? `› Remove here (back to ${showValue(below.value)})` : '› Remove here',
+        label: below ? `› Remove here (back to ${showValue(below.value, now.names)})` : '› Remove here',
         onPress: () => act.removeHere(),
       }),
     here !== null &&

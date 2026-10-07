@@ -2,7 +2,7 @@
 // in that order: a higher level overrides a lower one key by key, and the default sits under all.
 
 import type { Json, Setting } from '../../types'
-import { showValue } from '../values'
+import { showValue, type Names } from '../values'
 
 /** Each level's name, its chip, a hint, who a value there reaches, and how an override there is offered. */
 export const LEVELS: Record<string, { label: string; short: string; hint: string; audience: string; offer: string }> = {
@@ -59,7 +59,8 @@ export function over(setting: Setting, layer: string, layers: readonly string[])
  * What a value at this level does, in one sentence: who it reaches and what it overrides. Empty
  * when it would only repeat the level: the value in effect here, over nothing different.
  */
-export function effect(setting: Setting, layer: string, layers: readonly string[]): string {
+export function effect(setting: Setting, layer: string, layers: readonly string[], names: Names = {}): string {
+  const show = (value: Json) => showValue(value, names)
   const here = setting.levels[layer]
   const audience = LEVELS[layer]?.audience ?? ''
   const above = over(setting, layer, layers)
@@ -67,15 +68,15 @@ export function effect(setting: Setting, layer: string, layers: readonly string[
   if (above) {
     return here === undefined
       ? `${above} overrides this level, so a value saved here does not apply.`
-      : `Holds ${showValue(here)}, but ${above} overrides it.`
+      : `Holds ${show(here)}, but ${above} overrides it.`
   }
   const below = under(setting, layer, layers)
   if (here === undefined) {
-    return below ? `Saving here overrides ${below.label} (${showValue(below.value)}) ${audience}.` : `Saving here sets it ${audience}.`
+    return below ? `Saving here overrides ${below.label} (${show(below.value)}) ${audience}.` : `Saving here sets it ${audience}.`
   }
   // Over a lower value only when it differs: "on, over on from the default" says nothing.
-  const differs = below && showValue(below.value) !== showValue(here)
-  return differs ? `Holds ${showValue(here)}, in effect ${audience}, over ${showValue(below.value)} from ${below.label}.` : ''
+  const differs = below && show(below.value) !== show(here)
+  return differs ? `Holds ${show(here)}, in effect ${audience}, over ${show(below.value)} from ${below.label}.` : ''
 }
 
 /** The levels above the one in effect that set nothing yet: where an override can be added. */

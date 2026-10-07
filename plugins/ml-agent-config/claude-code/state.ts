@@ -28,6 +28,7 @@ export const EMPTY_PANEL: Panel = {
   edit: null,
   onePassword: NO_ONE_PASSWORD,
   pages: {},
+  names: {},
   message: null,
   isLoading: false,
 }

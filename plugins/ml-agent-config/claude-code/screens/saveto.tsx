@@ -6,11 +6,11 @@ import type { Json } from '../../types'
 import { editing, fileOf, layerNames, selected } from '../panel'
 import { LEVELS, levelStack } from '../ui/levels'
 import { note, row, screen } from '../ui/screen'
-import { lastPart, showValue } from '../values'
+import { lastPart, showValue, type Names } from '../values'
 import type { Ctx } from './context'
 
-function holds(value: Json | undefined): string {
-  return value === undefined ? 'not set there now' : value === null ? 'blocked there now' : `replaces ${showValue(value)}`
+function holds(value: Json | undefined, names: Names): string {
+  return value === undefined ? 'not set there now' : value === null ? 'blocked there now' : `replaces ${showValue(value, names)}`
 }
 
 export function saveTo({ now, ui, act }: Ctx): RenderElement {
@@ -26,7 +26,7 @@ export function saveTo({ now, ui, act }: Ctx): RenderElement {
         row(ui, {
           key: `saveto:${level.layer}`,
           label: `› ${LEVELS[level.layer]!.offer}`,
-          detail: `${fileOf(now, level.layer)} · ${holds(level.value)}`,
+          detail: `${fileOf(now, level.layer)} · ${holds(level.value, now.names)}`,
           onPress: () => act.saveTo(level.layer),
         }),
       ),

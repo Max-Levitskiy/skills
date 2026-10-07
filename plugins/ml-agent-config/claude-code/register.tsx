@@ -191,10 +191,20 @@ async function describe($: EngineInterface, component: Component): Promise<Pick<
   return { ...readDescribe(ran.stdout, await $.env.get('HOME')), message: null }
 }
 
+// 1Password's vault and item names by id: no secret, kept across sessions so an id-only reference
+// reads by name without unlocking 1Password. Filled each time the item list is loaded.
+const NAMES = '1password-names'
+
+async function storedNames($: EngineInterface): Promise<Record<string, string>> {
+  const stored = await $.store.get(NAMES)
+  return stored && typeof stored === 'object' ? (stored as Record<string, string>) : {}
+}
+
 async function openPanel($: EngineInterface): Promise<void> {
   const kept = (await read($, panel)).onePassword ?? NO_ONE_PASSWORD
+  const names = await storedNames($)
   // The 1Password list stays for the session; everything else starts over.
-  await update($, panel, () => ({ ...EMPTY_PANEL, onePassword: { ...kept, isLoading: false }, isLoading: true }))
+  await update($, panel, () => ({ ...EMPTY_PANEL, onePassword: { ...kept, isLoading: false }, names, isLoading: true }))
   await $.ui.open({ id: PANE, title: 'agent-config', focus: true, closeOnEscape: true, rows: 40 })
   const list = await components($)
   await update($, panel, now => ({ ...now, components: list, isLoading: false }))
@@ -317,6 +327,13 @@ async function loadOnePassword($: EngineInterface): Promise<void> {
       isLoaded: true,
       isLoading: false,
     })
+    const names = { ...(await storedNames($)) }
+    for (const item of got.items) {
+      names[item.vault.id] = item.vault.name
+      names[item.id] = item.title
+    }
+    await $.store.set(NAMES, names)
+    await update($, panel, now => ({ ...now, names }))
   } catch (error) {
     await setOnePassword($, { isLoading: false, error: (error as Error).message })
   }

@@ -31,18 +31,29 @@ export function isReference(value: Json | undefined): value is Stored {
   return value !== undefined && value !== null && typeof value === 'object' && !Array.isArray(value) && typeof value.source === 'string'
 }
 
-export function showValue(value: Json): string {
+/** 1Password ids to the vault and item names last listed, kept across sessions: display only. */
+export type Names = Record<string, string>
+
+/** op://6egel…/rz6w…/username as op://Private/GitHub Actions/username, where the names are known. */
+export function namedReference(reference: string, names: Names): string {
+  const parts = reference.split('/')
+  if (parts[0] !== 'op:' || parts.length < 5) return reference
+  return parts.map((part, index) => (index === 2 || index === 3 ? (names[part] ?? part) : part)).join('/')
+}
+
+export function showValue(value: Json, names: Names = {}): string {
   if (value === null) return 'not set'
   if (typeof value === 'boolean') return value ? 'on' : 'off'
   if (typeof value === 'string' || typeof value === 'number') return String(value)
-  if (Array.isArray(value)) return value.map(showValue).join(', ')
+  if (Array.isArray(value)) return value.map(one => showValue(one, names)).join(', ')
   if (isReference(value)) {
     const kind = SOURCES[value.source]
-    const where = (kind?.fields ?? []).map(field => value[field.name]).filter(part => typeof part === 'string' && part)
-    return `${kind?.label ?? value.source}: ${where.join(' / ')}`
+    const where = (kind?.fields ?? []).map(field => value[field.name]).filter((part): part is string => typeof part === 'string' && part !== '')
+    const shown = value.source === '1password' ? where.map(part => namedReference(part, names)) : where
+    return `${kind?.label ?? value.source}: ${shown.join(' / ')}`
   }
   return Object.entries(value)
-    .map(([key, child]) => `${key}: ${showValue(child)}`)
+    .map(([key, child]) => `${key}: ${showValue(child, names)}`)
     .join(', ')
 }
 

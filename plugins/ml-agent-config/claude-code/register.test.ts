@@ -41,6 +41,7 @@ type World = {
   layers: string[]
   apiKey: object
   subdomain: { value: string; source: string; levels: Record<string, string | null> }
+  store: Record<string, unknown>
 }
 
 const SETTING = { layer: 'global', default: null, credential: false, group: null, required: true, problems: [] }
@@ -51,7 +52,12 @@ const ran = (exitCode: number, stdout: string, stderr = '') => ({
 
 // Everything beneath the plugin: the CLI, the environment, and the engine's own answers.
 function world(on: On, loadExit = 0): World {
-  const w: World = { env: { AGENT_CONFIG_ROOT: '/ac', HOME: '/home/me' }, runs: [], commands: [], prompts: [], reloadAnswer: 'Reloaded 4 plugins.', banner: true, layer: undefined, writes: [], layers: ['global', 'repo', 'user-repo', 'local'], apiKey: REF, subdomain: { value: 'acme', source: 'repo', levels: { repo: 'acme' } } }
+  const w: World = { env: { AGENT_CONFIG_ROOT: '/ac', HOME: '/home/me' }, runs: [], commands: [], prompts: [], reloadAnswer: 'Reloaded 4 plugins.', banner: true, layer: undefined, writes: [], layers: ['global', 'repo', 'user-repo', 'local'], apiKey: REF, subdomain: { value: 'acme', source: 'repo', levels: { repo: 'acme' } }, store: {} }
+  on('store.get', ($, e) => ({ value: w.store[e.key] }))
+  on('store.set', ($, e) => {
+    w.store[e.key] = e.value
+    return { value: undefined }
+  })
   on('env.get', ($, e) => ({ value: w.env[e.name] }))
   on('env.set', ($, e) => {
     if (e.value === undefined) delete w.env[e.name]
@@ -324,23 +330,20 @@ test('outside a repository the one level is said, not offered as a switch', asyn
   await ui.unmount()
 })
 
-test('an edit writes at the level switched to on top, showing its file, and goes back with a message', async ($, on) => {
+test('an edit writes at the level switched to on top, and goes back with a message', async ($, on) => {
   const w = world(on)
   w.layer = '{"workspace":{"subdomain":"acme","team":"x"}}'
   const ui = await open($)
   await ui.press({ key: 'component:demo' })
   await ui.press({ key: 'setting:workspace.subdomain' })
-  // Set now in the repo layer, so the edit starts there.
-  expect(await text(ui, 'where')).toContain('~/repo.json')
-  // The plain case says nothing beyond the file: no "Holds acme, in effect …".
-  expect(await text(ui, 'where')).not.toContain('Holds')
+  // Set now in the repo layer, so the edit starts there; the plain case adds no line under the title.
+  expect(await ui.find({ key: 'where' })).toBeUndefined()
   // The level on the title line opens the level list: typed text stays when the level changes.
   expect(await text(ui, 'level')).toContain('Project ›')
   await ui.input({ key: 'value', text: 'beta', kind: 'change' })
   await ui.press({ key: 'level' })
   await ui.press({ key: 'level:local' })
   expect(await text(ui, 'level')).toContain('Checkout ›')
-  expect(await text(ui, 'where')).toContain('~/local.json')
   expect(await text(ui, 'where')).toContain('Saving here overrides Project, shared (acme) in this checkout only.')
   await ui.input({ key: 'value', text: 'beta' })
   expect(w.runs.find(argv => argv[1] === 'write')).toEqual(['/ac/bin/agent-config', 'write', 'demo', '--layer', 'local'])
@@ -536,6 +539,27 @@ test('values read and write as plain text, typed by the current value', () => {
   expect(parseText('a, b,, c', [])).toEqual({ value: ['a', 'b', 'c'] })
   expect(parseText('true', 'text')).toEqual({ value: 'true' })
   expect(parseText('  ', 'text')).toEqual({})
+})
+
+test('an id-only 1Password reference reads by name once a listing has named it, across sessions', async ($, on) => {
+  const w = world(on)
+  w.apiKey = { source: '1password', ref: 'op://V2/IG/credential' }
+  let ui = await open($)
+  await ui.press({ key: 'component:demo' })
+  expect(await text(ui, 'row:setting:credentials.apiKey')).toContain('op://V2/IG/credential')
+  await ui.press({ key: 'setting:credentials.apiKey' })
+  await ui.press({ key: 'pick' })
+  await ui.press({ key: 'back' })
+  await ui.press({ key: 'back' })
+  expect(await text(ui, 'row:setting:credentials.apiKey')).toContain('1Password: op://Work/GitHub Actions/credential')
+  await ui.unmount()
+  // A new pane reads the names from the store: 1Password is not asked again.
+  const listed = w.runs.filter(argv => argv[2] === 'items').length
+  ui = await open($)
+  await ui.press({ key: 'component:demo' })
+  expect(await text(ui, 'row:setting:credentials.apiKey')).toContain('op://Work/GitHub Actions/credential')
+  expect(w.runs.filter(argv => argv[2] === 'items').length).toBe(listed)
+  await ui.unmount()
 })
 
 test('a 1Password reference reads by name only where op takes the name', () => {
