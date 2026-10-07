@@ -40,7 +40,7 @@ type World = {
   writes: string[]
   layers: string[]
   apiKey: object
-  subdomain: { value: string; source: string; levels: Record<string, string | null> }
+  subdomain: { value: string; source: string; levels: Record<string, string | number[] | null> }
   store: Record<string, unknown>
   /** Layers whose file is behind the declaration's schema, so `start` plans their migration. */
   behind: string[]
@@ -119,7 +119,8 @@ function world(on: On, loadExit = 0): World {
     }
     if (w.broken === 'invalid') return ran(2, '', '/home/me/global.json is not valid JSON: Unexpected token')
     if (e.argv[2] === 'agent-config') return ran(0, JSON.stringify({ ...OWN, config: { notices: { cacheBanner: w.banner } } }))
-    const plan = PLANS[e.argv[2] ?? ''] as { actions: object[] } | undefined
+    const listed = PLANS[e.argv[2] ?? ''] as { actions: object[]; config: object } | undefined
+    const plan = listed && e.argv[2] === 'demo' ? { ...listed, config: { ...listed.config, credentials: { apiKey: w.apiKey } } } : listed
     const migrations = w.behind.map(layer => ({ id: `agent-config:migrate:${layer}`, type: 'builtin', keys: [] }))
     return plan ? ran(0, JSON.stringify({ ...plan, actions: [...plan.actions, ...migrations] })) : ran(2, '', `No installed plugin declares the agent-config name "${e.argv[2]}".`)
   })
@@ -199,6 +200,22 @@ test('a declined read caches nothing and is not asked again on the next skill', 
   expect(w.env[SECRET_CACHE_VAR]).toBeUndefined()
   const { text } = await $.command.run({ command: 'agent-config', args: 'demo', ...COMMAND })
   expect(text).toContain('1Password: not cached (op failed: authorization denied.')
+
+  // A reference changed since: asked for once, and not again.
+  w.apiKey = { source: '1password', ref: 'op://Private/Other/key' }
+  await $.skill.prompt({ skill: 'demo', text: 'C' })
+  await $.skill.prompt({ skill: 'demo', text: 'D' })
+  expect(loads(w)).toHaveLength(2)
+})
+
+test('a reference added after a cached unlock is asked for on the next skill', async ($, on) => {
+  const w = world(on)
+  await $.skill.prompt({ skill: 'demo', text: 'A' })
+  w.apiKey = { source: '1password', ref: 'op://Private/Other/key' }
+  await $.skill.prompt({ skill: 'demo', text: 'B' })
+  await $.skill.prompt({ skill: 'demo', text: 'C' })
+  expect(loads(w)).toHaveLength(2)
+  expect(parseCache(w.env[SECRET_CACHE_VAR])[cacheKey(w.apiKey as typeof REF)]).toBe('s3cret')
 })
 
 test('/agent-config unlock retries, and forget clears the cache', async ($, on) => {
@@ -504,6 +521,20 @@ test('Show switches the settings to one level’s own values', async ($, on) => 
   await ui.unmount()
 })
 
+test('a level is typed as its own value, not as the one that overrides it', async ($, on) => {
+  const w = world(on)
+  w.layer = '{}'
+  w.subdomain = { value: 'beta', source: 'local', levels: { repo: [1], local: 'beta' } }
+  const ui = await open($)
+  await ui.press({ key: 'component:demo' })
+  await ui.press({ key: 'show' })
+  await ui.press({ key: 'show:repo' })
+  await ui.press({ key: 'setting:workspace.subdomain' })
+  await ui.input({ key: 'value', text: '[1]' })
+  expect(JSON.parse(w.writes.at(-1)!).workspace.subdomain).toEqual([1])
+  await ui.unmount()
+})
+
 test('the mobile pane has no fields, and still saves an on/off key', async ($, on) => {
   const w = world(on)
   await $.command.run({ command: 'agent-config', args: '', ...COMMAND })
@@ -614,8 +645,9 @@ test('values read and write as plain text, typed by the current value', () => {
   expect(parseText('many', 7).error).toBe('many is not a number')
   expect(parseText('off', true)).toEqual({ value: false })
   expect(parseText('a, b,, c', [])).toEqual({ value: ['a', 'b', 'c'] })
+  expect(parseText('[]', ['a'])).toEqual({ value: [] })
   // A list of anything but text is typed as JSON, so a save keeps its types.
-  for (const list of [[1, true], [{ host: 'a', port: 1 }]]) {
+  for (const list of [[1, true], [{ host: 'a', port: 1 }], []]) {
     expect(parseText(editText(list), list)).toEqual({ value: list })
   }
   expect(parseText('true', 'text')).toEqual({ value: 'true' })

@@ -130,6 +130,7 @@ export async function unlock($: EngineInterface, plan: Plan): Promise<Unlock | u
   const cache = parseCache(await $.env.get('AGENT_CONFIG_SECRETS'))
   const keys = onePasswordKeys(plan, cache)
   if (keys.length === 0) return undefined
+  const refs = keys.map(key => cacheKey(plan.config.credentials![key]!))
 
   const ran = await $.process.run(
     ['sh', '-c', 'exec "$0" load "$@" 3>&1 1>/dev/null', await bin($), plan.name, '--secrets', ...keys.map(key => `credentials.${key}`)],
@@ -139,8 +140,8 @@ export async function unlock($: EngineInterface, plan: Plan): Promise<Unlock | u
   const missing = keys.filter(key => !secrets[`credentials.${key}`])
   const result: Unlock =
     missing.length === 0
-      ? { name: plan.name, keys, isCached: true }
-      : { name: plan.name, keys, isCached: false, reason: ran.stderr.trim().split('\n')[0] || `no value for ${missing.join(', ')}` }
+      ? { name: plan.name, keys, refs, isCached: true }
+      : { name: plan.name, keys, refs, isCached: false, reason: ran.stderr.trim().split('\n')[0] || `no value for ${missing.join(', ')}` }
   if (result.isCached) {
     for (const key of keys) cache[cacheKey(plan.config.credentials![key]!)] = secrets[`credentials.${key}`]!
     await $.env.set('AGENT_CONFIG_SECRETS', JSON.stringify(cache))
@@ -327,7 +328,9 @@ async function saveEdit($: EngineInterface, layer?: string, close = 1): Promise<
     await update($, panel, latest => ({ ...latest, message: `Not saved: ${why}` }))
   }
   if (!setting.credential) {
-    const parsed = parseText(edit.text, setting.value ?? setting.default)
+    // Typed as the value the edit showed: this level's own, else the one in effect.
+    const shown = setting.levels[edit.layer]
+    const parsed = parseText(edit.text, shown !== undefined && shown !== null ? shown : (setting.value ?? setting.default))
     if (parsed.error) return refuse(parsed.error)
     return saveHere($, parsed.value, at, close)
   }
@@ -534,9 +537,12 @@ export const register: Register = on => {
     const plan = await find($, candidates(e.skill))
     if (!plan) return computed
 
-    // A person who declined Touch ID once this session is not asked again on every skill.
+    // A person who declined Touch ID once this session is not asked again on every skill, unless a
+    // reference changed since. Anything cached is not asked for at all.
     const earlier = (await read($, unlocks)).find(one => one.name === plan.name)
-    const unlocked = plan.ready && !earlier ? await unlock($, plan) : undefined
+    const pending = onePasswordKeys(plan, parseCache(await $.env.get('AGENT_CONFIG_SECRETS')))
+    const wasDeclined = earlier && !earlier.isCached && pending.every(key => earlier.refs.includes(cacheKey(plan.config.credentials![key]!)))
+    const unlocked = plan.ready && !wasDeclined ? await unlock($, plan) : undefined
     if (!plan.ready) $.ui.status(`agent-config: ${plan.name} needs setup`)
     if (unlocked?.isCached && (await showsBanner($))) {
       await update($, notice, () => `1Password cached for ${plan.name} for this session`)

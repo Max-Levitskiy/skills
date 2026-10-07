@@ -1,7 +1,8 @@
 // The session state the hooks module keeps. Never a secret: values live only in the
 // AGENT_CONFIG_SECRETS environment variable of the harness process. A credential setting holds
 // its reference ({ source, ref }), which is what the config file holds too.
-export type Unlock = { name: string; keys: string[]; isCached: boolean; reason?: string }
+/** One unlock of a component: its keys, and the cache keys of the references asked for. */
+export type Unlock = { name: string; keys: string[]; refs: string[]; isCached: boolean; reason?: string }
 
 export type Json = string | number | boolean | null | Json[] | { [key: string]: Json }
 

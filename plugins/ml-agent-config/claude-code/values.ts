@@ -57,9 +57,12 @@ export function showValue(value: Json, names: Names = {}): string {
     .join(', ')
 }
 
-/** A list of text, typed as `a, b, c`. Any other list is typed as JSON, so its types survive. */
+/**
+ * A list of text, typed as `a, b, c`. Any other list is typed as JSON, so its types survive, and
+ * an empty one is `[]`, since empty text removes the key.
+ */
 function isTextList(value: Json): value is string[] {
-  return Array.isArray(value) && value.every(one => typeof one === 'string')
+  return Array.isArray(value) && value.length > 0 && value.every(one => typeof one === 'string')
 }
 
 // The edit field's starting text, in the form parseText reads back.
@@ -85,7 +88,8 @@ export function parseText(text: string, like: Json): { value?: Json; error?: str
     if (/^(off|false|no)$/i.test(trimmed)) return { value: false }
     return { error: 'type on or off' }
   }
-  if (isTextList(like)) return { value: trimmed.split(',').map(part => part.trim()).filter(Boolean) }
+  // A list may be typed as `a, b` or, starting with `[`, as JSON.
+  if (Array.isArray(like) && !trimmed.startsWith('[')) return { value: trimmed.split(',').map(part => part.trim()).filter(Boolean) }
   if (like !== null && typeof like === 'object') {
     try {
       return { value: JSON.parse(trimmed) as Json }
