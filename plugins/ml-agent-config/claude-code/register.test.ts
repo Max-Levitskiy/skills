@@ -42,6 +42,12 @@ type World = {
   apiKey: object
   subdomain: { value: string; source: string; levels: Record<string, string | null> }
   store: Record<string, unknown>
+  /** Layers whose file is behind the declaration's schema, so `start` plans their migration. */
+  behind: string[]
+  /** The layer file is there but cannot be read. */
+  unreadable: boolean
+  /** What every `start` prints instead of a plan: exit 2 for a broken layer file, or not JSON at all. */
+  broken: 'invalid' | 'garbled' | null
 }
 
 const SETTING = { layer: 'global', default: null, credential: false, group: null, required: true, problems: [] }
@@ -52,7 +58,7 @@ const ran = (exitCode: number, stdout: string, stderr = '') => ({
 
 // Everything beneath the plugin: the CLI, the environment, and the engine's own answers.
 function world(on: On, loadExit = 0): World {
-  const w: World = { env: { AGENT_CONFIG_ROOT: '/ac', HOME: '/home/me' }, runs: [], commands: [], prompts: [], reloadAnswer: 'Reloaded 4 plugins.', banner: true, layer: undefined, writes: [], layers: ['global', 'repo', 'user-repo', 'local'], apiKey: REF, subdomain: { value: 'acme', source: 'repo', levels: { repo: 'acme' } }, store: {} }
+  const w: World = { env: { AGENT_CONFIG_ROOT: '/ac', HOME: '/home/me' }, runs: [], commands: [], prompts: [], reloadAnswer: 'Reloaded 4 plugins.', banner: true, layer: undefined, writes: [], layers: ['global', 'repo', 'user-repo', 'local'], apiKey: REF, subdomain: { value: 'acme', source: 'repo', levels: { repo: 'acme' } }, store: {}, behind: [], unreadable: false, broken: null }
   on('store.get', ($, e) => ({ value: w.store[e.key] }))
   on('store.set', ($, e) => {
     w.store[e.key] = e.value
@@ -87,6 +93,7 @@ function world(on: On, loadExit = 0): World {
       }
       return ran(0, JSON.stringify({ fields: [{ id: 'credential', label: 'credential', section: null, type: 'CONCEALED', reference: 'op://V2/IG/credential' }] }))
     }
+    if (w.broken === 'garbled') return ran(0, 'Segmentation fault')
     if (e.argv[1] === 'list') {
       return ran(0, JSON.stringify({ components: [{ name: 'demo', plugin: 'ml-demo@max-skills', version: '1.0.0', declaration: '/d' }] }))
     }
@@ -100,18 +107,20 @@ function world(on: On, loadExit = 0): World {
             ]
       return ran(0, JSON.stringify({ keys, layers: w.layers.map(layer => ({ layer, path: `/home/me/${layer}.json`, exists: true })), repo: { checkout: null } }))
     }
-    if (e.argv[1] === 'path') return ran(0, JSON.stringify({ layers: [{ path: '/home/.agents/config/agent-config/config.json' }] }))
+    if (e.argv[1] === 'path') return ran(0, JSON.stringify({ layers: [{ path: '/home/.agents/config/agent-config/config.json', exists: w.layer !== undefined || w.unreadable }] }))
     if (e.argv[1] === 'write') {
       w.writes.push(e.init?.stdin ?? '')
       const banner = (JSON.parse(e.init?.stdin ?? '{}') as { notices?: { cacheBanner?: boolean } }).notices?.cacheBanner
       if (e.argv[2] === 'agent-config' && banner !== undefined) w.banner = banner
       return ran(0, '{}')
     }
+    if (w.broken === 'invalid') return ran(2, '', '/home/me/global.json is not valid JSON: Unexpected token')
     if (e.argv[2] === 'agent-config') return ran(0, JSON.stringify({ ...OWN, config: { notices: { cacheBanner: w.banner } } }))
-    const plan = PLANS[e.argv[2] ?? '']
-    return plan ? ran(0, JSON.stringify(plan)) : ran(2, '', 'no declaration')
+    const plan = PLANS[e.argv[2] ?? ''] as { actions: object[] } | undefined
+    const migrations = w.behind.map(layer => ({ id: `agent-config:migrate:${layer}`, type: 'builtin', keys: [] }))
+    return plan ? ran(0, JSON.stringify({ ...plan, actions: [...plan.actions, ...migrations] })) : ran(2, '', `No installed plugin declares the agent-config name "${e.argv[2]}".`)
   })
-  on('fs.read', () => (w.layer === undefined ? { deny: 'no such file' } : { value: w.layer }))
+  on('fs.read', () => (w.unreadable ? { deny: 'permission denied' } : w.layer === undefined ? { deny: 'no such file' } : { value: w.layer }))
   on('skill.prompt', ($, e) => ({ text: e.text }))
   on('ui.status', () => ({ value: undefined }))
   // The engine's own band: nothing.
@@ -156,6 +165,17 @@ test('a skill with no declaration passes through, and is not looked up twice', a
   const { text } = await $.skill.prompt({ skill: 'commit', text: 'COMMIT BODY' })
   expect(text).toBe('COMMIT BODY')
   expect(w.runs).toHaveLength(1)
+})
+
+test('a component whose layer file is broken is looked up again, so a fix takes effect', async ($, on) => {
+  const w = world(on)
+  w.broken = 'invalid'
+  await $.skill.prompt({ skill: 'demo', text: 'A' })
+  w.broken = null
+  const { text } = await $.skill.prompt({ skill: 'demo', text: 'B' })
+  expect(text).toContain('B')
+  expect(w.runs.filter(argv => argv[1] === 'start' && argv[2] === 'demo')).toHaveLength(2)
+  expect(loads(w)).toHaveLength(1)
 })
 
 test('one approved 1Password read is cached for the session and not asked again', async ($, on) => {
@@ -352,6 +372,37 @@ test('an edit writes at the level switched to on top, and goes back with a messa
   expect(await ui.find({ key: 'value' })).toBeUndefined()
   expect(await text(ui, 'row:setting:workspace.subdomain')).toBeDefined()
   expect(JSON.stringify(await ui.find({}))).toContain('Saved workspace.subdomain in This checkout.')
+  await ui.unmount()
+})
+
+test('a level whose file is behind the schema, or cannot be read, is not written over', async ($, on) => {
+  const w = world(on)
+  w.layer = '{"workspace":{"subdomain":"acme","team":"x"}}'
+  w.behind = ['repo']
+  const ui = await open($)
+  await ui.press({ key: 'component:demo' })
+  await ui.press({ key: 'setting:workspace.subdomain' })
+  await ui.input({ key: 'value', text: 'beta' })
+  expect(w.writes).toEqual([])
+  expect(JSON.stringify(await ui.find({}))).toContain("Not saved: this level's file is on an older schema; Set up with Claude migrates it first")
+
+  w.behind = []
+  w.unreadable = true
+  await ui.input({ key: 'value', text: 'beta' })
+  expect(w.writes).toEqual([])
+  expect(JSON.stringify(await ui.find({}))).toContain('Not saved: could not read')
+  await ui.unmount()
+})
+
+test('a CLI that prints garbage leaves the pane usable, never loading forever', async ($, on) => {
+  const w = world(on)
+  w.broken = 'garbled'
+  const ui = await open($)
+  expect(await ui.find({ key: 'component:agent-config' })).toBeDefined()
+  expect(JSON.stringify(await ui.find({}))).not.toContain('Loading')
+  await ui.press({ key: 'component:agent-config' })
+  expect(JSON.stringify(await ui.find({}))).toContain('describe failed')
+  expect(JSON.stringify(await ui.find({}))).not.toContain('Loading')
   await ui.unmount()
 })
 

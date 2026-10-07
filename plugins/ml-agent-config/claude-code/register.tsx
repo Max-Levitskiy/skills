@@ -41,11 +41,22 @@ function own($: EngineInterface): { name: string; from: string } {
   return { name: OWN, from: `${$.plugin.root}/claude-code` }
 }
 
-// Exit 2 means no declaration under this name.
+// The plan, or why there is none: a CLI that cannot start, times out or prints something else is
+// read as no plan, so no caller is left waiting on a rejection.
+async function started($: EngineInterface, name: string, from?: string): Promise<{ plan?: Plan; isUndeclared: boolean }> {
+  try {
+    const argv = [await bin($), 'start', name, ...(from ? ['--from', from] : [])]
+    const ran = await $.process.run(argv, { env: HARNESS, timeoutMs: 15000 })
+    if (ran.exitCode === 0) return { plan: JSON.parse(ran.stdout) as Plan, isUndeclared: false }
+    // Exit 2 also covers a layer file that is not JSON, which a fix makes declared again.
+    return { isUndeclared: ran.exitCode === 2 && ran.stderr.startsWith('No installed plugin declares') }
+  } catch {
+    return { isUndeclared: false }
+  }
+}
+
 export async function start($: EngineInterface, name: string, from?: string): Promise<Plan | undefined> {
-  const argv = [await bin($), 'start', name, ...(from ? ['--from', from] : [])]
-  const ran = await $.process.run(argv, { env: HARNESS, timeoutMs: 15000 })
-  return ran.exitCode === 0 ? (JSON.parse(ran.stdout) as Plan) : undefined
+  return (await started($, name, from)).plan
 }
 
 // `write` replaces the whole layer, so the current file is read and only this key changes. The CLI
@@ -60,13 +71,23 @@ export async function writeKey(
   const from = component.from ? ['--from', component.from] : []
   const where = await $.process.run([await bin($), 'path', component.name, '--layer', layer, ...from], { env: HARNESS })
   if (where.exitCode !== 0) return firstLine(where.stderr) || `no ${layer} layer here`
-  const file = (JSON.parse(where.stdout) as { layers: { path: string | null }[] }).layers[0]?.path
+  const found = (JSON.parse(where.stdout) as { layers: { path: string | null; exists?: boolean }[] }).layers[0]
+  const file = found?.path
   if (!file) return `no ${layer} layer here; it needs a repository`
+  // `write` stamps the current schema, so a file behind it would lose the migration it is owed.
+  const plan = await start($, component.name, component.from)
+  if (plan?.actions.some(action => action.id === `agent-config:migrate:${layer}`)) {
+    return `this level's file is on an older schema; Set up with Claude migrates it first`
+  }
+  // No file yet: the layer starts empty. A file that is there but cannot be read is not written
+  // over, since `write` replaces it whole.
   let config: Record<string, unknown> = {}
-  try {
-    config = JSON.parse(await $.fs.read(file)) as Record<string, unknown>
-  } catch {
-    // No file yet: the layer starts empty.
+  if (found.exists) {
+    try {
+      config = JSON.parse(await $.fs.read(file)) as Record<string, unknown>
+    } catch (error) {
+      return `could not read ${file}: ${(error as Error).message}`
+    }
   }
   const wrote = await $.process.run([await bin($), 'write', component.name, '--layer', layer, ...from], {
     env: HARNESS,
@@ -88,9 +109,9 @@ const undeclared = new Set<string>()
 async function find($: EngineInterface, names: string[]): Promise<Plan | undefined> {
   for (const name of names) {
     if (undeclared.has(name)) continue
-    const plan = await start($, name)
+    const { plan, isUndeclared } = await started($, name)
     if (plan) return plan
-    undeclared.add(name)
+    if (isUndeclared) undeclared.add(name)
   }
   return undefined
 }
@@ -177,18 +198,26 @@ async function back($: EngineInterface, close = 1, after: { message?: string; fo
 }
 
 async function components($: EngineInterface): Promise<Component[]> {
-  const listed = await $.process.run([await bin($), 'list'], { env: HARNESS, timeoutMs: 15000 })
-  const installed =
-    listed.exitCode === 0 ? (JSON.parse(listed.stdout) as { components: { name: string; plugin: string }[] }).components : []
+  let installed: { name: string; plugin: string }[] = []
+  try {
+    const listed = await $.process.run([await bin($), 'list'], { env: HARNESS, timeoutMs: 15000 })
+    if (listed.exitCode === 0) installed = (JSON.parse(listed.stdout) as { components: typeof installed }).components
+  } catch {
+    // Listed as nothing installed: agent-config itself still shows.
+  }
   const all: Component[] = [{ ...own($), plugin: 'ml-agent-config', ready: null }, ...installed.map(one => ({ ...one, ready: null }))]
   return Promise.all(all.map(async one => ({ ...one, ready: (await start($, one.name, one.from))?.ready ?? null })))
 }
 
 async function describe($: EngineInterface, component: Component): Promise<Pick<Panel, 'settings' | 'layers' | 'message'>> {
   const from = component.from ? ['--from', component.from] : []
-  const ran = await $.process.run([await bin($), 'describe', component.name, ...from], { env: HARNESS, timeoutMs: 15000 })
-  if (ran.exitCode !== 0) return { settings: [], layers: [], message: firstLine(ran.stderr) || 'describe failed' }
-  return { ...readDescribe(ran.stdout, await $.env.get('HOME')), message: null }
+  try {
+    const ran = await $.process.run([await bin($), 'describe', component.name, ...from], { env: HARNESS, timeoutMs: 15000 })
+    if (ran.exitCode !== 0) return { settings: [], layers: [], message: firstLine(ran.stderr) || 'describe failed' }
+    return { ...readDescribe(ran.stdout, await $.env.get('HOME')), message: null }
+  } catch (error) {
+    return { settings: [], layers: [], message: `describe failed: ${(error as Error).message}` }
+  }
 }
 
 // 1Password's vault and item names by id: no secret, kept across sessions so an id-only reference
@@ -217,6 +246,8 @@ async function openComponent($: EngineInterface, name: string): Promise<void> {
   await update($, panel, now => ({ ...now, selected: name, settings: [], layers: [], show: 'effective', isLoading: true }))
   await go($, { kind: 'settings' }, `component:${name}`)
   const detail = await describe($, component)
+  // Back and another component while this one loaded: its answer is not that one's.
+  if ((await read($, panel)).selected !== name) return
   await update($, panel, now => ({ ...now, ...detail, isLoading: false }))
   await refocus($, firstSetting(detail.settings))
 }
@@ -225,7 +256,7 @@ async function openComponent($: EngineInterface, name: string): Promise<void> {
 async function save($: EngineInterface, layer: string, path: string, value: Json | undefined): Promise<string | undefined> {
   const component = selected(await read($, panel))
   if (!component) return 'no component selected'
-  const failed = await writeKey($, component, layer, path, value)
+  const failed = await writeKey($, component, layer, path, value).catch((error: Error) => error.message || 'the write failed')
   if (!failed && component.name === OWN && path === 'notices.cacheBanner' && value === false) {
     await update($, notice, () => null)
   }
@@ -360,6 +391,8 @@ async function openItem($: EngineInterface, id: string): Promise<void> {
   try {
     const flags = ['--vault', item.vault.id, '--item', item.id, ...(item.account ? ['--account', item.account] : [])]
     const got = (await onePassword($, ['fields', ...flags])) as { fields: OnePassword['fields'] }
+    // Another item opened while this one loaded: its fields are not that one's.
+    if ((await read($, panel)).onePassword.item?.id !== id) return
     await setOnePassword($, { fields: got.fields, isLoading: false })
     await refocus($, got.fields[0] && `ref:${got.fields[0].reference}`)
   } catch (error) {
