@@ -286,6 +286,13 @@ export function showValue(value: Json): string {
   return JSON.stringify(value)
 }
 
+// The person's arrows walk the pane's ring past its last element onto the engine's own stops: the
+// close mark and the tab of another open pane, such as the agents view, which then takes over.
+// Their own moves stay inside this pane's elements; Esc still closes it.
+export function keepsRing(move: { element?: string; origin: { kind: string } }): boolean {
+  return move.origin.kind === 'person' && move.element === undefined
+}
+
 function isBoolean(setting: Setting): boolean {
   return typeof (setting.value ?? setting.default) === 'boolean'
 }
@@ -492,6 +499,8 @@ export const register: Register = on => {
       </Box>
     )
   })
+
+  on('ui.focus', { component: 'Pane', requestId: PANE }, async ($, e, next) => (keepsRing(e) ? {} : next(e)))
 
   // A command cannot run inside the tool call the turn waits on, so a timer queues it for idle.
   // The command can refuse (a remote connection does), so its answer goes into the resume prompt.
