@@ -71,13 +71,22 @@ export function editAt(setting: Setting, layer: string): Edit {
     text: reference ? '' : editText(from),
     source: reference && SOURCES[reference.source] ? reference.source : '1password',
     draft: Object.fromEntries(Object.entries(reference ?? {}).filter((entry): entry is [string, string] => typeof entry[1] === 'string')),
+    isDirty: false,
   }
+}
+
+/**
+ * The edit pointed at another level. What was typed stays, so a value can be written wherever it
+ * belongs; untouched, the edit shows what that level holds.
+ */
+export function switchLevel(edit: Edit, setting: Setting, layer: string): Edit {
+  return edit.isDirty ? { ...edit, layer } : editAt(setting, layer)
 }
 
 /** The edit screen's first element: the field to type in, or the first choice. */
 export function firstEdit(setting: Setting, edit: Edit, canType: boolean): string {
   if (isBoolean(setting)) return 'value:on'
-  if (!canType) return 'level'
+  if (!canType) return `at:${edit.layer}`
   if (!setting.credential) return 'value'
   if (edit.source === '1password') return 'pick'
   return `field:${SOURCES[edit.source]!.fields[0]!.name}`

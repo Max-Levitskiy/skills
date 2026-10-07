@@ -18,7 +18,7 @@ import type { EngineInterface, Register } from 'claude-code'
 import { cacheKey, parseCache } from '../src/secret-cache'
 import type { Component, Item, Json, OnePassword, Panel, Screen, Setting, Unlock } from '../types'
 import { HARNESS, OWN, firstLine, withValue, type Plan } from './cli'
-import { PANE, editAt, editing, firstEdit, firstSetting, layerNames, readDescribe, savedAt, selected } from './panel'
+import { PANE, editAt, editing, firstEdit, firstSetting, layerNames, readDescribe, savedAt, selected, switchLevel } from './panel'
 import { draw } from './screens'
 import type { Actions } from './screens/context'
 import { EMPTY_PANEL, NO_ONE_PASSWORD } from './state'
@@ -249,11 +249,10 @@ async function openEdit($: EngineInterface, setting: Setting, canType: boolean):
   await go($, { kind: 'edit' }, `setting:${setting.path}`, firstEdit(setting, edit, canType))
 }
 
-async function chooseLevel($: EngineInterface, layer: string): Promise<void> {
+async function setLevel($: EngineInterface, layer: string): Promise<void> {
   const setting = editing(await read($, panel))
   if (!setting) return
-  await update($, panel, now => ({ ...now, edit: editAt(setting, layer) }))
-  await back($)
+  await update($, panel, now => ({ ...now, message: null, edit: now.edit && switchLevel(now.edit, setting, layer) }))
 }
 
 async function chooseSource($: EngineInterface, source: string): Promise<void> {
@@ -263,7 +262,7 @@ async function chooseSource($: EngineInterface, source: string): Promise<void> {
   // The source it had: its fields as stored. Another: empty fields.
   const stored = editAt(setting, now.edit.layer)
   const draft = stored.source === source ? stored.draft : {}
-  await update($, panel, latest => ({ ...latest, edit: latest.edit && { ...latest.edit, source, draft } }))
+  await update($, panel, latest => ({ ...latest, edit: latest.edit && { ...latest.edit, source, draft, isDirty: true } }))
   await back($)
 }
 
@@ -362,7 +361,12 @@ async function pickField($: EngineInterface, reference: string): Promise<void> {
   const account = op.accounts.length > 1 ? op.item?.account : undefined
   await update($, panel, latest => ({
     ...latest,
-    edit: latest.edit && { ...latest.edit, source: '1password', draft: { ...latest.edit.draft, ref: reference, ...(account ? { account } : {}) } },
+    edit: latest.edit && {
+      ...latest.edit,
+      source: '1password',
+      draft: { ...latest.edit.draft, ref: reference, ...(account ? { account } : {}) },
+      isDirty: true,
+    },
   }))
   await back($, 2, { message: `Picked ${reference}. Press Save here to keep it.`, focus: 'save' })
 }
@@ -381,13 +385,17 @@ function actions($: EngineInterface, canType: boolean): Actions {
     },
     toggle: setting => toggle($, setting),
     openEdit: setting => openEdit($, setting, canType),
-    chooseLevel: layer => chooseLevel($, layer),
+    setLevel: layer => setLevel($, layer),
+    chooseLevel: async layer => {
+      await setLevel($, layer)
+      await back($)
+    },
     chooseSource: source => chooseSource($, source),
     typeText: async text => {
-      await update($, panel, now => ({ ...now, edit: now.edit && { ...now.edit, text } }))
+      await update($, panel, now => ({ ...now, edit: now.edit && { ...now.edit, text, isDirty: true } }))
     },
     typeField: async (field, text) => {
-      await update($, panel, now => ({ ...now, edit: now.edit && { ...now.edit, draft: { ...now.edit.draft, [field]: text } } }))
+      await update($, panel, now => ({ ...now, edit: now.edit && { ...now.edit, draft: { ...now.edit.draft, [field]: text }, isDirty: true } }))
     },
     saveEdit: () => saveEdit($),
     saveBoolean: value => saveHere($, value),

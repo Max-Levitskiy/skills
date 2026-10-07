@@ -43,6 +43,8 @@ export type Edit = {
   /** A credential's source, and the text of each of that source's fields. */
   source: string
   draft: Record<string, string>
+  /** Something was typed or picked: switching the level keeps it instead of loading that level's value. */
+  isDirty: boolean
 }
 
 /** A 1Password item as listed: names only, never a value. */

@@ -301,18 +301,20 @@ test("agent-config's own flag toggles in place, merged into its global layer", a
   await ui.unmount()
 })
 
-test('an edit writes at the level picked on the Levels screen, and goes back with a message', async ($, on) => {
+test('an edit writes at the level switched to on top, showing its file, and goes back with a message', async ($, on) => {
   const w = world(on)
   w.layer = '{"workspace":{"subdomain":"acme","team":"x"}}'
   const ui = await open($)
   await ui.press({ key: 'component:demo' })
   await ui.press({ key: 'setting:workspace.subdomain' })
   // Set now in the repo layer, so the edit starts there.
-  expect(await text(ui, 'row:level')).toContain('Project, shared')
-  await ui.press({ key: 'level' })
-  expect(await text(ui, 'row:level:repo')).toContain('acme  wins')
-  await ui.press({ key: 'level:local' })
-  expect(await text(ui, 'row:level')).toContain('This checkout')
+  expect(await text(ui, 'where')).toContain('~/repo.json')
+  expect(await text(ui, 'where')).toContain('Project, shared holds acme; wins.')
+  // The level switch on top: typed text stays when the level changes.
+  await ui.input({ key: 'value', text: 'beta', kind: 'change' })
+  await ui.press({ key: 'at:local' })
+  expect(await text(ui, 'where')).toContain('~/local.json')
+  expect(await text(ui, 'where')).toContain('This checkout sets nothing; would win.')
   await ui.input({ key: 'value', text: 'beta' })
   expect(w.runs.find(argv => argv[1] === 'write')).toEqual(['/ac/bin/agent-config', 'write', 'demo', '--layer', 'local'])
   expect(JSON.parse(w.writes.at(-1)!)).toEqual({ workspace: { subdomain: 'beta', team: 'x' } })
@@ -331,6 +333,13 @@ test('Remove here drops the key from one level; Block inherited writes null ther
   await ui.press({ key: 'component:demo' })
   expect(await text(ui, 'row:setting:workspace.subdomain')).toContain('beta · This checkout, overrides acme')
   await ui.press({ key: 'setting:workspace.subdomain' })
+  // Every level, compared, and a pick there points the edit at it.
+  await ui.press({ key: 'levels' })
+  expect(await text(ui, 'row:level:local')).toContain('beta  wins')
+  expect(await text(ui, 'row:level:repo')).toContain('acme')
+  await ui.press({ key: 'level:repo' })
+  expect(await text(ui, 'where')).toContain('Project, shared holds acme; This checkout overrides it.')
+  await ui.press({ key: 'at:local' })
   expect(await text(ui, 'row:remove')).toContain('falls back to acme (Project, shared)')
   await ui.press({ key: 'remove' })
   expect(JSON.parse(w.writes.at(-1)!)).toEqual({ workspace: {} })
@@ -353,7 +362,7 @@ test('Show switches the settings to one level’s own values', async ($, on) => 
   expect(await text(ui, 'row:setting:workspace.subdomain')).toContain('not set here')
   // An edit opened while one level shows writes to that level.
   await ui.press({ key: 'setting:workspace.subdomain' })
-  expect(await text(ui, 'row:level')).toContain('Project, just me')
+  expect(await text(ui, 'where')).toContain('Project, just me sets nothing')
   await ui.unmount()
 })
 
@@ -364,7 +373,7 @@ test('the mobile pane has no fields, and still toggles', async ($, on) => {
   await ui.press({ key: 'component:demo' })
   await ui.press({ key: 'setting:workspace.subdomain' })
   expect(await ui.find({ key: 'value' })).toBeUndefined()
-  expect(await ui.find({ key: 'level' })).toBeDefined()
+  expect(await ui.find({ key: 'at:repo' })).toBeDefined()
   await ui.press({ key: 'back' })
   await ui.press({ key: 'back' })
   await ui.press({ key: 'component:agent-config' })

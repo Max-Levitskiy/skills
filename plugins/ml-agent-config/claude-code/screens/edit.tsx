@@ -1,10 +1,11 @@
-// One setting at one level: the level row opens the levels, the value is typed (or for a
-// credential, its source picked and filled in), and Save, Remove and Block act on that level alone.
+// One setting at one level. The level switch sits on top with the file it writes; the value is
+// typed (or for a credential, its source picked and filled in), and Save, Remove and Block act on
+// that level alone.
 
 import type { RenderElement } from 'claude-code'
 
 import { editing, layerNames, selected } from '../panel'
-import { levelLabel, over, under } from '../ui/levels'
+import { LEVELS, ORDER, levelLabel, over, under } from '../ui/levels'
 import { note, row, screen } from '../ui/screen'
 import { SOURCES, isBoolean, showValue } from '../values'
 import type { Ctx } from './context'
@@ -20,28 +21,37 @@ export function edit({ now, ui, Input, act }: Ctx): RenderElement {
   const here = setting.levels[draft.layer]
   const above = over(setting, draft.layer, layers)
   const below = under(setting, draft.layer, layers)
-  const file = now.layers.find(one => one.layer === draft.layer)?.path
-  const status =
-    here === null
-      ? 'blocks the levels under it'
-      : setting.source === draft.layer
-        ? 'wins'
-        : above
-          ? `${above} overrides it`
-          : here === undefined
-            ? 'not set here'
-            : 'set here'
+  const file = now.layers.find(one => one.layer === draft.layer)
+  const holds = here === undefined ? 'sets nothing' : here === null ? 'blocks the levels under it' : `holds ${showValue(here)}`
+  const status = above ? `${above} overrides it` : setting.source === draft.layer ? 'wins' : here === undefined ? 'would win' : 'is in effect'
   const kind = SOURCES[draft.source]
   const isOn = typeof here === 'boolean' ? here : (setting.value ?? setting.default) === true
 
   return screen(ui, { path, onBack: () => act.back(), message: now.message }, [
     note(ui, setting.description),
-    row(ui, {
-      key: 'level',
-      label: `› Level  ${levelLabel(draft.layer)}`,
-      detail: [status, file].filter(Boolean).join(' · '),
-      onPress: () => act.go({ kind: 'levels' }, 'level', `level:${draft.layer}`),
-    }),
+    // A dot marks the levels that set this key now.
+    <Box key="levels" flexWrap="wrap">
+      <Text>Level </Text>
+      {ORDER.filter(layer => layers.includes(layer)).map(layer => (
+        <Button
+          key={`at:${layer}`}
+          label={`${LEVELS[layer]!.short}${setting.levels[layer] !== undefined ? ' •' : ''}`}
+          variant={layer === draft.layer ? 'primary' : undefined}
+          dimColor={layer === draft.layer ? undefined : true}
+          onPress={() => act.setLevel(layer)}
+        />
+      ))}
+    </Box>,
+    <Box key="where" flexDirection="column">
+      <Text dimColor>
+        {'  '}
+        {file ? `${file.path}${file.exists ? '' : ' (new file)'}` : ''}
+      </Text>
+      <Text dimColor>
+        {'  '}
+        {levelLabel(draft.layer)} {holds}; {status}.
+      </Text>
+    </Box>,
     isBoolean(setting) && (
       <Box key="booleans">
         <Text>Value </Text>
@@ -109,5 +119,11 @@ export function edit({ now, ui, Input, act }: Ctx): RenderElement {
         detail: `no value here, even though ${below.label} has one`,
         onPress: () => act.blockHere(),
       }),
+    row(ui, {
+      key: 'levels',
+      label: '› Every level',
+      detail: 'what each level sets, and which wins',
+      onPress: () => act.go({ kind: 'levels' }, 'levels', `level:${draft.layer}`),
+    }),
   ])
 }

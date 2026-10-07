@@ -13,6 +13,9 @@ export type Actions = {
   setShow: (show: string) => Promise<void>
   toggle: (setting: Setting) => Promise<void>
   openEdit: (setting: Setting) => Promise<void>
+  /** Point the edit at another level, staying on the edit screen. */
+  setLevel: (layer: string) => Promise<void>
+  /** The same from the levels screen, which then closes. */
   chooseLevel: (layer: string) => Promise<void>
   chooseSource: (source: string) => Promise<void>
   typeText: (text: string) => Promise<void>
