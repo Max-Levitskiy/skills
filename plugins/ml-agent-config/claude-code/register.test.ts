@@ -302,6 +302,20 @@ test("agent-config's own flag toggles in place, merged into its global layer", a
   await ui.unmount()
 })
 
+test('outside a repository the one level is said, not offered as a switch', async ($, on) => {
+  const w = world(on)
+  w.layers = ['global']
+  w.subdomain = { value: 'acme', source: 'global', levels: { global: 'acme' } }
+  const ui = await open($)
+  await ui.press({ key: 'component:demo' })
+  await ui.press({ key: 'setting:workspace.subdomain' })
+  expect(await ui.find({ key: 'at:global' })).toBeUndefined()
+  expect(await ui.find({ key: 'levels' })).toBeUndefined()
+  expect(await text(ui, 'level')).toContain('Level Everywhere')
+  expect(await text(ui, 'level')).toContain('open Claude Code in a git repo')
+  await ui.unmount()
+})
+
 test('an edit writes at the level switched to on top, showing its file, and goes back with a message', async ($, on) => {
   const w = world(on)
   w.layer = '{"workspace":{"subdomain":"acme","team":"x"}}'

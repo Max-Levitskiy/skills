@@ -246,7 +246,7 @@ async function openEdit($: EngineInterface, setting: Setting, canType: boolean):
   const layer = layers.includes(now.show) ? now.show : targetLayer(setting, layers)
   const edit = editAt(setting, layer)
   await update($, panel, latest => ({ ...latest, edit }))
-  await go($, { kind: 'edit' }, `setting:${setting.path}`, firstEdit(setting, edit, canType))
+  await go($, { kind: 'edit' }, `setting:${setting.path}`, firstEdit(setting, edit, canType, layers.length))
 }
 
 async function setLevel($: EngineInterface, layer: string): Promise<void> {

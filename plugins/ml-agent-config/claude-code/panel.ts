@@ -84,9 +84,9 @@ export function switchLevel(edit: Edit, setting: Setting, layer: string): Edit {
 }
 
 /** The edit screen's first element: the field to type in, or the first choice. */
-export function firstEdit(setting: Setting, edit: Edit, canType: boolean): string {
+export function firstEdit(setting: Setting, edit: Edit, canType: boolean, levels = 2): string {
   if (isBoolean(setting)) return 'value:on'
-  if (!canType) return `at:${edit.layer}`
+  if (!canType) return levels > 1 ? `at:${edit.layer}` : 'save'
   if (!setting.credential) return 'value'
   if (edit.source === '1password') return 'pick'
   return `field:${SOURCES[edit.source]!.fields[0]!.name}`

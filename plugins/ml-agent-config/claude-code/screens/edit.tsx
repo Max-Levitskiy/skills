@@ -30,19 +30,28 @@ export function edit({ now, ui, Input, act }: Ctx): RenderElement {
 
   return screen(ui, { path, onBack: () => act.back(), message: now.message }, [
     note(ui, setting.description),
+    // One level is no choice: outside a git repository only Everywhere exists, so it is said, not offered.
+    layers.length === 1 && (
+      <Box key="level" flexDirection="column">
+        <Text>Level {LEVELS[draft.layer]?.label ?? draft.layer}</Text>
+        <Text dimColor>{'  '}The only level here: open Claude Code in a git repo to set it for a project.</Text>
+      </Box>
+    ),
     // A dot marks the levels that set this key now.
-    <Box key="levels" flexWrap="wrap">
-      <Text>Level </Text>
-      {ORDER.filter(layer => layers.includes(layer)).map(layer => (
-        <Button
-          key={`at:${layer}`}
-          label={`${LEVELS[layer]!.short}${setting.levels[layer] !== undefined ? ' •' : ''}`}
-          variant={layer === draft.layer ? 'primary' : undefined}
-          dimColor={layer === draft.layer ? undefined : true}
-          onPress={() => act.setLevel(layer)}
-        />
-      ))}
-    </Box>,
+    layers.length > 1 && (
+      <Box key="level" flexWrap="wrap">
+        <Text>Level </Text>
+        {ORDER.filter(layer => layers.includes(layer)).map(layer => (
+          <Button
+            key={`at:${layer}`}
+            label={`${LEVELS[layer]!.short}${setting.levels[layer] !== undefined ? ' •' : ''}`}
+            variant={layer === draft.layer ? 'primary' : undefined}
+            dimColor={layer === draft.layer ? undefined : true}
+            onPress={() => act.setLevel(layer)}
+          />
+        ))}
+      </Box>
+    ),
     <Box key="where" flexDirection="column">
       <Text dimColor>
         {'  '}
@@ -135,11 +144,12 @@ export function edit({ now, ui, Input, act }: Ctx): RenderElement {
         onPress: () => act.overrideAt(layer),
       }),
     ),
-    row(ui, {
-      key: 'levels',
-      label: '› Every level',
-      detail: 'what each level sets, and which wins',
-      onPress: () => act.go({ kind: 'levels' }, 'levels', `level:${draft.layer}`),
-    }),
+    layers.length > 1 &&
+      row(ui, {
+        key: 'levels',
+        label: '› Every level',
+        detail: 'what each level sets, and which wins',
+        onPress: () => act.go({ kind: 'levels' }, 'levels', `level:${draft.layer}`),
+      }),
   ])
 }
