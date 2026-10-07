@@ -6,7 +6,8 @@
 //   - hold 1Password secrets for the session after the person approves one read, so later
 //     `load --secrets` calls do not ask for Touch ID again (src/secret-cache.ts);
 //   - run /reload-plugins after an install, which only the person could type before;
-//   - show every component's settings in a pane, `/agent-config` with no name, and edit them there.
+//   - show every component's settings in a pane, `/agent-config` with no name, and edit them there,
+//     one short screen at a time (screens/), each level of a setting on its own.
 //
 // Its one setting, whether the cached-secrets band shows, is agent-config's own: declared in
 // agent-config.json beside this file, kept in ~/.agents/config/agent-config/, edited like any other.
@@ -15,52 +16,28 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import { cacheKey, parseCache } from '../src/secret-cache'
-import type { Browse, Component, Json, Panel, Setting, Unlock } from '../types'
+import type { Component, Item, Json, OnePassword, Panel, Screen, Setting, Unlock } from '../types'
+import { HARNESS, OWN, firstLine, withValue, type Plan } from './cli'
+import { PANE, editAt, editing, firstEdit, firstSetting, layerNames, readDescribe, savedAt, selected } from './panel'
+import { draw } from './screens'
+import type { Actions } from './screens/context'
+import { EMPTY_PANEL, NO_ONE_PASSWORD } from './state'
+import { SOURCES, isReference, parseText, targetLayer, type Stored } from './values'
 
-type Reference = { source: string; ref?: string }
-
-export type Plan = {
-  name: string
-  ready: boolean
-  config: { credentials?: Record<string, Reference> }
-  actions: { id: string; type: string; keys: string[] }[]
-  problems: { code: string; message: string }[]
-}
+export type { Plan } from './cli'
+export { editText, parseText, showValue } from './values'
 
 const unlocks = atom({ plugin: 'ml-agent-config', key: 'unlocks' } as const, [] as Unlock[])
 const notice = atom({ plugin: 'ml-agent-config', key: 'notice' } as const, null as string | null)
-const panel = atom({ plugin: 'ml-agent-config', key: 'panel' } as const, {
-  components: [],
-  selected: null,
-  settings: [],
-  layers: [],
-  editing: null,
-  layer: 'global',
-  source: '1password',
-  draft: {},
-  browse: null,
-  message: null,
-  isLoading: false,
-} as Panel)
-
-const PANE = 'agent-config'
-
-// The namespace of this module's own setting. Its declaration sits beside this file, outside every
-// plugin registry, so each call names the folder with --from.
-const OWN = 'agent-config'
+const panel = atom({ plugin: 'ml-agent-config', key: 'panel' } as const, EMPTY_PANEL)
 
 async function bin($: EngineInterface): Promise<string> {
   return `${(await $.env.get('AGENT_CONFIG_ROOT')) ?? $.plugin.root}/bin/agent-config`
 }
 
-// The CLI picks its harness from CLAUDECODE, which Claude Code sets for the model's shell and not
-// for a hooks module's children; without it a machine with ~/.codex is read as Codex.
-const HARNESS = { CLAUDECODE: '1' }
-
-// A v2 declaration may be named for the plugin or for the skill, so both are tried.
-export function candidates(skill: string): string[] {
-  const colon = skill.indexOf(':')
-  return colon > 0 ? [skill.slice(0, colon), skill.slice(colon + 1)] : [skill]
+// agent-config's own settings, read from the declaration beside this file.
+function own($: EngineInterface): { name: string; from: string } {
+  return { name: OWN, from: `${$.plugin.root}/claude-code` }
 }
 
 // Exit 2 means no declaration under this name.
@@ -68,6 +45,39 @@ export async function start($: EngineInterface, name: string, from?: string): Pr
   const argv = [await bin($), 'start', name, ...(from ? ['--from', from] : [])]
   const ran = await $.process.run(argv, { env: HARNESS, timeoutMs: 15000 })
   return ran.exitCode === 0 ? (JSON.parse(ran.stdout) as Plan) : undefined
+}
+
+// `write` replaces the whole layer, so the current file is read and only this key changes. The CLI
+// refuses a value that looks like an inline secret, and its reason comes back as the error.
+export async function writeKey(
+  $: EngineInterface,
+  component: { name: string; from?: string },
+  layer: string,
+  dotPath: string,
+  value: Json | undefined,
+): Promise<string | undefined> {
+  const from = component.from ? ['--from', component.from] : []
+  const where = await $.process.run([await bin($), 'path', component.name, '--layer', layer, ...from], { env: HARNESS })
+  if (where.exitCode !== 0) return firstLine(where.stderr) || `no ${layer} layer here`
+  const file = (JSON.parse(where.stdout) as { layers: { path: string | null }[] }).layers[0]?.path
+  if (!file) return `no ${layer} layer here; it needs a repository`
+  let config: Record<string, unknown> = {}
+  try {
+    config = JSON.parse(await $.fs.read(file)) as Record<string, unknown>
+  } catch {
+    // No file yet: the layer starts empty.
+  }
+  const wrote = await $.process.run([await bin($), 'write', component.name, '--layer', layer, ...from], {
+    env: HARNESS,
+    stdin: JSON.stringify(withValue(config, dotPath, value)),
+  })
+  return wrote.exitCode === 0 ? undefined : firstLine(wrote.stderr) || 'the write failed'
+}
+
+// A v2 declaration may be named for the plugin or for the skill, so both are tried.
+export function candidates(skill: string): string[] {
+  const colon = skill.indexOf(':')
+  return colon > 0 ? [skill.slice(0, colon), skill.slice(colon + 1)] : [skill]
 }
 
 // Names with no declaration, so a skill expanded again does not spawn the CLI again. A reload
@@ -115,70 +125,10 @@ export async function unlock($: EngineInterface, plan: Plan): Promise<Unlock | u
   return result
 }
 
-// agent-config's own settings, read from the declaration beside this file.
-function own($: EngineInterface): { name: string; from: string } {
-  return { name: OWN, from: `${$.plugin.root}/claude-code` }
-}
-
 async function showsBanner($: EngineInterface): Promise<boolean> {
   const plan = await start($, OWN, own($).from)
   const notices = (plan?.config as { notices?: { cacheBanner?: boolean } } | undefined)?.notices
   return notices?.cacheBanner !== false
-}
-
-function firstLine(text: string): string {
-  return text.trim().split('\n')[0] ?? ''
-}
-
-function withoutKey(config: Record<string, unknown>, dotPath: string): void {
-  const segments = dotPath.split('.')
-  let cursor: Record<string, unknown> | undefined = config
-  for (const segment of segments.slice(0, -1)) {
-    const next: unknown = cursor?.[segment]
-    cursor = typeof next === 'object' && next !== null && !Array.isArray(next) ? (next as Record<string, unknown>) : undefined
-  }
-  if (cursor) delete cursor[segments.at(-1)!]
-}
-
-function withKey(config: Record<string, unknown>, dotPath: string, value: Json): void {
-  const segments = dotPath.split('.')
-  let cursor = config
-  for (const segment of segments.slice(0, -1)) {
-    const next = cursor[segment]
-    if (typeof next !== 'object' || next === null || Array.isArray(next)) cursor[segment] = {}
-    cursor = cursor[segment] as Record<string, unknown>
-  }
-  cursor[segments.at(-1)!] = value
-}
-
-// `write` replaces the whole layer, so the current file is read and only this key changes. No value
-// removes the key from that layer, so a lower layer or the default shows through again. The CLI
-// refuses a value that looks like an inline secret, and its reason comes back as the error.
-export async function writeKey(
-  $: EngineInterface,
-  component: { name: string; from?: string },
-  layer: string,
-  dotPath: string,
-  value: Json | undefined,
-): Promise<string | undefined> {
-  const from = component.from ? ['--from', component.from] : []
-  const where = await $.process.run([await bin($), 'path', component.name, '--layer', layer, ...from], { env: HARNESS })
-  if (where.exitCode !== 0) return firstLine(where.stderr) || `no ${layer} layer here`
-  const file = (JSON.parse(where.stdout) as { layers: { path: string | null }[] }).layers[0]?.path
-  if (!file) return `no ${layer} layer here; it needs a repository`
-  let config: Record<string, unknown> = {}
-  try {
-    config = JSON.parse(await $.fs.read(file)) as Record<string, unknown>
-  } catch {
-    // No file yet: the layer starts empty.
-  }
-  if (value === undefined) withoutKey(config, dotPath)
-  else withKey(config, dotPath, value)
-  const wrote = await $.process.run([await bin($), 'write', component.name, '--layer', layer, ...from], {
-    env: HARNESS,
-    stdin: JSON.stringify(config),
-  })
-  return wrote.exitCode === 0 ? undefined : firstLine(wrote.stderr) || 'the write failed'
 }
 
 async function hideBannerForGood($: EngineInterface): Promise<void> {
@@ -194,7 +144,37 @@ async function forget($: EngineInterface): Promise<void> {
   await update($, notice, () => null)
 }
 
-// The pane's data. A drawing cannot write state, so these run from the command and the presses.
+// The pane. Each press updates the state and the drawing follows; a drawing cannot write state.
+
+// When the focused element leaves the drawing, the keys go back to the message box; this puts the
+// ring on an element of the new screen (awaited until it is drawn).
+async function refocus($: EngineInterface, key: string | undefined): Promise<void> {
+  if (!key) return
+  try {
+    await $.ui.focus({ requestId: PANE, key })
+  } catch {
+    // The pane does not hold the keys; nothing to move.
+  }
+}
+
+/** Open a screen on top, remembering what was pressed to open it. */
+async function go($: EngineInterface, screen: Screen, from: string, focus?: string): Promise<void> {
+  await update($, panel, now => ({
+    ...now,
+    message: null,
+    stack: [...now.stack.slice(0, -1), { ...now.stack.at(-1)!, focus: from }, screen],
+  }))
+  await refocus($, focus)
+}
+
+/** Close screens, back to the one under them, its focus where it was. */
+async function back($: EngineInterface, close = 1, after: { message?: string; focus?: string } = {}): Promise<void> {
+  const now = await read($, panel)
+  const stack = now.stack.slice(0, Math.max(1, now.stack.length - close))
+  await update($, panel, latest => ({ ...latest, stack, message: after.message ?? null }))
+  await refocus($, after.focus ?? stack.at(-1)?.focus)
+}
+
 async function components($: EngineInterface): Promise<Component[]> {
   const listed = await $.process.run([await bin($), 'list'], { env: HARNESS, timeoutMs: 15000 })
   const installed =
@@ -207,358 +187,227 @@ async function describe($: EngineInterface, component: Component): Promise<Pick<
   const from = component.from ? ['--from', component.from] : []
   const ran = await $.process.run([await bin($), 'describe', component.name, ...from], { env: HARNESS, timeoutMs: 15000 })
   if (ran.exitCode !== 0) return { settings: [], layers: [], message: firstLine(ran.stderr) || 'describe failed' }
-  const out = JSON.parse(ran.stdout) as { keys: Setting[]; layers: { layer: string; path: string | null }[] }
-  return {
-    settings: out.keys.map(({ path, description, layer, default: fallback, value, source, credential, required }) => ({
-      path,
-      description,
-      layer,
-      default: fallback,
-      value,
-      source,
-      credential,
-      required,
-    })),
-    layers: out.layers.filter(one => one.path).map(one => one.layer),
-    message: null,
-  }
+  return { ...readDescribe(ran.stdout, await $.env.get('HOME')), message: null }
 }
 
 async function openPanel($: EngineInterface): Promise<void> {
-  await update($, panel, now => ({ ...now, isLoading: true, editing: null, message: null }))
+  const kept = (await read($, panel)).onePassword ?? NO_ONE_PASSWORD
+  // The 1Password list stays for the session; everything else starts over.
+  await update($, panel, () => ({ ...EMPTY_PANEL, onePassword: { ...kept, isLoading: false }, isLoading: true }))
   await $.ui.open({ id: PANE, title: 'agent-config', focus: true, closeOnEscape: true, rows: 40 })
   const list = await components($)
-  const kept = (await read($, panel)).selected
-  const selected = list.find(one => one.name === kept) ?? list.find(one => one.name !== OWN) ?? list[0]!
-  const detail = await describe($, selected)
-  await update($, panel, now => ({ ...now, ...detail, components: list, selected: selected.name, isLoading: false }))
+  await update($, panel, now => ({ ...now, components: list, isLoading: false }))
+  await refocus($, list[0] && `component:${list[0].name}`)
 }
 
-async function select($: EngineInterface, name: string): Promise<void> {
+async function openComponent($: EngineInterface, name: string): Promise<void> {
   const component = (await read($, panel)).components.find(one => one.name === name)
   if (!component) return
-  await update($, panel, now => ({ ...now, selected: name, editing: null, message: null, isLoading: true }))
+  await update($, panel, now => ({ ...now, selected: name, settings: [], layers: [], show: 'effective', isLoading: true }))
+  await go($, { kind: 'settings' }, `component:${name}`)
   const detail = await describe($, component)
   await update($, panel, now => ({ ...now, ...detail, isLoading: false }))
+  await refocus($, firstSetting(detail.settings))
 }
 
-// Where an edit lands unless the person picks another layer: where the value is set now, else
-// where the declaration recommends, else global.
-export function targetLayer(setting: Setting, layers: readonly string[]): string {
-  const wanted = [setting.source, setting.layer, 'global'].find(one => one && layers.includes(one))
-  return wanted ?? layers[0] ?? 'global'
-}
-
-async function save($: EngineInterface, layer: string, dotPath: string, value: Json | undefined): Promise<void> {
-  const now = await read($, panel)
-  const component = now.components.find(one => one.name === now.selected)
-  if (!component) return
-  const failed = await writeKey($, component, layer, dotPath, value)
-  if (!failed && component.name === OWN && dotPath === 'notices.cacheBanner' && value === false) {
+// Write one key at one level and read the component again. The error, if any, comes back.
+async function save($: EngineInterface, layer: string, path: string, value: Json | undefined): Promise<string | undefined> {
+  const component = selected(await read($, panel))
+  if (!component) return 'no component selected'
+  const failed = await writeKey($, component, layer, path, value)
+  if (!failed && component.name === OWN && path === 'notices.cacheBanner' && value === false) {
     await update($, notice, () => null)
   }
   const detail = await describe($, component)
   const ready = (await start($, component.name, component.from))?.ready ?? null
-  const done = value === undefined ? `Removed ${dotPath} from ${layer}.` : `Saved ${dotPath} in ${layer}.`
   await update($, panel, latest => ({
     ...latest,
     ...detail,
     components: latest.components.map(one => (one.name === component.name ? { ...one, ready } : one)),
-    editing: failed ? latest.editing : null,
-    message: failed ? `Not saved: ${failed}` : done,
+    message: failed ? `Not saved: ${failed}` : detail.message,
   }))
+  return failed
 }
 
-// What each credential source needs, in the order asked. The same required fields as
-// REQUIRED_FIELDS in src/credentials.ts, which this module cannot import (it needs Node).
-export const SOURCES: Record<string, { label: string; fields: { name: string; label: string; hint: string }[] }> = {
-  '1password': { label: '1Password', fields: [{ name: 'ref', label: 'Reference', hint: 'op://Vault/Item/field' }] },
-  env: { label: 'Environment variable', fields: [{ name: 'var', label: 'Variable', hint: 'MY_API_KEY' }] },
-  dotenv: {
-    label: '.env file',
-    fields: [
-      { name: 'path', label: 'File', hint: '~/.config/my-app/.env' },
-      { name: 'var', label: 'Variable', hint: 'MY_API_KEY' },
-    ],
-  },
-  keychain: {
-    label: 'Keychain',
-    fields: [
-      { name: 'service', label: 'Service', hint: 'my-app' },
-      { name: 'account', label: 'Account', hint: 'me@example.com' },
-    ],
-  },
-  command: { label: 'Command', fields: [{ name: 'command', label: 'Command', hint: 'pass show my-app/key' }] },
-}
-
-type Stored = { source: string; [field: string]: Json }
-
-function isReference(value: Json): value is Stored {
-  return value !== null && typeof value === 'object' && !Array.isArray(value) && typeof value.source === 'string'
-}
-
-// A value as a person reads it: no quotes or braces. A credential shows where the secret lives.
-export function showValue(value: Json): string {
-  if (value === null) return 'not set'
-  if (typeof value === 'boolean') return value ? 'on' : 'off'
-  if (typeof value === 'string' || typeof value === 'number') return String(value)
-  if (Array.isArray(value)) return value.map(showValue).join(', ')
-  if (isReference(value)) {
-    const kind = SOURCES[value.source]
-    const where = (kind?.fields ?? []).map(field => value[field.name]).filter(part => typeof part === 'string' && part)
-    return `${kind?.label ?? value.source}: ${where.join(' / ')}`
-  }
-  return Object.entries(value)
-    .map(([key, child]) => `${key}: ${showValue(child)}`)
-    .join(', ')
-}
-
-// The edit field's starting text, in the form parseText reads back.
-export function editText(value: Json): string {
-  if (value === null) return ''
-  if (typeof value === 'boolean') return value ? 'on' : 'off'
-  if (Array.isArray(value)) return value.map(String).join(', ')
-  if (typeof value === 'object') return JSON.stringify(value)
-  return String(value)
-}
-
-// The text typed for a plain key, read as the type of its current value or default: a number, on
-// or off, a comma-separated list, or text. Empty removes the key from the layer.
-export function parseText(text: string, like: Json): { value?: Json; error?: string } {
-  const trimmed = text.trim()
-  if (trimmed === '') return {}
-  if (typeof like === 'number') {
-    const number = Number(trimmed)
-    return Number.isFinite(number) ? { value: number } : { error: `${trimmed} is not a number` }
-  }
-  if (typeof like === 'boolean') {
-    if (/^(on|true|yes)$/i.test(trimmed)) return { value: true }
-    if (/^(off|false|no)$/i.test(trimmed)) return { value: false }
-    return { error: 'type on or off' }
-  }
-  if (Array.isArray(like)) return { value: trimmed.split(',').map(part => part.trim()).filter(Boolean) }
-  if (like !== null && typeof like === 'object') {
-    try {
-      return { value: JSON.parse(trimmed) as Json }
-    } catch {
-      return { error: 'this key holds an object: type it as JSON' }
-    }
-  }
-  return { value: trimmed }
-}
-
-// Browsing 1Password through `agent-config 1password`, which prints names and op:// addresses only.
-async function browseStep<T>($: EngineInterface, what: string, flags: string[]): Promise<T | string> {
-  const ran = await $.process.run([await bin($), '1password', what, ...flags], { env: HARNESS, timeoutMs: 120000 })
-  return ran.exitCode === 0 ? (JSON.parse(ran.stdout) as T) : firstLine(ran.stderr) || `op ${what} failed`
-}
-
-const BROWSE_START: Browse = { step: 'account', account: null, vault: null, item: null, options: [], filter: '', offset: 0, isLoading: true, error: null }
-
-async function showStep($: EngineInterface, step: Browse['step'], options: Browse['options'] | string, at: Partial<Browse>): Promise<void> {
-  await update($, panel, latest =>
-    latest.browse === null
-      ? latest
-      : {
-          ...latest,
-          browse:
-            typeof options === 'string'
-              ? { ...latest.browse, ...at, isLoading: false, error: options }
-              : { ...latest.browse, ...at, step, options, filter: '', offset: 0, isLoading: false, error: null },
-        },
-  )
-  // The row just pressed is gone from the new list, and with it the focus: put it on the new list.
-  if (typeof options !== 'string' && options.length > 0) await refocus($, options.length > FILTER_FROM ? 'filter' : `pick:${options[0]!.value}`)
-}
-
-// When the focused element leaves the drawing, the keys would go back to the message box; this
-// puts the ring on an element that is drawn now (awaited until it is).
-async function refocus($: EngineInterface, key: string): Promise<void> {
-  try {
-    await $.ui.focus({ requestId: PANE, key })
-  } catch {
-    // The pane does not hold the keys; nothing to move.
-  }
-}
-
-async function browseVaults($: EngineInterface, account: string | null): Promise<void> {
-  await update($, panel, latest => ({ ...latest, browse: latest.browse && { ...latest.browse, account, isLoading: true } }))
-  const got = await browseStep<{ vaults: { id: string; name: string }[] }>($, 'vaults', account ? ['--account', account] : [])
-  await showStep($, 'vault', typeof got === 'string' ? got : got.vaults.map(one => ({ value: one.id, label: one.name })), { account })
-}
-
-async function openBrowse($: EngineInterface): Promise<void> {
-  await update($, panel, latest => ({ ...latest, browse: BROWSE_START, message: null }))
-  const got = await browseStep<{ accounts: { id: string; label: string }[] }>($, 'accounts', [])
-  if (typeof got === 'string') return showStep($, 'account', got, {})
-  if (got.accounts.length > 1) return showStep($, 'account', got.accounts.map(one => ({ value: one.id, label: one.label })), {})
-  return browseVaults($, null)
-}
-
-function accountFlag(browse: Browse): string[] {
-  return browse.account ? ['--account', browse.account] : []
-}
-
-async function browseItems($: EngineInterface, browse: Browse, vault: { id: string; name: string }): Promise<void> {
-  await update($, panel, latest => ({ ...latest, browse: latest.browse && { ...latest.browse, isLoading: true } }))
-  const got = await browseStep<{ items: { id: string; title: string; category: string }[] }>($, 'items', [
-    '--vault',
-    vault.id,
-    ...accountFlag(browse),
-  ])
-  const options = typeof got === 'string' ? got : got.items.map(one => ({ value: one.id, label: `${one.title} · ${one.category.toLowerCase()}` }))
-  await showStep($, 'item', options, { vault })
-}
-
-async function browseFields($: EngineInterface, browse: Browse, item: { id: string; title: string }): Promise<void> {
-  await update($, panel, latest => ({ ...latest, browse: latest.browse && { ...latest.browse, isLoading: true } }))
-  const got = await browseStep<{ fields: { label: string; section: string | null; type: string; reference: string }[] }>($, 'fields', [
-    '--vault',
-    browse.vault!.id,
-    '--item',
-    item.id,
-    ...accountFlag(browse),
-  ])
-  const options =
-    typeof got === 'string'
-      ? got
-      : got.fields.map(one => ({ value: one.reference, label: `${one.section ? `${one.section} › ` : ''}${one.label} · ${one.type.toLowerCase()}` }))
-  await showStep($, 'field', options, { item })
-}
-
-async function pickBrowse($: EngineInterface, value: string): Promise<void> {
-  const browse = (await read($, panel)).browse
-  if (!browse) return
-  const label = browse.options.find(one => one.value === value)?.label ?? value
-  if (browse.step === 'account') return browseVaults($, value)
-  if (browse.step === 'vault') return browseItems($, browse, { id: value, name: label })
-  if (browse.step === 'item') return browseFields($, browse, { id: value, title: label.split(' · ')[0]! })
-  // A field: its op:// address becomes the reference, and the account with it when there are several.
-  await update($, panel, latest => ({
-    ...latest,
-    draft: { ...latest.draft, ref: value, ...(browse.account ? { account: browse.account } : {}) },
-    browse: null,
-    message: `Picked ${value}. Press Save to keep it.`,
-  }))
-  await refocus($, 'save')
-}
-
-// One step up: the list it came from, listed again.
-async function browseBack($: EngineInterface): Promise<void> {
-  const browse = (await read($, panel)).browse
-  if (!browse) return
-  if (browse.step === 'field') return browseItems($, browse, browse.vault!)
-  if (browse.step === 'item') return browseVaults($, browse.account)
-  if (browse.step === 'vault' && browse.account) return openBrowse($)
-  await update($, panel, latest => ({ ...latest, browse: null }))
-}
-
-// The list box: this many rows at once, scrolled by the arrows at its edges; a filter from this many.
-const WINDOW = 15
-const FILTER_FROM = 10
-
-// The rows the box shows now, after the filter.
-function visible(browse: Browse): Browse['options'] {
-  return matching(browse.options, browse.filter).slice(browse.offset, browse.offset + WINDOW)
-}
-
-// The ring's last element, so a move off the box's edge row reads as a scroll. A reload forgets it,
-// which costs one move that leaves the box instead of scrolling it.
-let lastFocus: string | undefined
-
-// An arrow off the box's first or last row scrolls the box one row and keeps the ring in it, the
-// way a list scrolls, instead of leaving for the filter or the buttons below.
-export function scrollBy(browse: Browse, from: string | undefined, to: string | undefined): number {
-  const rows = visible(browse)
-  if (!from?.startsWith('pick:') || to?.startsWith('pick:') || rows.length === 0) return 0
-  const total = matching(browse.options, browse.filter).length
-  if (from === `pick:${rows.at(-1)!.value}` && to !== 'filter' && browse.offset + WINDOW < total) return 1
-  if (from === `pick:${rows[0]!.value}` && browse.offset > 0) return -1
-  return 0
-}
-
-// While the pane is taller than its room, the engine spends ↑ and ↓ on scrolling the whole pane
-// instead of walking the ring. In the 1Password list they move the ring a row instead, scrolling the
-// list box at its edges. Undefined leaves the key to the engine.
-export function arrowMove(browse: Browse, from: string | undefined, by: number): { offset: number; focus: string } | undefined {
-  const all = matching(browse.options, browse.filter)
-  const rows = visible(browse).map(option => `pick:${option.value}`)
-  const offset = browse.offset
-  if (rows.length === 0 || from === undefined) return undefined
-  if (from === 'filter') return by > 0 ? { offset, focus: rows[0]! } : undefined
-  if (from === 'browse-back' || from === 'browse-close') return by < 0 ? { offset, focus: rows.at(-1)! } : undefined
-  const at = rows.indexOf(from)
-  if (at < 0) return undefined
-  if (by > 0) {
-    if (at < rows.length - 1) return { offset, focus: rows[at + 1]! }
-    if (offset + WINDOW < all.length) return { offset: offset + 1, focus: `pick:${all[offset + WINDOW]!.value}` }
-    return { offset, focus: 'browse-back' }
-  }
-  if (at > 0) return { offset, focus: rows[at - 1]! }
-  if (offset > 0) return { offset: offset - 1, focus: `pick:${all[offset - 1]!.value}` }
-  return browse.options.length > FILTER_FROM ? { offset, focus: 'filter' } : undefined
-}
-
-async function scrollBox($: EngineInterface, by: number): Promise<void> {
-  await update($, panel, latest =>
-    latest.browse ? { ...latest, browse: { ...latest.browse, offset: Math.max(0, latest.browse.offset + by) } } : latest,
-  )
-  const browse = (await read($, panel)).browse
-  const rows = browse ? visible(browse) : []
-  const row = by > 0 ? rows.at(-1) : rows[0]
-  if (row) await refocus($, `pick:${row.value}`)
-}
-
-export function matching(options: Browse['options'], filter: string): Browse['options'] {
-  const words = filter.toLowerCase().split(/\s+/).filter(Boolean)
-  return options.filter(one => words.every(word => one.label.toLowerCase().includes(word)))
-}
-
-async function startEdit($: EngineInterface, setting: Setting): Promise<void> {
-  const current = setting.value ?? setting.default
-  const reference = isReference(current) ? current : undefined
-  const draft = Object.fromEntries(
-    Object.entries(reference ?? {}).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
-  )
-  await update($, panel, latest => ({
-    ...latest,
-    editing: setting.path,
-    layer: targetLayer(setting, latest.layers),
-    source: reference && SOURCES[reference.source] ? reference.source : '1password',
-    draft,
-    browse: null,
-    message: null,
-  }))
-}
-
-async function savePlain($: EngineInterface, setting: Setting, text: string): Promise<void> {
-  const parsed = parseText(text, setting.value ?? setting.default)
-  if (parsed.error) {
-    await update($, panel, latest => ({ ...latest, message: `Not saved: ${parsed.error}` }))
-    return
-  }
-  await save($, (await read($, panel)).layer, setting.path, parsed.value)
-}
-
-// A reference keeps its other fields (an account, a cacheVar) while its source stays the same.
-async function saveReference($: EngineInterface, setting: Setting): Promise<void> {
+/** An on/off key flips in place: at the level shown, or where it lives now. */
+async function toggle($: EngineInterface, setting: Setting): Promise<void> {
   const now = await read($, panel)
-  const fields = SOURCES[now.source]?.fields ?? []
-  const missing = fields.filter(field => !now.draft[field.name]?.trim())
-  if (missing.length > 0) {
-    await update($, panel, latest => ({ ...latest, message: `Not saved: fill in ${missing.map(field => field.label).join(' and ')}` }))
-    return
+  const layer = now.show !== 'effective' ? now.show : targetLayer(setting, layerNames(now))
+  const here = setting.levels[layer]
+  const value = !(typeof here === 'boolean' ? here : (setting.value ?? setting.default))
+  if (!(await save($, layer, setting.path, value))) {
+    await update($, panel, latest => ({ ...latest, message: savedAt(setting.path, layer, value) }))
   }
-  const before = setting.value
-  const base = isReference(before) && before.source === now.source ? before : { source: now.source }
-  const value: Stored = { ...base, source: now.source }
-  for (const field of fields) value[field.name] = now.draft[field.name]!.trim()
-  if (now.source === '1password' && now.draft.account) value.account = now.draft.account
-  await save($, now.layer, setting.path, value)
 }
 
-function isBoolean(setting: Setting): boolean {
-  return typeof (setting.value ?? setting.default) === 'boolean'
+async function openEdit($: EngineInterface, setting: Setting, canType: boolean): Promise<void> {
+  const now = await read($, panel)
+  const layers = layerNames(now)
+  const layer = layers.includes(now.show) ? now.show : targetLayer(setting, layers)
+  const edit = editAt(setting, layer)
+  await update($, panel, latest => ({ ...latest, edit }))
+  await go($, { kind: 'edit' }, `setting:${setting.path}`, firstEdit(setting, edit, canType))
+}
+
+async function chooseLevel($: EngineInterface, layer: string): Promise<void> {
+  const setting = editing(await read($, panel))
+  if (!setting) return
+  await update($, panel, now => ({ ...now, edit: editAt(setting, layer) }))
+  await back($)
+}
+
+async function chooseSource($: EngineInterface, source: string): Promise<void> {
+  const now = await read($, panel)
+  const setting = editing(now)
+  if (!setting || !now.edit) return
+  // The source it had: its fields as stored. Another: empty fields.
+  const stored = editAt(setting, now.edit.layer)
+  const draft = stored.source === source ? stored.draft : {}
+  await update($, panel, latest => ({ ...latest, edit: latest.edit && { ...latest.edit, source, draft } }))
+  await back($)
+}
+
+async function saveHere($: EngineInterface, value: Json | undefined): Promise<void> {
+  const edit = (await read($, panel)).edit
+  if (!edit) return
+  if (!(await save($, edit.layer, edit.path, value))) await back($, 1, { message: savedAt(edit.path, edit.layer, value) })
+}
+
+// A plain value is read as its type; a credential keeps its other fields (an account, a cacheVar)
+// while its source stays the same, and is saved once every field of its source is filled in.
+async function saveEdit($: EngineInterface): Promise<void> {
+  const now = await read($, panel)
+  const setting = editing(now)
+  const edit = now.edit
+  if (!setting || !edit) return
+  const refuse = async (why: string) => {
+    await update($, panel, latest => ({ ...latest, message: `Not saved: ${why}` }))
+  }
+  if (!setting.credential) {
+    const parsed = parseText(edit.text, setting.value ?? setting.default)
+    if (parsed.error) return refuse(parsed.error)
+    return saveHere($, parsed.value)
+  }
+  const fields = SOURCES[edit.source]?.fields ?? []
+  const missing = fields.filter(field => !edit.draft[field.name]?.trim())
+  if (missing.length > 0) return refuse(`fill in ${missing.map(field => field.label).join(' and ')}`)
+  const before = setting.levels[edit.layer] ?? setting.value
+  const base = isReference(before) && before.source === edit.source ? before : { source: edit.source }
+  const value: Stored = { ...base, source: edit.source }
+  for (const field of fields) value[field.name] = edit.draft[field.name]!.trim()
+  if (edit.source === '1password' && edit.draft.account) value.account = edit.draft.account
+  return saveHere($, value)
+}
+
+// 1Password, through `agent-config 1password`, which prints names and op:// addresses only.
+async function onePassword($: EngineInterface, args: string[]): Promise<unknown> {
+  const ran = await $.process.run([await bin($), '1password', ...args], { env: HARNESS, timeoutMs: 180000 })
+  if (ran.exitCode !== 0) throw new Error(firstLine(ran.stderr) || `op ${args[0]} failed`)
+  return JSON.parse(ran.stdout)
+}
+
+async function setOnePassword($: EngineInterface, change: Partial<OnePassword>, pages: Record<string, number> = {}): Promise<void> {
+  await update($, panel, now => ({ ...now, onePassword: { ...now.onePassword, ...change }, pages: { ...now.pages, ...pages } }))
+}
+
+/** Every item of every account, once a session; ↻ lists them again. */
+async function loadOnePassword($: EngineInterface): Promise<void> {
+  await setOnePassword($, { isLoading: true, error: null })
+  try {
+    const got = (await onePassword($, ['items'])) as { accounts: { id: string; short: string }[]; items: Item[]; problems?: string[] }
+    await setOnePassword($, {
+      accounts: got.accounts.map(({ id, short }) => ({ id, short })),
+      items: got.items,
+      problems: got.problems ?? [],
+      isLoaded: true,
+      isLoading: false,
+    })
+  } catch (error) {
+    await setOnePassword($, { isLoading: false, error: (error as Error).message })
+  }
+}
+
+async function openOnePassword($: EngineInterface, canType: boolean): Promise<void> {
+  const isLoaded = (await read($, panel)).onePassword.isLoaded
+  await setOnePassword($, {}, { item: 0 })
+  await go($, { kind: 'onepassword' }, 'pick', canType ? 'search' : undefined)
+  if (!isLoaded) await loadOnePassword($)
+}
+
+async function openFilter($: EngineInterface, by: 'account' | 'vault' | 'type'): Promise<void> {
+  const current = (await read($, panel)).onePassword[by]
+  await setOnePassword($, {}, { choice: 0 })
+  await go($, { kind: 'filter', by }, `filter:${by}`, `choice:${current ?? '*'}`)
+}
+
+async function openItem($: EngineInterface, id: string): Promise<void> {
+  const item = (await read($, panel)).onePassword.items.find(one => one.id === id)
+  if (!item) return
+  await setOnePassword($, { item, fields: [], isLoading: true, error: null }, { ref: 0 })
+  await go($, { kind: 'fields' }, `item:${id}`)
+  try {
+    const flags = ['--vault', item.vault.id, '--item', item.id, ...(item.account ? ['--account', item.account] : [])]
+    const got = (await onePassword($, ['fields', ...flags])) as { fields: OnePassword['fields'] }
+    await setOnePassword($, { fields: got.fields, isLoading: false })
+    await refocus($, got.fields[0] && `ref:${got.fields[0].reference}`)
+  } catch (error) {
+    await setOnePassword($, { isLoading: false, error: (error as Error).message })
+  }
+}
+
+// A field's op:// address becomes the reference, with its account when there are several. The
+// picker closes, and the edit waits for Save.
+async function pickField($: EngineInterface, reference: string): Promise<void> {
+  const op = (await read($, panel)).onePassword
+  const account = op.accounts.length > 1 ? op.item?.account : undefined
+  await update($, panel, latest => ({
+    ...latest,
+    edit: latest.edit && { ...latest.edit, source: '1password', draft: { ...latest.edit.draft, ref: reference, ...(account ? { account } : {}) } },
+  }))
+  await back($, 2, { message: `Picked ${reference}. Press Save here to keep it.`, focus: 'save' })
+}
+
+/** The presses, bound to this engine, for the screens to call. */
+function actions($: EngineInterface, canType: boolean): Actions {
+  return {
+    go: (screen, from, focus) => go($, screen, from, focus),
+    back: () => back($),
+    openComponent: name => openComponent($, name),
+    setup: async name => {
+      await $.prompt.submit({ text: `Run \`agent-config start ${name}\` and finish its onboarding.` })
+    },
+    setShow: async show => {
+      await update($, panel, now => ({ ...now, show }))
+    },
+    toggle: setting => toggle($, setting),
+    openEdit: setting => openEdit($, setting, canType),
+    chooseLevel: layer => chooseLevel($, layer),
+    chooseSource: source => chooseSource($, source),
+    typeText: async text => {
+      await update($, panel, now => ({ ...now, edit: now.edit && { ...now.edit, text } }))
+    },
+    typeField: async (field, text) => {
+      await update($, panel, now => ({ ...now, edit: now.edit && { ...now.edit, draft: { ...now.edit.draft, [field]: text } } }))
+    },
+    saveEdit: () => saveEdit($),
+    saveBoolean: value => saveHere($, value),
+    removeHere: () => saveHere($, undefined),
+    blockHere: () => saveHere($, null),
+    turnPage: async (list, offset, focus) => {
+      await update($, panel, now => ({ ...now, pages: { ...now.pages, [list]: offset } }))
+      await refocus($, focus)
+    },
+    loadOnePassword: () => loadOnePassword($),
+    openOnePassword: () => openOnePassword($, canType),
+    search: text => setOnePassword($, { search: text }, { item: 0 }),
+    openFilter: by => openFilter($, by),
+    setFilter: async (by, value) => {
+      await setOnePassword($, { [by]: value }, { item: 0 })
+      await back($)
+    },
+    openItem: id => openItem($, id),
+    pickField: reference => pickField($, reference),
+  }
 }
 
 export function summary(plan: Plan, cached: readonly Unlock[]): string {
@@ -670,206 +519,12 @@ export const register: Register = on => {
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const now = await read($, panel)
-    const { Box, Button, Text } = $.ui.resolve(e)
-    // The mobile app draws no field yet, so there the pane offers the toggles alone.
+    const ui = $.ui.resolve(e)
+    // The mobile app draws no field yet, so there each screen offers what it can without one.
     const Input = e.surface === 'mobile' ? undefined : $.ui.resolve(e).Input
-    const browse = now.browse
-    const shown = browse ? matching(browse.options, browse.filter) : []
-    const component = now.components.find(one => one.name === now.selected)
-    const editing = now.settings.find(one => one.path === now.editing)
-    return (
-      <Box flexDirection="column">
-        <Box flexWrap="wrap">
-          {now.components.map(one => (
-            <Button
-              key={`component:${one.name}`}
-              label={`${one.name} ${one.ready === null ? '?' : one.ready ? 'ready' : 'needs setup'}`}
-              variant={one.name === now.selected ? 'primary' : undefined}
-              onPress={() => select($, one.name)}
-            />
-          ))}
-        </Box>
-        {now.isLoading && <Text dimColor>Loading…</Text>}
-        {component && !now.isLoading && (
-          <Box flexDirection="column">
-            <Text dimColor>
-              {component.plugin}
-              {component.ready === false ? ' · needs setup' : ''}
-            </Text>
-            {component.ready === false && (
-              <Button
-                key="setup"
-                label="Set up with Claude"
-                onPress={() => $.prompt.submit({ text: `Run \`agent-config start ${component.name}\` and finish its onboarding.` })}
-              />
-            )}
-            {now.settings.length === 0 && <Text dimColor>No declared settings.</Text>}
-            {now.settings.map(setting => (
-              <Box key={`setting:${setting.path}`} flexDirection="column" marginTop={1}>
-                <Box>
-                  <Text bold>{setting.path} </Text>
-                  <Text color={setting.value === null && setting.required ? 'red' : undefined}>
-                    {setting.value === null ? (setting.required ? 'missing' : 'not set') : showValue(setting.value)}
-                  </Text>
-                  <Text dimColor> {setting.source ? `(${setting.source})` : ''} </Text>
-                  {isBoolean(setting) && (
-                    <Button
-                      key={`toggle:${setting.path}`}
-                      label={(setting.value ?? setting.default) === true ? 'Turn off' : 'Turn on'}
-                      onPress={() => save($, targetLayer(setting, now.layers), setting.path, !(setting.value ?? setting.default))}
-                    />
-                  )}
-                  {Input && (
-                    <Button
-                      key={`edit:${setting.path}`}
-                      label="Edit"
-                      dimColor
-                      onPress={() => startEdit($, setting)}
-                    />
-                  )}
-                </Box>
-                <Text dimColor>{setting.description}</Text>
-              </Box>
-            ))}
-            {editing && Input && (
-              <Box flexDirection="column" marginTop={1}>
-                <Box flexWrap="wrap">
-                  <Text>Write to </Text>
-                  {now.layers.map(layer => (
-                    <Button
-                      key={`layer:${layer}`}
-                      label={layer}
-                      variant={layer === now.layer ? 'primary' : undefined}
-                      onPress={() => update($, panel, latest => ({ ...latest, layer }))}
-                    />
-                  ))}
-                  <Button key="cancel" label="Cancel" dimColor onPress={() => update($, panel, latest => ({ ...latest, editing: null }))} />
-                </Box>
-                {editing.credential ? (
-                  <Box flexDirection="column">
-                    <Box flexWrap="wrap">
-                      <Text>Source </Text>
-                      {Object.entries(SOURCES).map(([source, kind]) => (
-                        <Button
-                          key={`source:${source}`}
-                          label={kind.label}
-                          variant={source === now.source ? 'primary' : undefined}
-                          onPress={() => update($, panel, latest => ({ ...latest, source }))}
-                        />
-                      ))}
-                    </Box>
-                    {(SOURCES[now.source]?.fields ?? []).map((field, index) => (
-                      <Input
-                        key={`field:${field.name}`}
-                        label={`${field.label} `}
-                        value={now.draft[field.name] ?? ''}
-                        placeholder={field.hint}
-                        submitLabel="save"
-                        autoFocus={index === 0 ? true : undefined}
-                        onInput={text => update($, panel, latest => ({ ...latest, draft: { ...latest.draft, [field.name]: text } }))}
-                        onSubmit={text =>
-                          update($, panel, latest => ({ ...latest, draft: { ...latest.draft, [field.name]: text } })).then(() =>
-                            saveReference($, editing),
-                          )
-                        }
-                      />
-                    ))}
-                    {now.source === '1password' && !browse && (
-                      <Button key="browse" label="Browse 1Password" onPress={() => openBrowse($)} />
-                    )}
-                    {browse && (
-                      <Box flexDirection="column" borderStyle="round" paddingX={1}>
-                        <Text dimColor>
-                          {['1Password', browse.vault?.name, browse.item?.title].filter(Boolean).join(' › ')}
-                        </Text>
-                        {browse.isLoading && <Text dimColor>Asking 1Password; approve it if it asks.</Text>}
-                        {browse.error && <Text color="red">{browse.error}</Text>}
-                        {!browse.isLoading && !browse.error && browse.options.length > FILTER_FROM && (
-                          <Input
-                            key="filter"
-                            label="Filter "
-                            value={browse.filter}
-                            placeholder="type to narrow the list"
-                            onInput={text => update($, panel, latest => ({ ...latest, browse: latest.browse && { ...latest.browse, filter: text, offset: 0 } }))}
-                            autoFocus
-                            submitLabel="pick first"
-                            onSubmit={text => {
-                              const first = matching(browse.options, text)[0]
-                              if (first) void pickBrowse($, first.value)
-                            }}
-                          />
-                        )}
-                        {/* Buttons, not a Select: a Select keeps the arrows, so up never returned to the filter. */}
-                        {browse.offset > 0 && <Text dimColor>↑ {browse.offset} more</Text>}
-                        <Box flexDirection="column">
-                          {visible(browse).map((option, index) => (
-                            <Button
-                              key={`pick:${option.value}`}
-                              label={option.label}
-                              plain
-                              dimColor={browse.isLoading}
-                              autoFocus={index === 0 && browse.options.length <= FILTER_FROM ? true : undefined}
-                              onPress={() => pickBrowse($, option.value)}
-                            />
-                          ))}
-                        </Box>
-                        {shown.length > browse.offset + WINDOW && <Text dimColor>↓ {shown.length - browse.offset - WINDOW} more</Text>}
-                        {!browse.isLoading && !browse.error && shown.length === 0 && <Text dimColor>Nothing matches.</Text>}
-                        <Box>
-                          <Button key="browse-back" label="Back" dimColor onPress={() => browseBack($)} />
-                          <Button key="browse-close" label="Close" dimColor onPress={() => update($, panel, latest => ({ ...latest, browse: null }))} />
-                        </Box>
-                      </Box>
-                    )}
-                    <Box>
-                      <Button key="save" label="Save" variant="primary" onPress={() => saveReference($, editing)} />
-                      <Button key="remove" label={`Remove from ${now.layer}`} dimColor onPress={() => save($, now.layer, editing.path, undefined)} />
-                    </Box>
-                    <Text dimColor>Where the secret lives, never the secret itself.</Text>
-                  </Box>
-                ) : (
-                  <Input
-                    key="value"
-                    label={`${editing.path} `}
-                    value={editText(editing.value)}
-                    placeholder={Array.isArray(editing.value ?? editing.default) ? 'a, b, c; empty removes it from this layer' : 'empty removes it from this layer'}
-                    submitLabel="save"
-                    autoFocus
-                    onSubmit={text => savePlain($, editing, text)}
-                  />
-                )}
-              </Box>
-            )}
-            {now.message && <Text>{now.message}</Text>}
-          </Box>
-        )}
-      </Box>
-    )
-  })
-
-  on('ui.scroll', { component: 'Pane', requestId: PANE }, async ($, e, next) => {
-    // A wheel tick carries a pointer; an arrow key moves one row and carries none.
-    if (e.origin.kind !== 'person' || e.pointer || Math.abs(e.by) !== 1) return next(e)
-    const browse = (await read($, panel)).browse
-    const move = browse ? arrowMove(browse, lastFocus, e.by) : undefined
-    if (!browse || !move) return next(e)
-    if (move.offset !== browse.offset) {
-      await update($, panel, latest => (latest.browse ? { ...latest, browse: { ...latest.browse, offset: move.offset } } : latest))
-    }
-    void refocus($, move.focus)
-    return {}
-  })
-
-  on('ui.focus', { component: 'Pane', requestId: PANE }, async ($, e, next) => {
-    const browse = (await read($, panel)).browse
-    const by = browse && e.origin.kind === 'person' ? scrollBy(browse, lastFocus, e.element) : 0
-    if (by !== 0) {
-      void scrollBox($, by)
-      return {}
-    }
-    const moved = await next(e)
-    if (!moved.deny) lastFocus = e.element
-    return moved
+    // State a version before the screens kept: open the pane again to start it over.
+    if (!Array.isArray(now.stack)) return <ui.Text dimColor>Run /agent-config again.</ui.Text>
+    return draw({ now, ui, Input, act: actions($, Boolean(Input)) })
   })
 
   // A command cannot run inside the tool call the turn waits on, so a timer queues it for idle.

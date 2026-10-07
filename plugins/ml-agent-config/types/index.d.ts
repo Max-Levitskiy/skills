@@ -18,36 +18,67 @@ export type Setting = {
   source: string | null
   credential: boolean
   required: boolean
+  /** What each level itself sets: absent where it sets nothing, null where it blocks the levels under it. */
+  levels: { [layer: string]: Json }
 }
 
-/** The 1Password picker: one step at a time, account (with several), vault, item, field. */
-export type Browse = {
-  step: 'account' | 'vault' | 'item' | 'field'
-  account: string | null
-  vault: { id: string; name: string } | null
-  item: { id: string; title: string } | null
-  /** The current step's choices; a field's value is its op:// reference, never the secret. */
-  options: { value: string; label: string }[]
-  filter: string
-  /** The first matching choice the list box shows; the box scrolls by moving it. */
-  offset: number
+/** A level this checkout has: its file, shortened for reading, and whether the file exists. */
+export type Level = { layer: string; path: string; exists: boolean }
+
+/** One screen of the pane. The pane draws the top of the stack; Back pops it. */
+export type Screen = {
+  kind: 'components' | 'settings' | 'edit' | 'levels' | 'files' | 'source' | 'onepassword' | 'filter' | 'fields'
+  /** A filter screen's subject. */
+  by?: 'account' | 'vault' | 'type'
+  /** The element pressed to open the next screen, focused again when it closes. */
+  focus?: string
+}
+
+/** The setting being edited, the level the edit writes to, and what has been typed or picked. */
+export type Edit = {
+  path: string
+  layer: string
+  /** A plain value's text, in the form parseText reads. */
+  text: string
+  /** A credential's source, and the text of each of that source's fields. */
+  source: string
+  draft: Record<string, string>
+}
+
+/** A 1Password item as listed: names only, never a value. */
+export type Item = { id: string; title: string; category: string; vault: { id: string; name: string }; account: string | null }
+
+/** Every 1Password item, listed once a session and filtered here; ↻ lists them again. */
+export type OnePassword = {
+  accounts: { id: string; short: string }[]
+  items: Item[]
+  isLoaded: boolean
   isLoading: boolean
   error: string | null
+  /** Accounts that refused while others listed. */
+  problems: string[]
+  search: string
+  account: string | null
+  vault: string | null
+  type: string | null
+  /** The item whose fields are listed, and those fields: names and op:// addresses. */
+  item: Item | null
+  fields: { label: string; section: string | null; type: string; reference: string }[]
 }
 
 export type Panel = {
+  stack: Screen[]
   components: Component[]
   selected: string | null
   settings: Setting[]
-  /** The layers a value can be written to here; repo layers are absent outside a repository. */
-  layers: string[]
-  /** The key whose edit field is open, and the layer the edit writes to. */
-  editing: string | null
-  layer: string
-  /** While a credential is edited: the source picked, and the text of each of its fields. */
-  source: string
-  draft: Record<string, string>
-  browse: Browse | null
+  /** The levels a value can be written to here, lowest first; the project levels need a repository. */
+  layers: Level[]
+  /** What the settings screen shows: the merged value, or one level's own. */
+  show: string
+  edit: Edit | null
+  onePassword: OnePassword
+  /** The first row each list shows, by the list's name; ↑ more and ↓ more move it a page. */
+  pages: Record<string, number>
   message: string | null
   isLoading: boolean
 }

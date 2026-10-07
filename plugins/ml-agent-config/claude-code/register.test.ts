@@ -1,7 +1,9 @@
-import { expect, mock, test } from 'claude-code/testing'
+import { expect, mock, test, type Engine } from 'claude-code/testing'
 import type { On, RenderElement } from 'claude-code'
 
-import { arrowMove, editText, parseText, scrollBy, showValue } from './register'
+import { editText, parseText, showValue } from './register'
+import { fuzzy, ranked } from './ui/fuzzy'
+import { under } from './ui/levels'
 import { SECRET_CACHE_VAR, cacheKey, parseCache } from '../src/secret-cache'
 
 const REF = { source: '1password', ref: 'op://Private/Demo/key' }
@@ -37,6 +39,7 @@ type World = {
   writes: string[]
   layers: string[]
   apiKey: object
+  subdomain: { value: string; source: string; levels: Record<string, string | null> }
 }
 
 const SETTING = { layer: 'global', default: null, credential: false, group: null, required: true, problems: [] }
@@ -47,7 +50,7 @@ const ran = (exitCode: number, stdout: string, stderr = '') => ({
 
 // Everything beneath the plugin: the CLI, the environment, and the engine's own answers.
 function world(on: On, loadExit = 0): World {
-  const w: World = { env: { AGENT_CONFIG_ROOT: '/ac' }, runs: [], commands: [], prompts: [], reloadAnswer: 'Reloaded 4 plugins.', banner: true, layer: undefined, writes: [], layers: ['global', 'repo', 'user-repo', 'local'], apiKey: REF }
+  const w: World = { env: { AGENT_CONFIG_ROOT: '/ac', HOME: '/home/me' }, runs: [], commands: [], prompts: [], reloadAnswer: 'Reloaded 4 plugins.', banner: true, layer: undefined, writes: [], layers: ['global', 'repo', 'user-repo', 'local'], apiKey: REF, subdomain: { value: 'acme', source: 'repo', levels: { repo: 'acme' } } }
   on('env.get', ($, e) => ({ value: w.env[e.name] }))
   on('env.set', ($, e) => {
     if (e.value === undefined) delete w.env[e.name]
@@ -66,14 +69,16 @@ function world(on: On, loadExit = 0): World {
         : ran(3, '', 'op failed: authorization denied. Install the 1Password CLI and run \'op signin\'.')
     }
     if (e.argv[1] === '1password') {
-      const what = e.argv[2]
-      if (what === 'accounts') return ran(0, JSON.stringify({ accounts: [{ id: 'A1', label: 'me@home' }, { id: 'A2', label: 'me@work' }] }))
-      if (what === 'vaults') return ran(0, JSON.stringify({ vaults: [{ id: 'V1', name: 'Private' }] }))
-      if (what === 'items') {
-        const items = Array.from({ length: 14 }, (_, n) => ({ id: `I${n}`, title: `Item ${n}`, category: 'LOGIN' }))
-        return ran(0, JSON.stringify({ items: [...items, { id: 'IG', title: 'GitHub', category: 'API_CREDENTIAL' }] }))
+      if (e.argv[2] === 'items') {
+        const items = Array.from({ length: 14 }, (_, n) => ({ id: `I${n}`, title: `Item ${n}`, category: 'LOGIN', vault: { id: 'V1', name: 'Private' }, account: 'A1' }))
+        const github = [
+          { id: 'IG', title: 'GitHub Actions', category: 'API_CREDENTIAL', vault: { id: 'V2', name: 'Work' }, account: 'A2' },
+          { id: 'IH', title: 'Goohost activity', category: 'PASSWORD', vault: { id: 'V1', name: 'Private' }, account: 'A1' },
+        ]
+        const accounts = [{ id: 'A1', label: 'me@home', short: 'home' }, { id: 'A2', label: 'me@work', short: 'work' }]
+        return ran(0, JSON.stringify({ accounts, items: [...items, ...github], problems: [] }))
       }
-      return ran(0, JSON.stringify({ fields: [{ id: 'credential', label: 'credential', section: null, type: 'CONCEALED', reference: 'op://Private/GitHub/credential' }] }))
+      return ran(0, JSON.stringify({ fields: [{ id: 'credential', label: 'credential', section: null, type: 'CONCEALED', reference: 'op://Work/GitHub Actions/credential' }] }))
     }
     if (e.argv[1] === 'list') {
       return ran(0, JSON.stringify({ components: [{ name: 'demo', plugin: 'ml-demo@max-skills', version: '1.0.0', declaration: '/d' }] }))
@@ -83,14 +88,16 @@ function world(on: On, loadExit = 0): World {
         e.argv[2] === 'agent-config'
           ? [{ ...SETTING, path: 'notices.cacheBanner', description: 'Show the band', default: true, value: w.banner, source: 'default' }]
           : [
-              { ...SETTING, path: 'credentials.apiKey', description: 'API key', credential: true, value: w.apiKey, source: 'global' },
-              { ...SETTING, path: 'workspace.subdomain', description: 'Subdomain', layer: 'repo', value: 'acme', source: 'repo' },
+              { ...SETTING, path: 'credentials.apiKey', description: 'API key', credential: true, value: w.apiKey, source: 'global', levels: { global: w.apiKey } },
+              { ...SETTING, path: 'workspace.subdomain', description: 'Subdomain', layer: 'repo', value: w.subdomain.value, source: w.subdomain.source, levels: w.subdomain.levels },
             ]
-      return ran(0, JSON.stringify({ keys, layers: w.layers.map(layer => ({ layer, path: `/${layer}.json` })) }))
+      return ran(0, JSON.stringify({ keys, layers: w.layers.map(layer => ({ layer, path: `/home/me/${layer}.json`, exists: true })), repo: { checkout: null } }))
     }
     if (e.argv[1] === 'path') return ran(0, JSON.stringify({ layers: [{ path: '/home/.agents/config/agent-config/config.json' }] }))
     if (e.argv[1] === 'write') {
       w.writes.push(e.init?.stdin ?? '')
+      const banner = (JSON.parse(e.init?.stdin ?? '{}') as { notices?: { cacheBanner?: boolean } }).notices?.cacheBanner
+      if (e.argv[2] === 'agent-config' && banner !== undefined) w.banner = banner
       return ran(0, '{}')
     }
     if (e.argv[2] === 'agent-config') return ran(0, JSON.stringify({ ...OWN, config: { notices: { cacheBanner: w.banner } } }))
@@ -205,6 +212,7 @@ const BAND = {
 test('the cached-secrets band offers "Don\'t show again", which saves the choice in agent-config', async ($, on) => {
   const w = world(on)
   for (const surface of ['terminal', 'desktop'] as const) {
+    w.banner = true
     w.layer = '{"notices":{"other":1},"schemaVersion":1}'
     await $.command.run({ command: 'agent-config', args: 'forget', ...COMMAND })
     await $.skill.prompt({ skill: 'demo', text: 'A' })
@@ -254,58 +262,111 @@ const PANE = {
   props: { bodyColumns: 80 } as never,
 } as const
 
-test('/agent-config alone opens a pane listing every component, agent-config included', async ($, on) => {
+const open = async ($: Engine) => {
+  await $.command.run({ command: 'agent-config', args: '', ...COMMAND })
+  return $.ui.mount({ ...PANE, surface: 'terminal' })
+}
+
+const text = async (ui: Awaited<ReturnType<typeof open>>, key: string) => JSON.stringify(await ui.find({ key }))
+
+test('/agent-config opens on the components; one opens its settings, and Back returns', async ($, on) => {
   const w = world(on)
-  const opened = await $.command.run({ command: 'agent-config', args: '', ...COMMAND })
-  expect(opened.text).toBe('Opened the agent-config pane.')
-  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  const ui = await open($)
   expect(await ui.find({ key: 'component:agent-config' })).toBeDefined()
   expect(await ui.find({ key: 'component:demo' })).toBeDefined()
-  // The installed component is shown first; its credential shows the reference, never a secret.
-  expect(await ui.find({ key: 'edit:credentials.apiKey' })).toBeDefined()
-  expect(JSON.stringify(await ui.find({ key: 'setting:credentials.apiKey' }))).toContain('1Password: op://Private/Demo/key')
+  expect(await ui.find({ key: 'back' })).toBeUndefined()
+
+  await ui.press({ key: 'component:demo' })
+  expect(await ui.find({ key: 'component:demo' })).toBeUndefined()
+  // A credential shows where it lives and its level, never a secret.
+  expect(await text(ui, 'row:setting:credentials.apiKey')).toContain('1Password: op://Private/Demo/key · Everywhere')
+  expect(await text(ui, 'row:setting:workspace.subdomain')).toContain('acme · Project, shared')
   expect(w.runs.some(argv => argv[0] === 'sh')).toBe(false)
+
+  await ui.press({ key: 'back' })
+  expect(await ui.find({ key: 'component:demo' })).toBeDefined()
   await ui.unmount()
 })
 
-test("agent-config's own flag toggles from the pane, merged into its global layer", async ($, on) => {
+test("agent-config's own flag toggles in place, merged into its global layer", async ($, on) => {
   const w = world(on)
   w.layer = '{"notices":{"other":1}}'
-  await $.command.run({ command: 'agent-config', args: '', ...COMMAND })
-  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  const ui = await open($)
   await ui.press({ key: 'component:agent-config' })
   await ui.press({ key: 'toggle:notices.cacheBanner' })
   expect(JSON.parse(w.writes.at(-1)!)).toEqual({ notices: { other: 1, cacheBanner: false } })
   const write = w.runs.find(argv => argv[1] === 'write')!
   expect(write).toEqual(['/ac/bin/agent-config', 'write', 'agent-config', '--layer', 'global', '--from', expect.stringContaining('/claude-code')])
+  expect(await text(ui, 'toggle:notices.cacheBanner')).toContain('[ off ]')
   await ui.unmount()
 })
 
-test('an edit writes to the chosen layer; an empty value removes the key from it', async ($, on) => {
+test('an edit writes at the level picked on the Levels screen, and goes back with a message', async ($, on) => {
   const w = world(on)
   w.layer = '{"workspace":{"subdomain":"acme","team":"x"}}'
-  await $.command.run({ command: 'agent-config', args: '', ...COMMAND })
-  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
-  await ui.press({ key: 'edit:workspace.subdomain' })
-  // Set now in the repo layer, so the edit lands there unless another layer is picked.
-  await ui.press({ key: 'layer:local' })
+  const ui = await open($)
+  await ui.press({ key: 'component:demo' })
+  await ui.press({ key: 'setting:workspace.subdomain' })
+  // Set now in the repo layer, so the edit starts there.
+  expect(await text(ui, 'row:level')).toContain('Project, shared')
+  await ui.press({ key: 'level' })
+  expect(await text(ui, 'row:level:repo')).toContain('acme  wins')
+  await ui.press({ key: 'level:local' })
+  expect(await text(ui, 'row:level')).toContain('This checkout')
   await ui.input({ key: 'value', text: 'beta' })
   expect(w.runs.find(argv => argv[1] === 'write')).toEqual(['/ac/bin/agent-config', 'write', 'demo', '--layer', 'local'])
   expect(JSON.parse(w.writes.at(-1)!)).toEqual({ workspace: { subdomain: 'beta', team: 'x' } })
+  // Saved: back on the settings, saying where.
   expect(await ui.find({ key: 'value' })).toBeUndefined()
-
-  await ui.press({ key: 'edit:workspace.subdomain' })
-  await ui.input({ key: 'value', text: '' })
-  expect(w.runs.filter(argv => argv[1] === 'write').at(-1)).toContain('repo')
-  expect(JSON.parse(w.writes.at(-1)!)).toEqual({ workspace: { team: 'x' } })
+  expect(await text(ui, 'row:setting:workspace.subdomain')).toBeDefined()
+  expect(JSON.stringify(await ui.find({}))).toContain('Saved workspace.subdomain in This checkout.')
   await ui.unmount()
 })
 
-test('the mobile pane draws no edit field and keeps the toggles', async ($, on) => {
+test('Remove here drops the key from one level; Block inherited writes null there', async ($, on) => {
+  const w = world(on)
+  w.layer = '{"workspace":{"subdomain":"beta"}}'
+  w.subdomain = { value: 'beta', source: 'local', levels: { repo: 'acme', local: 'beta' } }
+  const ui = await open($)
+  await ui.press({ key: 'component:demo' })
+  expect(await text(ui, 'row:setting:workspace.subdomain')).toContain('beta · This checkout, overrides acme')
+  await ui.press({ key: 'setting:workspace.subdomain' })
+  expect(await text(ui, 'row:remove')).toContain('falls back to acme (Project, shared)')
+  await ui.press({ key: 'remove' })
+  expect(JSON.parse(w.writes.at(-1)!)).toEqual({ workspace: {} })
+
+  await ui.press({ key: 'setting:workspace.subdomain' })
+  await ui.press({ key: 'block' })
+  expect(JSON.parse(w.writes.at(-1)!)).toEqual({ workspace: { subdomain: null } })
+  expect(w.runs.filter(argv => argv[1] === 'write').at(-1)).toContain('local')
+  await ui.unmount()
+})
+
+test('Show switches the settings to one level’s own values', async ($, on) => {
+  const w = world(on)
+  w.subdomain = { value: 'beta', source: 'local', levels: { repo: 'acme', local: 'beta' } }
+  const ui = await open($)
+  await ui.press({ key: 'component:demo' })
+  await ui.press({ key: 'show:repo' })
+  expect(await text(ui, 'row:setting:workspace.subdomain')).toContain('acme')
+  await ui.press({ key: 'show:user-repo' })
+  expect(await text(ui, 'row:setting:workspace.subdomain')).toContain('not set here')
+  // An edit opened while one level shows writes to that level.
+  await ui.press({ key: 'setting:workspace.subdomain' })
+  expect(await text(ui, 'row:level')).toContain('Project, just me')
+  await ui.unmount()
+})
+
+test('the mobile pane has no fields, and still toggles', async ($, on) => {
   world(on)
   await $.command.run({ command: 'agent-config', args: '', ...COMMAND })
   const ui = await $.ui.mount({ ...PANE, surface: 'mobile' })
-  expect(await ui.find({ key: 'edit:workspace.subdomain' })).toBeUndefined()
+  await ui.press({ key: 'component:demo' })
+  await ui.press({ key: 'setting:workspace.subdomain' })
+  expect(await ui.find({ key: 'value' })).toBeUndefined()
+  expect(await ui.find({ key: 'level' })).toBeDefined()
+  await ui.press({ key: 'back' })
+  await ui.press({ key: 'back' })
   await ui.press({ key: 'component:agent-config' })
   expect(await ui.find({ key: 'toggle:notices.cacheBanner' })).toBeDefined()
   await ui.unmount()
@@ -315,23 +376,64 @@ test('a credential is edited as a source and its fields, never as JSON', async (
   const w = world(on)
   w.apiKey = { ...REF, account: 'me' }
   w.layer = JSON.stringify({ credentials: { apiKey: w.apiKey } })
-  await $.command.run({ command: 'agent-config', args: '', ...COMMAND })
-  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
-  await ui.press({ key: 'edit:credentials.apiKey' })
+  const ui = await open($)
+  await ui.press({ key: 'component:demo' })
+  await ui.press({ key: 'setting:credentials.apiKey' })
   expect(await ui.find({ key: 'value' })).toBeUndefined()
 
   // Same source: the other fields of the reference are kept.
   await ui.input({ key: 'field:ref', text: 'op://Private/Demo/other' })
   expect(JSON.parse(w.writes.at(-1)!).credentials.apiKey).toEqual({ source: '1password', ref: 'op://Private/Demo/other', account: 'me' })
 
-  // Another source: a fresh reference, saved only once every field is filled in.
-  await ui.press({ key: 'edit:credentials.apiKey' })
+  // Another source, picked on its own screen: saved only once every field is filled in.
+  await ui.press({ key: 'setting:credentials.apiKey' })
+  await ui.press({ key: 'source' })
   await ui.press({ key: 'source:dotenv' })
   await ui.input({ key: 'field:path', text: '~/.env', kind: 'change' })
   await ui.press({ key: 'save' })
   expect(w.writes).toHaveLength(1)
+  expect(JSON.stringify(await ui.find({}))).toContain('Not saved: fill in Variable')
   await ui.input({ key: 'field:var', text: 'DEMO_KEY' })
   expect(JSON.parse(w.writes.at(-1)!).credentials.apiKey).toEqual({ source: 'dotenv', path: '~/.env', var: 'DEMO_KEY' })
+  await ui.unmount()
+})
+
+test('Pick from 1Password lists every item once, filters and searches it, and fills in the reference', async ($, on) => {
+  const w = world(on)
+  w.layer = '{}'
+  const ui = await open($)
+  await ui.press({ key: 'component:demo' })
+  await ui.press({ key: 'setting:credentials.apiKey' })
+  await ui.press({ key: 'pick' })
+  // A page of ten, and the rest a press away.
+  expect(await ui.find({ key: 'item:I0' })).toBeDefined()
+  expect(await ui.find({ key: 'item:IG' })).toBeUndefined()
+  expect(await text(ui, 'page-down')).toContain('↓ 6 more')
+
+  // Fuzzy: the letters in order, word starts first.
+  await ui.input({ key: 'search', text: 'ghact', kind: 'change' })
+  expect(await text(ui, 'row:item:IG')).toContain('Work · work · API credential')
+  expect(await ui.find({ key: 'item:I0' })).toBeUndefined()
+  await ui.input({ key: 'search', text: '', kind: 'change' })
+
+  // A filter is its own screen; picking a vault narrows the list to it.
+  await ui.press({ key: 'filter:vault' })
+  await ui.press({ key: 'choice:V2' })
+  expect(await text(ui, 'filter:vault')).toContain('Vault: Work')
+  expect(await ui.find({ key: 'item:I0' })).toBeUndefined()
+
+  await ui.press({ key: 'item:IG' })
+  await ui.press({ key: 'ref:op://Work/GitHub Actions/credential' })
+  // Back on the edit, waiting for Save.
+  expect(await ui.find({ key: 'save' })).toBeDefined()
+  await ui.press({ key: 'save' })
+  expect(JSON.parse(w.writes.at(-1)!).credentials.apiKey).toEqual({ source: '1password', ref: 'op://Work/GitHub Actions/credential', account: 'A2' })
+
+  // The list is kept for the session: opening the picker again does not ask 1Password again.
+  await ui.press({ key: 'setting:credentials.apiKey' })
+  await ui.press({ key: 'pick' })
+  const asked = w.runs.filter(argv => argv[1] === '1password').map(argv => argv.slice(2))
+  expect(asked).toEqual([['items'], ['fields', '--vault', 'V2', '--item', 'IG', '--account', 'A2']])
   await ui.unmount()
 })
 
@@ -349,62 +451,19 @@ test('values read and write as plain text, typed by the current value', () => {
   expect(parseText('  ', 'text')).toEqual({})
 })
 
-test('Browse 1Password picks account, vault, item and field into the reference', async ($, on) => {
-  const w = world(on)
-  w.layer = '{}'
-  await $.command.run({ command: 'agent-config', args: '', ...COMMAND })
-  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
-  await ui.press({ key: 'edit:credentials.apiKey' })
-  await ui.press({ key: 'browse' })
-  await ui.press({ key: 'pick:A2' })
-  await ui.press({ key: 'pick:V1' })
-  // Fifteen items: all drawn, and the filter narrows them; Enter picks the first match.
-  expect(await ui.find({ key: 'pick:I13' })).toBeDefined()
-  await ui.input({ key: 'filter', text: 'git', kind: 'change' })
-  expect(await ui.find({ key: 'pick:I13' })).toBeUndefined()
-  await ui.input({ key: 'filter', text: 'git' })
-  await ui.press({ key: 'pick:op://Private/GitHub/credential' })
-  expect(await ui.find({ key: 'pick:op://Private/GitHub/credential' })).toBeUndefined()
-  await ui.press({ key: 'save' })
-  expect(JSON.parse(w.writes.at(-1)!).credentials.apiKey).toEqual({ source: '1password', ref: 'op://Private/GitHub/credential', account: 'A2' })
-  const browsed = w.runs.filter(argv => argv[1] === '1password')
-  expect(browsed.map(argv => argv.slice(2))).toEqual([
-    ['accounts'],
-    ['vaults', '--account', 'A2'],
-    ['items', '--vault', 'V1', '--account', 'A2'],
-    ['fields', '--vault', 'V1', '--item', 'IG', '--account', 'A2'],
-  ])
-  await ui.unmount()
+test('fuzzy finds the letters in order and ranks word starts first', () => {
+  const titles = ['Goohost activity', 'GitHub Auth Client', 'Grocery list', 'GitHub Actions']
+  expect(ranked(titles, 'ghact', one => one)).toEqual(['GitHub Actions', 'GitHub Auth Client', 'Goohost activity'])
+  expect(fuzzy('xyz', 'GitHub')).toBeUndefined()
+  expect(fuzzy('', 'anything')).toBe(0)
+  expect(ranked(titles, '  ', one => one)).toEqual(titles)
 })
 
-test('an arrow off the list box edge scrolls the box, not the pane', () => {
-  const options = Array.from({ length: 40 }, (_, n) => ({ value: `I${n}`, label: `Item ${n}` }))
-  const at = (offset: number) => ({ step: 'item', account: null, vault: null, item: null, options, filter: '', offset, isLoading: false, error: null }) as const
-  // Down off the last shown row (row 14) scrolls; down inside the box moves the ring as usual.
-  expect(scrollBy(at(0), 'pick:I14', 'browse-back')).toBe(1)
-  expect(scrollBy(at(0), 'pick:I3', 'pick:I4')).toBe(0)
-  // Up off the first shown row scrolls back while rows are hidden above, then reaches the filter.
-  expect(scrollBy(at(5), 'pick:I5', 'filter')).toBe(-1)
-  expect(scrollBy(at(0), 'pick:I0', 'filter')).toBe(0)
-  // At the end of the list the ring leaves for the buttons below.
-  expect(scrollBy(at(25), 'pick:I39', 'browse-back')).toBe(0)
-})
-
-test('in an overflowing pane the arrows walk the 1Password list instead of scrolling the pane', () => {
-  const options = Array.from({ length: 40 }, (_, n) => ({ value: `I${n}`, label: `Item ${n}` }))
-  const at = (offset: number, filter = '') =>
-    ({ step: 'item', account: null, vault: null, item: null, options, filter, offset, isLoading: false, error: null }) as const
-  expect(arrowMove(at(0), 'filter', 1)).toEqual({ offset: 0, focus: 'pick:I0' })
-  expect(arrowMove(at(0), 'pick:I0', 1)).toEqual({ offset: 0, focus: 'pick:I1' })
-  expect(arrowMove(at(0), 'pick:I14', 1)).toEqual({ offset: 1, focus: 'pick:I15' })
-  expect(arrowMove(at(25), 'pick:I39', 1)).toEqual({ offset: 25, focus: 'browse-back' })
-  expect(arrowMove(at(3), 'pick:I3', -1)).toEqual({ offset: 2, focus: 'pick:I2' })
-  expect(arrowMove(at(0), 'pick:I0', -1)).toEqual({ offset: 0, focus: 'filter' })
-  expect(arrowMove(at(25), 'browse-back', -1)).toEqual({ offset: 25, focus: 'pick:I39' })
-  // Outside the list, or up from the filter, the engine keeps the key.
-  expect(arrowMove(at(0), 'filter', -1)).toBeUndefined()
-  expect(arrowMove(at(0), 'save', 1)).toBeUndefined()
-  // Five vaults: no filter, so up from the first row is the engine's.
-  expect(arrowMove({ ...at(0), options: options.slice(0, 5) }, 'pick:I0', -1)).toBeUndefined()
-  expect(arrowMove({ ...at(0), options: options.slice(0, 5) }, 'pick:I0', 1)).toEqual({ offset: 0, focus: 'pick:I1' })
+test('under a level shows the next level down that sets the key, a block stopping it', () => {
+  const setting = { path: 'a', description: '', layer: null, default: 'eu', value: 'x', source: 'local', credential: false, required: false, levels: { global: 'g', repo: null, local: 'x' } }
+  const all = ['global', 'repo', 'user-repo', 'local']
+  // repo blocks global, so under local only the default shows.
+  expect(under(setting, 'local', all)).toEqual({ label: 'the default', value: 'eu' })
+  expect(under(setting, 'repo', all)).toEqual({ label: 'Everywhere', value: 'g' })
+  expect(under({ ...setting, default: null }, 'global', all)).toBeUndefined()
 })

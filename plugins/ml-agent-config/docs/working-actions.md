@@ -130,7 +130,8 @@ Code the person can edit an answer themselves in the `/agent-config` pane, which
 existing answer is a three-step protocol:
 
 1. `agent-config describe <name>` — every declared key with its description, recommended layer,
-   default and condition, **plus the current answers and the layer each came from**. Onboarding is
+   default and condition, **plus the current answers and the layer each came from**, and in
+   `levels` what each layer itself sets (null where a layer blocks the ones under it). Onboarding is
    the case where the answers are empty; editing is the same questionnaire, filled in. It also
    returns each user-side layer's `journal`: the previous contents of that file, newest first, so a
    bad edit can be put back.
