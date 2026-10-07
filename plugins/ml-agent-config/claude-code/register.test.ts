@@ -40,6 +40,8 @@ function world(on: On, loadExit = 0): World {
   })
   on('process.run', ($, e) => {
     w.runs.push([...e.argv])
+    // The CLI reads its harness from this; without it a machine with ~/.codex is read as Codex.
+    if (e.init?.env?.CLAUDECODE !== '1') return ran(2, '', 'no CLAUDECODE')
     // As the CLI does: fd 3 holds one entry per requested key, spelled as requested.
     if (e.argv[0] === 'sh') {
       const keys = e.argv.slice(e.argv.indexOf('--secrets') + 1)

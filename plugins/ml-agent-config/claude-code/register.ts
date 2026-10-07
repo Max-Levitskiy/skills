@@ -29,6 +29,10 @@ async function bin($: EngineInterface): Promise<string> {
   return `${(await $.env.get('AGENT_CONFIG_ROOT')) ?? $.plugin.root}/bin/agent-config`
 }
 
+// The CLI picks its harness from CLAUDECODE, which Claude Code sets for the model's shell and not
+// for a hooks module's children; without it a machine with ~/.codex is read as Codex.
+const HARNESS = { CLAUDECODE: '1' }
+
 // A v2 declaration may be named for the plugin or for the skill, so both are tried.
 export function candidates(skill: string): string[] {
   const colon = skill.indexOf(':')
@@ -37,7 +41,7 @@ export function candidates(skill: string): string[] {
 
 // Exit 2 means no declaration under this name.
 export async function start($: EngineInterface, name: string): Promise<Plan | undefined> {
-  const ran = await $.process.run([await bin($), 'start', name], { timeoutMs: 15000 })
+  const ran = await $.process.run([await bin($), 'start', name], { env: HARNESS, timeoutMs: 15000 })
   return ran.exitCode === 0 ? (JSON.parse(ran.stdout) as Plan) : undefined
 }
 
@@ -70,7 +74,7 @@ export async function unlock($: EngineInterface, plan: Plan): Promise<Unlock | u
 
   const ran = await $.process.run(
     ['sh', '-c', 'exec "$0" load "$@" 3>&1 1>/dev/null', await bin($), plan.name, '--secrets', ...keys.map(key => `credentials.${key}`)],
-    { timeoutMs: 120000 },
+    { env: HARNESS, timeoutMs: 120000 },
   )
   const secrets = ran.exitCode === 0 ? (JSON.parse(ran.stdout) as Record<string, string>) : {}
   const missing = keys.filter(key => !secrets[`credentials.${key}`])
