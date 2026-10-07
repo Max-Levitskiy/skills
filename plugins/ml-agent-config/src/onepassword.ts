@@ -11,7 +11,9 @@ const HINT = "Install the 1Password CLI and turn on its app integration, or run 
 
 function op(args: string[], account?: string): unknown {
   const full = [...args, "--format", "json", ...(account ? ["--account", account] : [])];
-  const result = spawnSync("op", full, { encoding: "utf8" });
+  // The environment is passed explicitly: older Bun looks `op` up on the PATH it started with, not
+  // the one the process has now.
+  const result = spawnSync("op", full, { encoding: "utf8", env: process.env });
   if (result.error && (result.error as NodeJS.ErrnoException).code === "ENOENT") {
     throw new CredentialError(`op is not installed or not on PATH. ${HINT}`);
   }

@@ -375,7 +375,7 @@ test('an edit writes at the level switched to on top, and goes back with a messa
   await ui.unmount()
 })
 
-test('a level whose file is behind the schema, or cannot be read, is not written over', async ($, on) => {
+test('a level whose file is behind the schema, cannot be read, or cannot be checked, is not written over', async ($, on) => {
   const w = world(on)
   w.layer = '{"workspace":{"subdomain":"acme","team":"x"}}'
   w.behind = ['repo']
@@ -391,6 +391,13 @@ test('a level whose file is behind the schema, or cannot be read, is not written
   await ui.input({ key: 'value', text: 'beta' })
   expect(w.writes).toEqual([])
   expect(JSON.stringify(await ui.find({}))).toContain('Not saved: could not read')
+
+  // A schema check that cannot run is no answer: the save stops rather than guess.
+  w.unreadable = false
+  w.broken = 'invalid'
+  await ui.input({ key: 'value', text: 'beta' })
+  expect(w.writes).toEqual([])
+  expect(JSON.stringify(await ui.find({}))).toContain("Not saved: could not check this level's schema")
   await ui.unmount()
 })
 

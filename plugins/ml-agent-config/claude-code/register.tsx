@@ -75,8 +75,10 @@ export async function writeKey(
   const file = found?.path
   if (!file) return `no ${layer} layer here; it needs a repository`
   // `write` stamps the current schema, so a file behind it would lose the migration it is owed.
+  // A check that could not run is no answer, so the save stops there too.
   const plan = await start($, component.name, component.from)
-  if (plan?.actions.some(action => action.id === `agent-config:migrate:${layer}`)) {
+  if (!plan) return `could not check this level's schema, so nothing was saved`
+  if (plan.actions.some(action => action.id === `agent-config:migrate:${layer}`)) {
     return `this level's file is on an older schema; Set up with Claude migrates it first`
   }
   // No file yet: the layer starts empty. A file that is there but cannot be read is not written
@@ -396,6 +398,7 @@ async function openItem($: EngineInterface, id: string): Promise<void> {
     await setOnePassword($, { fields: got.fields, isLoading: false })
     await refocus($, got.fields[0] && `ref:${got.fields[0].reference}`)
   } catch (error) {
+    if ((await read($, panel)).onePassword.item?.id !== id) return
     await setOnePassword($, { isLoading: false, error: (error as Error).message })
   }
 }
