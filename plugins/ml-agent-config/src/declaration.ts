@@ -172,12 +172,6 @@ function findUpwards(from: string): string | null {
 }
 
 /**
- * Find the declaration for `name`. `--from` is the development override for a git checkout, which
- * appears in no registry; otherwise every installed plugin of the detected harness is scanned.
- * Several versions of one plugin resolve to the newest, which is not a guess between authors;
- * two different plugins declaring one name is, and fails.
- */
-/**
  * Every installed plugin that ships a declaration, the newest version of each. A file that is not
  * JSON or names nothing is skipped: listing must not fail on another component's broken file.
  */
@@ -200,6 +194,12 @@ export function listDeclarations(harness: Harness): { name: string; plugin: stri
   return [...byPlugin.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 
+/**
+ * Find the declaration for `name`. `--from` is the development override for a git checkout, which
+ * appears in no registry; otherwise every installed plugin of the detected harness is scanned.
+ * Several versions of one plugin resolve to the newest, which is not a guess between authors;
+ * two different plugins declaring one name is, and fails.
+ */
 export function findDeclaration(name: string, harness: Harness, from?: string): FoundDeclaration {
   if (from) {
     const path = findUpwards(from);
