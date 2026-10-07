@@ -25,6 +25,7 @@ import { findDeclaration, listDeclarations, type FoundDeclaration } from "./decl
 import { effectiveConfig, unmetKeys, type Effective } from "./effective";
 import { buildPlan, guidePath } from "./actions";
 import { CredentialError, resolveCredential, type CredentialRef } from "./credentials";
+import * as onePassword from "./onepassword";
 import {
   ACS_VERSION,
   type DescribeOutput,
@@ -67,6 +68,8 @@ const USAGE = `agent-config <command>
   describe <name> [--from <dir>]                  the full questionnaire, with current answers
   path <name> [--layer <layer>] [--from <dir>]    where the layers live
   list                                            every installed component that declares a name
+  1password accounts | vaults | items | fields    browse for a reference: --account, --vault, --item;
+                                                  names and op:// addresses only, never a value
   repos register [--alias <alias>]                add this repository to the repo registry
 
 Layers: ${LAYERS.join(", ")}. Output is JSON only — rendering for a human is the agent's job.`;
@@ -77,6 +80,9 @@ interface ParsedArgs {
   from?: string;
   layer?: string;
   alias?: string;
+  account?: string;
+  vault?: string;
+  item?: string;
   secrets: string[];
   requireReady: boolean;
 }
@@ -90,7 +96,7 @@ function parseArgs(argv: string[]): ParsedArgs {
     if (argument === "--require-ready") {
       collecting = null;
       parsed.requireReady = true;
-    } else if (argument === "--from" || argument === "--layer" || argument === "--alias") {
+    } else if (["--from", "--layer", "--alias", "--account", "--vault", "--item"].includes(argument)) {
       collecting = null;
       const value = argv[index + 1];
       if (!value || value.startsWith("--")) throw new ConfigError(`${argument} needs a value`);
@@ -98,6 +104,9 @@ function parseArgs(argv: string[]): ParsedArgs {
       if (argument === "--from") parsed.from = value;
       if (argument === "--layer") parsed.layer = value;
       if (argument === "--alias") parsed.alias = value;
+      if (argument === "--account") parsed.account = value;
+      if (argument === "--vault") parsed.vault = value;
+      if (argument === "--item") parsed.item = value;
     } else if (argument === "--secrets") {
       // Several keys in one call, so a script needing two secrets does not trigger two prompts.
       collecting = "secrets";
@@ -351,6 +360,23 @@ function list(): number {
   return EXIT.ok;
 }
 
+function browseOnePassword(parsed: ParsedArgs): number {
+  const what = parsed.positionals[0];
+  const need = (value: string | undefined, flag: string): string => {
+    if (!value) throw new ConfigError(`1password ${what} needs ${flag}`);
+    return value;
+  };
+  let found: object;
+  if (what === "accounts") found = { accounts: onePassword.accounts() };
+  else if (what === "vaults") found = { vaults: onePassword.vaults(parsed.account) };
+  else if (what === "items") found = { items: onePassword.items(need(parsed.vault, "--vault"), parsed.account) };
+  else if (what === "fields") {
+    found = { fields: onePassword.fields(need(parsed.vault, "--vault"), need(parsed.item, "--item"), parsed.account) };
+  } else throw new ConfigError(`Unknown 1password subcommand ${JSON.stringify(what ?? "")}: accounts, vaults, items, fields`);
+  out(`${JSON.stringify({ acs: ACS_VERSION, ...found }, null, 2)}\n`);
+  return EXIT.ok;
+}
+
 function repos(parsed: ParsedArgs): number {
   const subcommand = parsed.positionals[0];
   if (subcommand !== "register") {
@@ -386,6 +412,8 @@ export function main(argv: string[]): number {
         return path(parsed);
       case "list":
         return list();
+      case "1password":
+        return browseOnePassword(parsed);
       case "repos":
         return repos(parsed);
       case "":

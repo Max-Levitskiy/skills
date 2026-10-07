@@ -65,6 +65,16 @@ function world(on: On, loadExit = 0): World {
         ? ran(0, JSON.stringify(Object.fromEntries(keys.map(key => [key, 's3cret']))))
         : ran(3, '', 'op failed: authorization denied. Install the 1Password CLI and run \'op signin\'.')
     }
+    if (e.argv[1] === '1password') {
+      const what = e.argv[2]
+      if (what === 'accounts') return ran(0, JSON.stringify({ accounts: [{ id: 'A1', label: 'me@home' }, { id: 'A2', label: 'me@work' }] }))
+      if (what === 'vaults') return ran(0, JSON.stringify({ vaults: [{ id: 'V1', name: 'Private' }] }))
+      if (what === 'items') {
+        const items = Array.from({ length: 14 }, (_, n) => ({ id: `I${n}`, title: `Item ${n}`, category: 'LOGIN' }))
+        return ran(0, JSON.stringify({ items: [...items, { id: 'IG', title: 'GitHub', category: 'API_CREDENTIAL' }] }))
+      }
+      return ran(0, JSON.stringify({ fields: [{ id: 'credential', label: 'credential', section: null, type: 'CONCEALED', reference: 'op://Private/GitHub/credential' }] }))
+    }
     if (e.argv[1] === 'list') {
       return ran(0, JSON.stringify({ components: [{ name: 'demo', plugin: 'ml-demo@max-skills', version: '1.0.0', declaration: '/d' }] }))
     }
@@ -337,4 +347,30 @@ test('values read and write as plain text, typed by the current value', () => {
   expect(parseText('a, b,, c', [])).toEqual({ value: ['a', 'b', 'c'] })
   expect(parseText('true', 'text')).toEqual({ value: 'true' })
   expect(parseText('  ', 'text')).toEqual({})
+})
+
+test('Browse 1Password picks account, vault, item and field into the reference', async ($, on) => {
+  const w = world(on)
+  w.layer = '{}'
+  await $.command.run({ command: 'agent-config', args: '', ...COMMAND })
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  await ui.press({ key: 'edit:credentials.apiKey' })
+  await ui.press({ key: 'browse' })
+  await ui.select({ key: 'pick:account', value: 'A2' })
+  await ui.select({ key: 'pick:vault', value: 'V1' })
+  // Fifteen items: a filter narrows them.
+  await ui.input({ key: 'filter', text: 'git', kind: 'change' })
+  await ui.select({ key: 'pick:item', value: 'IG' })
+  await ui.select({ key: 'pick:field', value: 'op://Private/GitHub/credential' })
+  expect(await ui.find({ key: 'pick:field' })).toBeUndefined()
+  await ui.press({ key: 'save' })
+  expect(JSON.parse(w.writes.at(-1)!).credentials.apiKey).toEqual({ source: '1password', ref: 'op://Private/GitHub/credential', account: 'A2' })
+  const browsed = w.runs.filter(argv => argv[1] === '1password')
+  expect(browsed.map(argv => argv.slice(2))).toEqual([
+    ['accounts'],
+    ['vaults', '--account', 'A2'],
+    ['items', '--vault', 'V1', '--account', 'A2'],
+    ['fields', '--vault', 'V1', '--item', 'IG', '--account', 'A2'],
+  ])
+  await ui.unmount()
 })

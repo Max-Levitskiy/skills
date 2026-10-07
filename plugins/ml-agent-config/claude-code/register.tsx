@@ -15,7 +15,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import { cacheKey, parseCache } from '../src/secret-cache'
-import type { Component, Json, Panel, Setting, Unlock } from '../types'
+import type { Browse, Component, Json, Panel, Setting, Unlock } from '../types'
 
 type Reference = { source: string; ref?: string }
 
@@ -38,6 +38,7 @@ const panel = atom({ plugin: 'ml-agent-config', key: 'panel' } as const, {
   layer: 'global',
   source: '1password',
   draft: {},
+  browse: null,
   message: null,
   isLoading: false,
 } as Panel)
@@ -346,6 +347,107 @@ export function parseText(text: string, like: Json): { value?: Json; error?: str
   return { value: trimmed }
 }
 
+// Browsing 1Password through `agent-config 1password`, which prints names and op:// addresses only.
+async function browseStep<T>($: EngineInterface, what: string, flags: string[]): Promise<T | string> {
+  const ran = await $.process.run([await bin($), '1password', what, ...flags], { env: HARNESS, timeoutMs: 120000 })
+  return ran.exitCode === 0 ? (JSON.parse(ran.stdout) as T) : firstLine(ran.stderr) || `op ${what} failed`
+}
+
+const BROWSE_START: Browse = { step: 'account', account: null, vault: null, item: null, options: [], filter: '', isLoading: true, error: null }
+
+async function showStep($: EngineInterface, step: Browse['step'], options: Browse['options'] | string, at: Partial<Browse>): Promise<void> {
+  await update($, panel, latest =>
+    latest.browse === null
+      ? latest
+      : {
+          ...latest,
+          browse:
+            typeof options === 'string'
+              ? { ...latest.browse, ...at, isLoading: false, error: options }
+              : { ...latest.browse, ...at, step, options, filter: '', isLoading: false, error: null },
+        },
+  )
+}
+
+async function browseVaults($: EngineInterface, account: string | null): Promise<void> {
+  await update($, panel, latest => ({ ...latest, browse: latest.browse && { ...latest.browse, account, isLoading: true } }))
+  const got = await browseStep<{ vaults: { id: string; name: string }[] }>($, 'vaults', account ? ['--account', account] : [])
+  await showStep($, 'vault', typeof got === 'string' ? got : got.vaults.map(one => ({ value: one.id, label: one.name })), { account })
+}
+
+async function openBrowse($: EngineInterface): Promise<void> {
+  await update($, panel, latest => ({ ...latest, browse: BROWSE_START, message: null }))
+  const got = await browseStep<{ accounts: { id: string; label: string }[] }>($, 'accounts', [])
+  if (typeof got === 'string') return showStep($, 'account', got, {})
+  if (got.accounts.length > 1) return showStep($, 'account', got.accounts.map(one => ({ value: one.id, label: one.label })), {})
+  return browseVaults($, null)
+}
+
+function accountFlag(browse: Browse): string[] {
+  return browse.account ? ['--account', browse.account] : []
+}
+
+async function browseItems($: EngineInterface, browse: Browse, vault: { id: string; name: string }): Promise<void> {
+  await update($, panel, latest => ({ ...latest, browse: latest.browse && { ...latest.browse, isLoading: true } }))
+  const got = await browseStep<{ items: { id: string; title: string; category: string }[] }>($, 'items', [
+    '--vault',
+    vault.id,
+    ...accountFlag(browse),
+  ])
+  const options = typeof got === 'string' ? got : got.items.map(one => ({ value: one.id, label: `${one.title} · ${one.category.toLowerCase()}` }))
+  await showStep($, 'item', options, { vault })
+}
+
+async function browseFields($: EngineInterface, browse: Browse, item: { id: string; title: string }): Promise<void> {
+  await update($, panel, latest => ({ ...latest, browse: latest.browse && { ...latest.browse, isLoading: true } }))
+  const got = await browseStep<{ fields: { label: string; section: string | null; type: string; reference: string }[] }>($, 'fields', [
+    '--vault',
+    browse.vault!.id,
+    '--item',
+    item.id,
+    ...accountFlag(browse),
+  ])
+  const options =
+    typeof got === 'string'
+      ? got
+      : got.fields.map(one => ({ value: one.reference, label: `${one.section ? `${one.section} › ` : ''}${one.label} · ${one.type.toLowerCase()}` }))
+  await showStep($, 'field', options, { item })
+}
+
+async function pickBrowse($: EngineInterface, value: string): Promise<void> {
+  const browse = (await read($, panel)).browse
+  if (!browse) return
+  const label = browse.options.find(one => one.value === value)?.label ?? value
+  if (browse.step === 'account') return browseVaults($, value)
+  if (browse.step === 'vault') return browseItems($, browse, { id: value, name: label })
+  if (browse.step === 'item') return browseFields($, browse, { id: value, title: label.split(' · ')[0]! })
+  // A field: its op:// address becomes the reference, and the account with it when there are several.
+  await update($, panel, latest => ({
+    ...latest,
+    draft: { ...latest.draft, ref: value, ...(browse.account ? { account: browse.account } : {}) },
+    browse: null,
+    message: `Picked ${value}. Press Save to keep it.`,
+  }))
+}
+
+// One step up: the list it came from, listed again.
+async function browseBack($: EngineInterface): Promise<void> {
+  const browse = (await read($, panel)).browse
+  if (!browse) return
+  if (browse.step === 'field') return browseItems($, browse, browse.vault!)
+  if (browse.step === 'item') return browseVaults($, browse.account)
+  if (browse.step === 'vault' && browse.account) return openBrowse($)
+  await update($, panel, latest => ({ ...latest, browse: null }))
+}
+
+// The choices drawn at once; past this the filter narrows them.
+const SHOWN = 30
+
+export function matching(options: Browse['options'], filter: string): Browse['options'] {
+  const words = filter.toLowerCase().split(/\s+/).filter(Boolean)
+  return options.filter(one => words.every(word => one.label.toLowerCase().includes(word)))
+}
+
 async function startEdit($: EngineInterface, setting: Setting): Promise<void> {
   const current = setting.value ?? setting.default
   const reference = isReference(current) ? current : undefined
@@ -358,6 +460,7 @@ async function startEdit($: EngineInterface, setting: Setting): Promise<void> {
     layer: targetLayer(setting, latest.layers),
     source: reference && SOURCES[reference.source] ? reference.source : '1password',
     draft,
+    browse: null,
     message: null,
   }))
 }
@@ -384,6 +487,7 @@ async function saveReference($: EngineInterface, setting: Setting): Promise<void
   const base = isReference(before) && before.source === now.source ? before : { source: now.source }
   const value: Stored = { ...base, source: now.source }
   for (const field of fields) value[field.name] = now.draft[field.name]!.trim()
+  if (now.source === '1password' && now.draft.account) value.account = now.draft.account
   await save($, now.layer, setting.path, value)
 }
 
@@ -503,6 +607,9 @@ export const register: Register = on => {
     const { Box, Button, Text } = $.ui.resolve(e)
     // The mobile app draws no field yet, so there the pane offers the toggles alone.
     const Input = e.surface === 'mobile' ? undefined : $.ui.resolve(e).Input
+    const Select = e.surface === 'mobile' ? undefined : $.ui.resolve(e).Select
+    const browse = now.browse
+    const shown = browse ? matching(browse.options, browse.filter) : []
     const component = now.components.find(one => one.name === now.selected)
     const editing = now.settings.find(one => one.path === now.editing)
     return (
@@ -602,6 +709,43 @@ export const register: Register = on => {
                         }
                       />
                     ))}
+                    {now.source === '1password' && !browse && (
+                      <Button key="browse" label="Browse 1Password" onPress={() => openBrowse($)} />
+                    )}
+                    {browse && Select && (
+                      <Box flexDirection="column" borderStyle="round" paddingX={1}>
+                        <Text dimColor>
+                          {['1Password', browse.vault?.name, browse.item?.title].filter(Boolean).join(' › ')}
+                        </Text>
+                        {browse.isLoading && <Text dimColor>Asking 1Password; approve it if it asks.</Text>}
+                        {browse.error && <Text color="red">{browse.error}</Text>}
+                        {!browse.isLoading && !browse.error && browse.options.length > 10 && (
+                          <Input
+                            key="filter"
+                            label="Filter "
+                            value={browse.filter}
+                            placeholder="type to narrow the list"
+                            onInput={text => update($, panel, latest => ({ ...latest, browse: latest.browse && { ...latest.browse, filter: text } }))}
+                            onSubmit={text => update($, panel, latest => ({ ...latest, browse: latest.browse && { ...latest.browse, filter: text } }))}
+                          />
+                        )}
+                        {!browse.isLoading && shown.length > 0 && (
+                          <Select
+                            key={`pick:${browse.step}`}
+                            label={`${browse.step[0]!.toUpperCase()}${browse.step.slice(1)} `}
+                            options={shown.slice(0, SHOWN)}
+                            autoFocus
+                            onSelect={value => pickBrowse($, value)}
+                          />
+                        )}
+                        {shown.length > SHOWN && <Text dimColor>{shown.length - SHOWN} more; type to narrow the list.</Text>}
+                        {!browse.isLoading && !browse.error && shown.length === 0 && <Text dimColor>Nothing matches.</Text>}
+                        <Box>
+                          <Button key="browse-back" label="Back" dimColor onPress={() => browseBack($)} />
+                          <Button key="browse-close" label="Close" dimColor onPress={() => update($, panel, latest => ({ ...latest, browse: null }))} />
+                        </Box>
+                      </Box>
+                    )}
                     <Box>
                       <Button key="save" label="Save" variant="primary" onPress={() => saveReference($, editing)} />
                       <Button key="remove" label={`Remove from ${now.layer}`} dimColor onPress={() => save($, now.layer, editing.path, undefined)} />

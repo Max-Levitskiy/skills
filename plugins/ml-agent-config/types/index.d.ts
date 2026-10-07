@@ -20,6 +20,19 @@ export type Setting = {
   required: boolean
 }
 
+/** The 1Password picker: one step at a time, account (with several), vault, item, field. */
+export type Browse = {
+  step: 'account' | 'vault' | 'item' | 'field'
+  account: string | null
+  vault: { id: string; name: string } | null
+  item: { id: string; title: string } | null
+  /** The current step's choices; a field's value is its op:// reference, never the secret. */
+  options: { value: string; label: string }[]
+  filter: string
+  isLoading: boolean
+  error: string | null
+}
+
 export type Panel = {
   components: Component[]
   selected: string | null
@@ -32,6 +45,7 @@ export type Panel = {
   /** While a credential is edited: the source picked, and the text of each of its fields. */
   source: string
   draft: Record<string, string>
+  browse: Browse | null
   message: string | null
   isLoading: boolean
 }
