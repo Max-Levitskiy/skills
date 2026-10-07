@@ -34,7 +34,10 @@ type World = {
   banner: boolean
   layer: string | undefined
   writes: string[]
+  layers: string[]
 }
+
+const SETTING = { layer: 'global', default: null, credential: false, group: null, required: true, problems: [] }
 
 const ran = (exitCode: number, stdout: string, stderr = '') => ({
   value: { exitCode, stdout, stderr, isStdoutTruncated: false, isStderrTruncated: false },
@@ -42,7 +45,7 @@ const ran = (exitCode: number, stdout: string, stderr = '') => ({
 
 // Everything beneath the plugin: the CLI, the environment, and the engine's own answers.
 function world(on: On, loadExit = 0): World {
-  const w: World = { env: { AGENT_CONFIG_ROOT: '/ac' }, runs: [], commands: [], prompts: [], reloadAnswer: 'Reloaded 4 plugins.', banner: true, layer: undefined, writes: [] }
+  const w: World = { env: { AGENT_CONFIG_ROOT: '/ac' }, runs: [], commands: [], prompts: [], reloadAnswer: 'Reloaded 4 plugins.', banner: true, layer: undefined, writes: [], layers: ['global', 'repo', 'user-repo', 'local'] }
   on('env.get', ($, e) => ({ value: w.env[e.name] }))
   on('env.set', ($, e) => {
     if (e.value === undefined) delete w.env[e.name]
@@ -59,6 +62,19 @@ function world(on: On, loadExit = 0): World {
       return loadExit === 0
         ? ran(0, JSON.stringify(Object.fromEntries(keys.map(key => [key, 's3cret']))))
         : ran(3, '', 'op failed: authorization denied. Install the 1Password CLI and run \'op signin\'.')
+    }
+    if (e.argv[1] === 'list') {
+      return ran(0, JSON.stringify({ components: [{ name: 'demo', plugin: 'ml-demo@max-skills', version: '1.0.0', declaration: '/d' }] }))
+    }
+    if (e.argv[1] === 'describe') {
+      const keys =
+        e.argv[2] === 'agent-config'
+          ? [{ ...SETTING, path: 'notices.cacheBanner', description: 'Show the band', default: true, value: w.banner, source: 'default' }]
+          : [
+              { ...SETTING, path: 'credentials.apiKey', description: 'API key', credential: true, value: REF, source: 'global' },
+              { ...SETTING, path: 'workspace.subdomain', description: 'Subdomain', layer: 'repo', value: 'acme', source: 'repo' },
+            ]
+      return ran(0, JSON.stringify({ keys, layers: w.layers.map(layer => ({ layer, path: `/${layer}.json` })) }))
     }
     if (e.argv[1] === 'path') return ran(0, JSON.stringify({ layers: [{ path: '/home/.agents/config/agent-config/config.json' }] }))
     if (e.argv[1] === 'write') {
@@ -81,6 +97,7 @@ function world(on: On, loadExit = 0): World {
     w.commands.push(e.command)
     return { text: w.reloadAnswer }
   })
+  on('ui.open', () => ({ value: { isPlaced: true } }))
   on('prompt.submit', ($, e) => {
     w.prompts.push(e.text)
     return { text: e.text }
@@ -215,5 +232,69 @@ test('Close hides the band and keeps the cache; Forget drops both', async ($, on
   await ui.press({ key: 'forget' })
   expect(w.env[SECRET_CACHE_VAR]).toBeUndefined()
   expect(await ui.find({ key: 'forget' })).toBeUndefined()
+  await ui.unmount()
+})
+
+const PANE = {
+  plugin: 'ml-agent-config',
+  component: 'Pane',
+  requestId: 'agent-config',
+  props: { bodyColumns: 80 } as never,
+} as const
+
+test('/agent-config alone opens a pane listing every component, agent-config included', async ($, on) => {
+  const w = world(on)
+  const opened = await $.command.run({ command: 'agent-config', args: '', ...COMMAND })
+  expect(opened.text).toBe('Opened the agent-config pane.')
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await ui.find({ key: 'component:agent-config' })).toBeDefined()
+  expect(await ui.find({ key: 'component:demo' })).toBeDefined()
+  // The installed component is shown first; its credential shows the reference, never a secret.
+  expect(await ui.find({ key: 'edit:credentials.apiKey' })).toBeDefined()
+  expect(JSON.stringify(await ui.find({ key: 'setting:credentials.apiKey' }))).toContain('1password op://Private/Demo/key')
+  expect(w.runs.some(argv => argv[0] === 'sh')).toBe(false)
+  await ui.unmount()
+})
+
+test("agent-config's own flag toggles from the pane, merged into its global layer", async ($, on) => {
+  const w = world(on)
+  w.layer = '{"notices":{"other":1}}'
+  await $.command.run({ command: 'agent-config', args: '', ...COMMAND })
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  await ui.press({ key: 'component:agent-config' })
+  await ui.press({ key: 'toggle:notices.cacheBanner' })
+  expect(JSON.parse(w.writes.at(-1)!)).toEqual({ notices: { other: 1, cacheBanner: false } })
+  const write = w.runs.find(argv => argv[1] === 'write')!
+  expect(write).toEqual(['/ac/bin/agent-config', 'write', 'agent-config', '--layer', 'global', '--from', expect.stringContaining('/claude-code')])
+  await ui.unmount()
+})
+
+test('an edit writes to the chosen layer; an empty value removes the key from it', async ($, on) => {
+  const w = world(on)
+  w.layer = '{"workspace":{"subdomain":"acme","team":"x"}}'
+  await $.command.run({ command: 'agent-config', args: '', ...COMMAND })
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  await ui.press({ key: 'edit:workspace.subdomain' })
+  // Set now in the repo layer, so the edit lands there unless another layer is picked.
+  await ui.press({ key: 'layer:local' })
+  await ui.input({ key: 'value', text: 'beta' })
+  expect(w.runs.find(argv => argv[1] === 'write')).toEqual(['/ac/bin/agent-config', 'write', 'demo', '--layer', 'local'])
+  expect(JSON.parse(w.writes.at(-1)!)).toEqual({ workspace: { subdomain: 'beta', team: 'x' } })
+  expect(await ui.find({ key: 'value' })).toBeUndefined()
+
+  await ui.press({ key: 'edit:workspace.subdomain' })
+  await ui.input({ key: 'value', text: '' })
+  expect(w.runs.filter(argv => argv[1] === 'write').at(-1)).toContain('repo')
+  expect(JSON.parse(w.writes.at(-1)!)).toEqual({ workspace: { team: 'x' } })
+  await ui.unmount()
+})
+
+test('the mobile pane draws no edit field and keeps the toggles', async ($, on) => {
+  world(on)
+  await $.command.run({ command: 'agent-config', args: '', ...COMMAND })
+  const ui = await $.ui.mount({ ...PANE, surface: 'mobile' })
+  expect(await ui.find({ key: 'edit:workspace.subdomain' })).toBeUndefined()
+  await ui.press({ key: 'component:agent-config' })
+  expect(await ui.find({ key: 'toggle:notices.cacheBanner' })).toBeDefined()
   await ui.unmount()
 })

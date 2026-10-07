@@ -124,7 +124,9 @@ A `problem` is reported, not worked. Each carries a `code` and a `message` writt
 
 ## Changing an answer that is already set
 
-With `ready: true` the action list is empty, so there is no onboarding action to re-run. Editing an
+With `ready: true` the action list is empty, so there is no onboarding action to re-run. On Claude
+Code the person can edit an answer themselves in the `/agent-config` pane, which runs the same
+`describe` and `write`; `agent-config list` names every installed component it shows. Editing an
 existing answer is a three-step protocol:
 
 1. `agent-config describe <name>` — every declared key with its description, recommended layer,

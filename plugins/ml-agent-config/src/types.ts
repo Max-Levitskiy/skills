@@ -104,6 +104,12 @@ export interface DescribeOutput {
   problems: Problem[];
 }
 
+export interface ListOutput {
+  acs: typeof ACS_VERSION;
+  /** One entry per installed plugin with a declaration, the newest version of each, by name. */
+  components: { name: string; plugin: string; version: string; declaration: string }[];
+}
+
 export interface PathOutput {
   acs: typeof ACS_VERSION;
   name: string;

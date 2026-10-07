@@ -21,13 +21,14 @@ import {
   type Layer,
   type LoadedLayers,
 } from "./layers";
-import { findDeclaration, type FoundDeclaration } from "./declaration";
+import { findDeclaration, listDeclarations, type FoundDeclaration } from "./declaration";
 import { effectiveConfig, unmetKeys, type Effective } from "./effective";
 import { buildPlan, guidePath } from "./actions";
 import { CredentialError, resolveCredential, type CredentialRef } from "./credentials";
 import {
   ACS_VERSION,
   type DescribeOutput,
+  type ListOutput,
   type LoadOutput,
   type PathOutput,
   type Problem,
@@ -65,6 +66,7 @@ const USAGE = `agent-config <command>
   write <name> --layer <layer> [--from <dir>]     replace one layer from JSON on stdin
   describe <name> [--from <dir>]                  the full questionnaire, with current answers
   path <name> [--layer <layer>] [--from <dir>]    where the layers live
+  list                                            every installed component that declares a name
   repos register [--alias <alias>]                add this repository to the repo registry
 
 Layers: ${LAYERS.join(", ")}. Output is JSON only — rendering for a human is the agent's job.`;
@@ -343,6 +345,12 @@ function path(parsed: ParsedArgs): number {
   return EXIT.ok;
 }
 
+function list(): number {
+  const output: ListOutput = { acs: ACS_VERSION, components: listDeclarations(detectHarness()) };
+  out(`${JSON.stringify(output, null, 2)}\n`);
+  return EXIT.ok;
+}
+
 function repos(parsed: ParsedArgs): number {
   const subcommand = parsed.positionals[0];
   if (subcommand !== "register") {
@@ -376,6 +384,8 @@ export function main(argv: string[]): number {
         return describe(parsed);
       case "path":
         return path(parsed);
+      case "list":
+        return list();
       case "repos":
         return repos(parsed);
       case "":

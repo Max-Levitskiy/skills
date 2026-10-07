@@ -177,6 +177,29 @@ function findUpwards(from: string): string | null {
  * Several versions of one plugin resolve to the newest, which is not a guess between authors;
  * two different plugins declaring one name is, and fails.
  */
+/**
+ * Every installed plugin that ships a declaration, the newest version of each. A file that is not
+ * JSON or names nothing is skipped: listing must not fail on another component's broken file.
+ */
+export function listDeclarations(harness: Harness): { name: string; plugin: string; version: string; declaration: string }[] {
+  const byPlugin = new Map<string, { name: string; plugin: string; version: string; declaration: string }>();
+  for (const install of pluginInstalls(harness)) {
+    const candidate = join(install.installPath, DECLARATION_FILE);
+    if (!existsSync(candidate)) continue;
+    let declared: { name?: unknown };
+    try {
+      declared = JSON.parse(readFileSync(candidate, "utf8")) as { name?: unknown };
+    } catch {
+      continue;
+    }
+    if (typeof declared.name !== "string" || !declared.name) continue;
+    const held = byPlugin.get(install.key);
+    if (held && held.version.localeCompare(install.version, undefined, { numeric: true }) >= 0) continue;
+    byPlugin.set(install.key, { name: declared.name, plugin: install.key, version: install.version, declaration: candidate });
+  }
+  return [...byPlugin.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
 export function findDeclaration(name: string, harness: Harness, from?: string): FoundDeclaration {
   if (from) {
     const path = findUpwards(from);
