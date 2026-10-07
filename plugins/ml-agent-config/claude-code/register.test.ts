@@ -4,6 +4,7 @@ import type { On, RenderElement } from 'claude-code'
 import { editText, parseText, showValue } from './register'
 import { fuzzy, ranked } from './ui/fuzzy'
 import { under } from './ui/levels'
+import { readableReference } from './screens/onepassword'
 import { SECRET_CACHE_VAR, cacheKey, parseCache } from '../src/secret-cache'
 
 const REF = { source: '1password', ref: 'op://Private/Demo/key' }
@@ -78,7 +79,7 @@ function world(on: On, loadExit = 0): World {
         const accounts = [{ id: 'A1', label: 'me@home', short: 'home' }, { id: 'A2', label: 'me@work', short: 'work' }]
         return ran(0, JSON.stringify({ accounts, items: [...items, ...github], problems: [] }))
       }
-      return ran(0, JSON.stringify({ fields: [{ id: 'credential', label: 'credential', section: null, type: 'CONCEALED', reference: 'op://Work/GitHub Actions/credential' }] }))
+      return ran(0, JSON.stringify({ fields: [{ id: 'credential', label: 'credential', section: null, type: 'CONCEALED', reference: 'op://V2/IG/credential' }] }))
     }
     if (e.argv[1] === 'list') {
       return ran(0, JSON.stringify({ components: [{ name: 'demo', plugin: 'ml-demo@max-skills', version: '1.0.0', declaration: '/d' }] }))
@@ -314,7 +315,7 @@ test('outside a repository the one level is said, not offered as a switch', asyn
   expect(await text(ui, 'level')).not.toContain('›')
   expect(await ui.find({ key: 'levels' })).toBeUndefined()
   expect(await ui.find({ key: 'saveto' })).toBeUndefined()
-  expect(await text(ui, 'where')).toContain('open Claude Code in a git repo')
+  expect(await text(ui, 'where')).toContain('The only level outside a git repo')
   await ui.unmount()
 })
 
@@ -502,7 +503,8 @@ test('Pick from 1Password lists every item once, filters and searches it, and fi
   expect(await ui.find({ key: 'item:I0' })).toBeUndefined()
 
   await ui.press({ key: 'item:IG' })
-  await ui.press({ key: 'ref:op://Work/GitHub Actions/credential' })
+  // op answers with ids; the names, unique and allowed, are what gets stored.
+  await ui.press({ key: 'ref:op://V2/IG/credential' })
   // Back on the edit, waiting for Save.
   expect(await ui.find({ key: 'save' })).toBeDefined()
   await ui.press({ key: 'save' })
@@ -528,6 +530,18 @@ test('values read and write as plain text, typed by the current value', () => {
   expect(parseText('a, b,, c', [])).toEqual({ value: ['a', 'b', 'c'] })
   expect(parseText('true', 'text')).toEqual({ value: 'true' })
   expect(parseText('  ', 'text')).toEqual({})
+})
+
+test('a 1Password reference reads by name only where op takes the name', () => {
+  const item = { id: 'IG', title: 'GitHub Actions', category: 'LOGIN', vault: { id: 'V2', name: 'Work' }, account: 'A2' }
+  expect(readableReference('op://V2/IG/sec/credential', item, [item])).toBe('op://Work/GitHub Actions/sec/credential')
+  // Two items of that title in the vault: the item stays an id.
+  const twin = { ...item, id: 'IG2' }
+  expect(readableReference('op://V2/IG/credential', item, [item, twin])).toBe('op://Work/IG/credential')
+  // A character op does not take in a name: the id stays.
+  const odd = { ...item, title: 'GitHub (CI)' }
+  expect(readableReference('op://V2/IG/credential', odd, [odd])).toBe('op://Work/IG/credential')
+  expect(readableReference('op://V2/IG/credential', null, [])).toBe('op://V2/IG/credential')
 })
 
 test('fuzzy finds the letters in order and ranks word starts first', () => {

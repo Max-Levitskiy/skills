@@ -20,6 +20,7 @@ import type { Component, Item, Json, OnePassword, Panel, Screen, Setting, Unlock
 import { HARNESS, OWN, firstLine, withValue, type Plan } from './cli'
 import { PANE, editAt, editing, firstEdit, firstSetting, layerNames, readDescribe, savedAt, selected, switchLevel } from './panel'
 import { draw } from './screens'
+import { readableReference } from './screens/onepassword'
 import type { Actions } from './screens/context'
 import { EMPTY_PANEL, NO_ONE_PASSWORD } from './state'
 import { SOURCES, isReference, parseText, targetLayer, type Stored } from './values'
@@ -361,8 +362,9 @@ async function openItem($: EngineInterface, id: string): Promise<void> {
 
 // A field's op:// address becomes the reference, with its account when there are several. The
 // picker closes, and the edit waits for Save.
-async function pickField($: EngineInterface, reference: string): Promise<void> {
+async function pickField($: EngineInterface, picked: string): Promise<void> {
   const op = (await read($, panel)).onePassword
+  const reference = readableReference(picked, op.item, op.items)
   const account = op.accounts.length > 1 ? op.item?.account : undefined
   await update($, panel, latest => ({
     ...latest,

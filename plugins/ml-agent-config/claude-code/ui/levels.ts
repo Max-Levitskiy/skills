@@ -70,7 +70,9 @@ export function effect(setting: Setting, layer: string, layers: readonly string[
   if (here === undefined) {
     return below ? `Saving here overrides ${below.label} (${showValue(below.value)}) ${audience}.` : `Saving here sets it ${audience}.`
   }
-  return `Holds ${showValue(here)}, in effect ${audience}${below ? `, over ${showValue(below.value)} from ${below.label}` : ''}.`
+  // Over a lower value only when it differs: "on, over on from the default" says nothing.
+  const differs = below && showValue(below.value) !== showValue(here)
+  return `Holds ${showValue(here)}, in effect ${audience}${differs ? `, over ${showValue(below.value)} from ${below.label}` : ''}.`
 }
 
 /** The levels above the one in effect that set nothing yet: where an override can be added. */

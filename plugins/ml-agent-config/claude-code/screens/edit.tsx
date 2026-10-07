@@ -38,22 +38,23 @@ export function edit({ now, ui, Input, act }: Ctx): RenderElement {
 
   return screen(ui, { path, onBack: () => act.back(), tools, message: now.message }, [
     note(ui, setting.description),
-    <Box key="where" flexDirection="column">
+    <Box key="where" flexDirection="column" marginBottom={1}>
       <Text dimColor>{fileOf(now, draft.layer)}</Text>
       <Text dimColor>{effect(setting, draft.layer, layers)}</Text>
-      {others.length === 0 && <Text dimColor>The only level here: open Claude Code in a git repo to set it for a project.</Text>}
+      {others.length === 0 && <Text dimColor>The only level outside a git repo. Open Claude Code in one for the project levels.</Text>}
     </Box>,
     isBoolean(setting) && (
       <Box key="booleans">
         <Text>Value </Text>
         <Button key="value:on" label="on" variant={here !== undefined && isOn ? 'primary' : undefined} onPress={() => act.saveBoolean(true)} />
+        <Text> </Text>
         <Button key="value:off" label="off" variant={here !== undefined && !isOn ? 'primary' : undefined} onPress={() => act.saveBoolean(false)} />
       </Box>
     ),
     !isBoolean(setting) && !setting.credential && Input && (
       <Input
         key="value"
-        label="Value "
+        label="Value"
         value={draft.text}
         placeholder={Array.isArray(setting.value ?? setting.default) ? 'a, b, c' : 'empty removes it from this level'}
         submitLabel="save"
@@ -74,7 +75,7 @@ export function edit({ now, ui, Input, act }: Ctx): RenderElement {
           Input ? (
             <Input
               key={`field:${field.name}`}
-              label={`${field.label} `}
+              label={field.label}
               value={draft.draft[field.name] ?? ''}
               placeholder={field.hint}
               submitLabel="save"
@@ -92,6 +93,7 @@ export function edit({ now, ui, Input, act }: Ctx): RenderElement {
     !isBoolean(setting) && (Input || setting.credential) && (
       <Box key="actions" marginTop={1}>
         <Button key="save" label="Save here" variant="primary" onPress={() => act.saveEdit()} />
+        {others.length > 0 && <Text> </Text>}
         {others.length > 0 && <Button key="saveto" label="Save to…" onPress={() => act.go({ kind: 'saveto' }, 'saveto', `saveto:${others.at(-1)}`)} />}
       </Box>
     ),

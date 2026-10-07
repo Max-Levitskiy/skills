@@ -21,6 +21,25 @@ export function accountName(op: OnePassword, id: string | null): string {
   return op.accounts.find(one => one.id === id)?.short ?? ''
 }
 
+// A name `op` takes in a reference: letters, digits, -, _, . and spaces; anything else needs the id.
+const NAMEABLE = /^[A-Za-z0-9 _.-]+$/
+
+/**
+ * `op` answers with ids (op://6egel…/rz6w…/username). Where the vault's name and the item's title
+ * are allowed in a reference and the title is the only one in its vault, they replace the ids, so
+ * the file and the screens read op://Private/GitHub Actions/username. Otherwise the ids stay.
+ */
+export function readableReference(reference: string, item: Item | null, items: readonly Item[]): string {
+  const parts = reference.split('/')
+  if (!item || parts[0] !== 'op:' || parts.length < 5) return reference
+  const vault = items.filter(one => one.account === item.account && one.vault.id === item.vault.id)
+  const vaultNames = new Set(items.filter(one => one.account === item.account && one.vault.name === item.vault.name).map(one => one.vault.id))
+  const sameTitle = vault.filter(one => one.title === item.title).length
+  if (parts[2] === item.vault.id && NAMEABLE.test(item.vault.name) && vaultNames.size === 1) parts[2] = item.vault.name
+  if (parts[3] === item.id && NAMEABLE.test(item.title) && sameTitle === 1) parts[3] = item.title
+  return parts.join('/')
+}
+
 /** The items the filters let through; the search ranks them after. */
 export function filtered(op: OnePassword, skip?: 'account' | 'vault' | 'type'): Item[] {
   return op.items.filter(

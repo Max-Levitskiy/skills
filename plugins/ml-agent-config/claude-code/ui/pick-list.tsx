@@ -41,7 +41,7 @@ export function pickList(
     list.search && Input && (
       <Input
         key="search"
-        label="Search "
+        label="Search"
         value={list.search.value}
         placeholder={list.search.placeholder}
         submitLabel="open first"
