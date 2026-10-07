@@ -440,8 +440,8 @@ async function browseBack($: EngineInterface): Promise<void> {
   await update($, panel, latest => ({ ...latest, browse: null }))
 }
 
-// The choices drawn at once; past this the filter narrows them.
-const SHOWN = 30
+// The rows drawn at once; the pane scrolls through them, and past this the filter narrows them.
+const SHOWN = 200
 
 export function matching(options: Browse['options'], filter: string): Browse['options'] {
   const words = filter.toLowerCase().split(/\s+/).filter(Boolean)
@@ -607,7 +607,6 @@ export const register: Register = on => {
     const { Box, Button, Text } = $.ui.resolve(e)
     // The mobile app draws no field yet, so there the pane offers the toggles alone.
     const Input = e.surface === 'mobile' ? undefined : $.ui.resolve(e).Input
-    const Select = e.surface === 'mobile' ? undefined : $.ui.resolve(e).Select
     const browse = now.browse
     const shown = browse ? matching(browse.options, browse.filter) : []
     const component = now.components.find(one => one.name === now.selected)
@@ -712,7 +711,7 @@ export const register: Register = on => {
                     {now.source === '1password' && !browse && (
                       <Button key="browse" label="Browse 1Password" onPress={() => openBrowse($)} />
                     )}
-                    {browse && Select && (
+                    {browse && (
                       <Box flexDirection="column" borderStyle="round" paddingX={1}>
                         <Text dimColor>
                           {['1Password', browse.vault?.name, browse.item?.title].filter(Boolean).join(' › ')}
@@ -726,18 +725,25 @@ export const register: Register = on => {
                             value={browse.filter}
                             placeholder="type to narrow the list"
                             onInput={text => update($, panel, latest => ({ ...latest, browse: latest.browse && { ...latest.browse, filter: text } }))}
-                            onSubmit={text => update($, panel, latest => ({ ...latest, browse: latest.browse && { ...latest.browse, filter: text } }))}
-                          />
-                        )}
-                        {!browse.isLoading && shown.length > 0 && (
-                          <Select
-                            key={`pick:${browse.step}`}
-                            label={`${browse.step[0]!.toUpperCase()}${browse.step.slice(1)} `}
-                            options={shown.slice(0, SHOWN)}
                             autoFocus
-                            onSelect={value => pickBrowse($, value)}
+                            submitLabel="pick first"
+                            onSubmit={text => {
+                              const first = matching(browse.options, text)[0]
+                              if (first) void pickBrowse($, first.value)
+                            }}
                           />
                         )}
+                        {/* Buttons, not a Select: a Select keeps the arrows, so up never returned to the filter. */}
+                        {!browse.isLoading &&
+                          shown.slice(0, SHOWN).map((option, index) => (
+                            <Button
+                              key={`pick:${option.value}`}
+                              label={option.label}
+                              plain
+                              autoFocus={index === 0 && browse.options.length <= 10 ? true : undefined}
+                              onPress={() => pickBrowse($, option.value)}
+                            />
+                          ))}
                         {shown.length > SHOWN && <Text dimColor>{shown.length - SHOWN} more; type to narrow the list.</Text>}
                         {!browse.isLoading && !browse.error && shown.length === 0 && <Text dimColor>Nothing matches.</Text>}
                         <Box>
@@ -770,6 +776,13 @@ export const register: Register = on => {
         )}
       </Box>
     )
+  })
+
+  // The arrows walk the picker's rows; the pane scrolls so the focused one shows.
+  on('ui.focus', { component: 'Pane', requestId: PANE }, async ($, e, next) => {
+    const moved = await next(e)
+    if (!moved.deny && e.element?.startsWith('pick:')) $.ui.scroll({ in: PANE, to: { key: e.element } }).catch(() => undefined)
+    return moved
   })
 
   // A command cannot run inside the tool call the turn waits on, so a timer queues it for idle.
