@@ -79,6 +79,7 @@ function world(on: On, loadExit = 0): World {
     // As the CLI does: fd 3 holds one entry per requested key, spelled as requested.
     if (e.argv[0] === 'sh') {
       const keys = e.argv.slice(e.argv.indexOf('--secrets') + 1)
+      if (loadExit === -1) throw new Error('timed out after 120000ms')
       return loadExit === 0
         ? ran(0, JSON.stringify(Object.fromEntries(keys.map(key => [key, 's3cret']))))
         : ran(3, '', 'op failed: authorization denied. Install the 1Password CLI and run \'op signin\'.')
@@ -216,6 +217,15 @@ test('a reference added after a cached unlock is asked for on the next skill', a
   await $.skill.prompt({ skill: 'demo', text: 'C' })
   expect(loads(w)).toHaveLength(2)
   expect(parseCache(w.env[SECRET_CACHE_VAR])[cacheKey(w.apiKey as typeof REF)]).toBe('s3cret')
+})
+
+test('a load that times out is a declined unlock, and the skill still expands', async ($, on) => {
+  const w = world(on, -1)
+  const { text } = await $.skill.prompt({ skill: 'demo', text: 'A' })
+  expect(text).toEndWith('A')
+  expect(w.env[SECRET_CACHE_VAR]).toBeUndefined()
+  const shown = await $.command.run({ command: 'agent-config', args: 'demo', ...COMMAND })
+  expect(shown.text).toContain('1Password: not cached (')
 })
 
 test('/agent-config unlock retries, and forget clears the cache', async ($, on) => {
@@ -579,13 +589,21 @@ test('a credential is edited as a source and its fields, never as JSON', async (
   await ui.input({ key: 'field:ref', text: 'op://Private/Demo/other' })
   expect(JSON.parse(w.writes.at(-1)!).credentials.apiKey).toEqual({ source: '1password', ref: 'op://Private/Demo/other', account: 'me' })
 
+  // The same source picked again keeps what was typed.
+  await ui.press({ key: 'setting:credentials.apiKey' })
+  await ui.input({ key: 'field:ref', text: 'op://Private/Demo/typed', kind: 'change' })
+  await ui.press({ key: 'source' })
+  await ui.press({ key: 'source:1password' })
+  await ui.press({ key: 'save' })
+  expect(JSON.parse(w.writes.at(-1)!).credentials.apiKey.ref).toBe('op://Private/Demo/typed')
+
   // Another source, picked on its own screen: saved only once every field is filled in.
   await ui.press({ key: 'setting:credentials.apiKey' })
   await ui.press({ key: 'source' })
   await ui.press({ key: 'source:dotenv' })
   await ui.input({ key: 'field:path', text: '~/.env', kind: 'change' })
   await ui.press({ key: 'save' })
-  expect(w.writes).toHaveLength(1)
+  expect(w.writes).toHaveLength(2)
   expect(JSON.stringify(await ui.find({}))).toContain('Not saved: fill in Variable')
   await ui.input({ key: 'field:var', text: 'DEMO_KEY' })
   expect(JSON.parse(w.writes.at(-1)!).credentials.apiKey).toEqual({ source: 'dotenv', path: '~/.env', var: 'DEMO_KEY' })
@@ -665,6 +683,7 @@ test('values read and write as plain text, typed by the current value', () => {
   }
   expect(parseText('true', 'text')).toEqual({ value: 'true' })
   expect(parseText('  ', 'text')).toEqual({})
+  expect(parseText('  indented', 'text')).toEqual({ value: '  indented' })
 })
 
 test('an id-only 1Password reference reads by name once a listing has named it, across sessions', async ($, on) => {

@@ -103,7 +103,8 @@ export function parseText(text: string, like: Json): { value?: Json; error?: str
       return { error: `this key holds ${Array.isArray(like) ? 'a list' : 'an object'}: type it as JSON` }
     }
   }
-  return { value: trimmed }
+  // Text is kept as typed: its spaces may mean something.
+  return { value: text }
 }
 
 /** What an edit at this level starts from, and is typed as: its own value, else the one in effect. */

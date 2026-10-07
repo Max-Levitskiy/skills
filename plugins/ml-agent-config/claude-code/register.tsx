@@ -132,10 +132,13 @@ export async function unlock($: EngineInterface, plan: Plan): Promise<Unlock | u
   if (keys.length === 0) return undefined
   const refs = keys.map(key => cacheKey(plan.config.credentials![key]!))
 
-  const ran = await $.process.run(
-    ['sh', '-c', 'exec "$0" load "$@" 3>&1 1>/dev/null', await bin($), plan.name, '--secrets', ...keys.map(key => `credentials.${key}`)],
-    { env: HARNESS, timeoutMs: 120000 },
-  )
+  // A run that times out or cannot start is a declined unlock, not a skill that fails to expand.
+  const ran = await $.process
+    .run(['sh', '-c', 'exec "$0" load "$@" 3>&1 1>/dev/null', await bin($), plan.name, '--secrets', ...keys.map(key => `credentials.${key}`)], {
+      env: HARNESS,
+      timeoutMs: 120000,
+    })
+    .catch((error: Error) => ({ exitCode: 1, stdout: '', stderr: error.message || 'the load did not run' }))
   const secrets = ran.exitCode === 0 ? (JSON.parse(ran.stdout) as Record<string, string>) : {}
   const missing = keys.filter(key => !secrets[`credentials.${key}`])
   const result: Unlock =
@@ -294,6 +297,8 @@ async function chooseSource($: EngineInterface, source: string): Promise<void> {
   const now = await read($, panel)
   const setting = editing(now)
   if (!setting || !now.edit) return
+  // The source already picked: the fields typed so far stay.
+  if (source === now.edit.source) return back($)
   // The source it had: its fields as stored. Another: empty fields.
   const stored = editAt(setting, now.edit.layer)
   const draft = stored.source === source ? stored.draft : {}
