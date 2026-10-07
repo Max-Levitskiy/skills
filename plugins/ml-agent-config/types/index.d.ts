@@ -4,6 +4,6 @@ export type Unlock = { name: string; keys: string[]; isCached: boolean; reason?:
 
 declare module 'claude-code' {
   interface PluginState {
-    'ml-agent-config': { unlocks: Unlock[] }
+    'ml-agent-config': { unlocks: Unlock[]; notice: string | null }
   }
 }

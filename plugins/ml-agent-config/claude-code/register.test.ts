@@ -1,5 +1,5 @@
 import { expect, mock, test } from 'claude-code/testing'
-import type { On } from 'claude-code'
+import type { On, RenderElement } from 'claude-code'
 
 import { SECRET_CACHE_VAR, cacheKey, parseCache } from '../src/secret-cache'
 
@@ -23,7 +23,18 @@ const PLANS: Record<string, object> = {
   },
 }
 
-type World = { env: Record<string, string>; runs: string[][]; commands: string[]; prompts: string[]; reloadAnswer: string }
+const OWN = { name: 'agent-config', ready: true, actions: [], problems: [] }
+
+type World = {
+  env: Record<string, string>
+  runs: string[][]
+  commands: string[]
+  prompts: string[]
+  reloadAnswer: string
+  banner: boolean
+  layer: string | undefined
+  writes: string[]
+}
 
 const ran = (exitCode: number, stdout: string, stderr = '') => ({
   value: { exitCode, stdout, stderr, isStdoutTruncated: false, isStderrTruncated: false },
@@ -31,7 +42,7 @@ const ran = (exitCode: number, stdout: string, stderr = '') => ({
 
 // Everything beneath the plugin: the CLI, the environment, and the engine's own answers.
 function world(on: On, loadExit = 0): World {
-  const w: World = { env: { AGENT_CONFIG_ROOT: '/ac' }, runs: [], commands: [], prompts: [], reloadAnswer: 'Reloaded 4 plugins.' }
+  const w: World = { env: { AGENT_CONFIG_ROOT: '/ac' }, runs: [], commands: [], prompts: [], reloadAnswer: 'Reloaded 4 plugins.', banner: true, layer: undefined, writes: [] }
   on('env.get', ($, e) => ({ value: w.env[e.name] }))
   on('env.set', ($, e) => {
     if (e.value === undefined) delete w.env[e.name]
@@ -49,11 +60,23 @@ function world(on: On, loadExit = 0): World {
         ? ran(0, JSON.stringify(Object.fromEntries(keys.map(key => [key, 's3cret']))))
         : ran(3, '', 'op failed: authorization denied. Install the 1Password CLI and run \'op signin\'.')
     }
+    if (e.argv[1] === 'path') return ran(0, JSON.stringify({ layers: [{ path: '/home/.agents/config/agent-config/config.json' }] }))
+    if (e.argv[1] === 'write') {
+      w.writes.push(e.init?.stdin ?? '')
+      return ran(0, '{}')
+    }
+    if (e.argv[2] === 'agent-config') return ran(0, JSON.stringify({ ...OWN, config: { notices: { cacheBanner: w.banner } } }))
     const plan = PLANS[e.argv[2] ?? '']
     return plan ? ran(0, JSON.stringify(plan)) : ran(2, '', 'no declaration')
   })
+  on('fs.read', () => (w.layer === undefined ? { deny: 'no such file' } : { value: w.layer }))
   on('skill.prompt', ($, e) => ({ text: e.text }))
   on('ui.status', () => ({ value: undefined }))
+  // The engine's own band: nothing.
+  on('ui.render', ($, e) => {
+    const { Box } = $.ui.resolve(e)
+    return h(Box, { key: 'engine' }) as RenderElement
+  })
   on('command.run', ($, e) => {
     w.commands.push(e.command)
     return { text: w.reloadAnswer }
@@ -142,4 +165,34 @@ test('a refused reload reaches the model as refused', async ($, on) => {
   await clock.advance(1)
   expect(w.prompts[0]).toContain("isn't available over a remote connection")
   expect(w.prompts[0]).toContain('ask the person to run /reload-plugins')
+})
+
+const BAND = {
+  plugin: 'ml-agent-config',
+  component: 'AbovePrompt',
+  props: { hasSurvey: false, isWorking: false, maxRows: 10, bodyColumns: 80 } as never,
+} as const
+
+test('the cached-secrets band offers "Don\'t show again", which saves the choice in agent-config', async ($, on) => {
+  const w = world(on)
+  for (const surface of ['terminal', 'desktop'] as const) {
+    w.layer = '{"notices":{"other":1},"schemaVersion":1}'
+    await $.command.run({ command: 'agent-config', args: 'forget', ...COMMAND })
+    await $.skill.prompt({ skill: 'demo', text: 'A' })
+    const ui = await $.ui.mount({ ...BAND, surface })
+    expect(await ui.find({ key: 'never' })).toBeDefined()
+    await ui.press({ key: 'never' })
+    expect(JSON.parse(w.writes.at(-1)!)).toEqual({ notices: { other: 1, cacheBanner: false }, schemaVersion: 1 })
+    expect(await ui.find({ key: 'never' })).toBeUndefined()
+    await ui.unmount()
+  }
+})
+
+test('with the choice saved, a later session caches the secret and shows no band', async ($, on) => {
+  const w = world(on)
+  w.banner = false
+  await $.skill.prompt({ skill: 'demo', text: 'A' })
+  expect(loads(w)).toHaveLength(1)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await ui.find({ key: 'never' })).toBeUndefined()
 })

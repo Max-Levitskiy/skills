@@ -6,6 +6,9 @@
 //   - hold 1Password secrets for the session after the person approves one read, so later
 //     `load --secrets` calls do not ask for Touch ID again (src/secret-cache.ts);
 //   - run /reload-plugins after an install, which only the person could type before.
+//
+// Its one setting, whether the cached-secrets band shows, is agent-config's own: declared in
+// agent-config.json beside this file, kept in ~/.agents/config/agent-config/, edited like any other.
 
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
@@ -24,6 +27,11 @@ export type Plan = {
 }
 
 const unlocks = atom({ plugin: 'ml-agent-config', key: 'unlocks' } as const, [] as Unlock[])
+const notice = atom({ plugin: 'ml-agent-config', key: 'notice' } as const, null as string | null)
+
+// The namespace of this module's own setting. Its declaration sits beside this file, outside every
+// plugin registry, so each call names the folder with --from.
+const OWN = 'agent-config'
 
 async function bin($: EngineInterface): Promise<string> {
   return `${(await $.env.get('AGENT_CONFIG_ROOT')) ?? $.plugin.root}/bin/agent-config`
@@ -40,8 +48,9 @@ export function candidates(skill: string): string[] {
 }
 
 // Exit 2 means no declaration under this name.
-export async function start($: EngineInterface, name: string): Promise<Plan | undefined> {
-  const ran = await $.process.run([await bin($), 'start', name], { env: HARNESS, timeoutMs: 15000 })
+export async function start($: EngineInterface, name: string, from?: string): Promise<Plan | undefined> {
+  const argv = [await bin($), 'start', name, ...(from ? ['--from', from] : [])]
+  const ran = await $.process.run(argv, { env: HARNESS, timeoutMs: 15000 })
   return ran.exitCode === 0 ? (JSON.parse(ran.stdout) as Plan) : undefined
 }
 
@@ -88,6 +97,32 @@ export async function unlock($: EngineInterface, plan: Plan): Promise<Unlock | u
   }
   await update($, unlocks, list => [...list.filter(one => one.name !== plan.name), result])
   return result
+}
+
+async function showsBanner($: EngineInterface): Promise<boolean> {
+  const own = await start($, OWN, `${$.plugin.root}/claude-code`)
+  const notices = (own?.config as { notices?: { cacheBanner?: boolean } } | undefined)?.notices
+  return notices?.cacheBanner !== false
+}
+
+// `write` replaces the whole layer, so the current file is read and only this key changes.
+async function hideBannerForGood($: EngineInterface): Promise<void> {
+  const from = `${$.plugin.root}/claude-code`
+  const where = await $.process.run([await bin($), 'path', OWN, '--layer', 'global', '--from', from], { env: HARNESS })
+  const file = (JSON.parse(where.stdout) as { layers: { path: string }[] }).layers[0]!.path
+  let layer: Record<string, unknown> = {}
+  try {
+    layer = JSON.parse(await $.fs.read(file)) as Record<string, unknown>
+  } catch {
+    // No file yet: the layer starts empty.
+  }
+  const notices = { ...(layer.notices as Record<string, unknown> | undefined), cacheBanner: false }
+  const wrote = await $.process.run([await bin($), 'write', OWN, '--layer', 'global', '--from', from], {
+    env: HARNESS,
+    stdin: JSON.stringify({ ...layer, notices }),
+  })
+  await update($, notice, () => null)
+  if (wrote.exitCode !== 0) $.ui.toast(`agent-config: could not save the choice: ${wrote.stderr.trim().split('\n')[0]}`)
 }
 
 export function summary(plan: Plan, cached: readonly Unlock[]): string {
@@ -140,7 +175,9 @@ export const register: Register = on => {
     const earlier = (await read($, unlocks)).find(one => one.name === plan.name)
     const unlocked = plan.ready && !earlier ? await unlock($, plan) : undefined
     if (!plan.ready) $.ui.status(`agent-config: ${plan.name} needs setup`)
-    else if (unlocked?.isCached) $.ui.status(`agent-config: 1Password cached for ${plan.name} (/agent-config forget)`)
+    if (unlocked?.isCached && (await showsBanner($))) {
+      await update($, notice, () => `1Password cached for ${plan.name} for this session (/agent-config forget)`)
+    }
 
     const block = [
       '<agent-config>',
@@ -158,6 +195,7 @@ export const register: Register = on => {
     if (first === 'forget') {
       await $.env.set('AGENT_CONFIG_SECRETS', undefined)
       await update($, unlocks, () => [])
+      await update($, notice, () => null)
       $.ui.status(undefined)
       return { text: 'Forgot every cached 1Password secret for this session.' }
     }
@@ -176,7 +214,20 @@ export const register: Register = on => {
   on('session.end', async ($, e, next) => {
     await $.env.set('AGENT_CONFIG_SECRETS', undefined)
     await update($, unlocks, () => [])
+    await update($, notice, () => null)
     return next(e)
+  })
+
+  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    const text = await read($, notice)
+    if (text === null || e.props.hasSurvey) return next(e)
+    const { Box, Button, Text } = $.ui.resolve(e)
+    return (
+      <Box>
+        <Text dimColor>agent-config: {text} </Text>
+        <Button key="never" label="Don't show again" onPress={() => hideBannerForGood($)} />
+      </Box>
+    )
   })
 
   // A command cannot run inside the tool call the turn waits on, so a timer queues it for idle.
