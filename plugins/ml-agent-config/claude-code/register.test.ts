@@ -1,7 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On, RenderElement } from 'claude-code'
 
-import { keepsRing } from './register'
 import { SECRET_CACHE_VAR, cacheKey, parseCache } from '../src/secret-cache'
 
 const REF = { source: '1password', ref: 'op://Private/Demo/key' }
@@ -98,10 +97,7 @@ function world(on: On, loadExit = 0): World {
     w.commands.push(e.command)
     return { text: w.reloadAnswer }
   })
-  on('ui.open', () => {
-    w.runs.push(['ui.open'])
-    return { value: { isPlaced: true } }
-  })
+  on('ui.open', () => ({ value: { isPlaced: true } }))
   on('prompt.submit', ($, e) => {
     w.prompts.push(e.text)
     return { text: e.text }
@@ -250,9 +246,6 @@ test('/agent-config alone opens a pane listing every component, agent-config inc
   const w = world(on)
   const opened = await $.command.run({ command: 'agent-config', args: '', ...COMMAND })
   expect(opened.text).toBe('Opened the agent-config pane.')
-  // Opened only once its buttons exist: an empty pane hands the keys back to the message box.
-  expect(w.runs.at(-1)).toEqual(['ui.open'])
-  expect(w.runs.at(-2)?.[1]).toBe('describe')
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   expect(await ui.find({ key: 'component:agent-config' })).toBeDefined()
   expect(await ui.find({ key: 'component:demo' })).toBeDefined()
@@ -304,10 +297,4 @@ test('the mobile pane draws no edit field and keeps the toggles', async ($, on) 
   await ui.press({ key: 'component:agent-config' })
   expect(await ui.find({ key: 'toggle:notices.cacheBanner' })).toBeDefined()
   await ui.unmount()
-})
-
-test("the person's arrows stay on the pane's elements, never another pane's tab", () => {
-  expect(keepsRing({ origin: { kind: 'person' } })).toBe(true)
-  expect(keepsRing({ element: 'component:demo', origin: { kind: 'person' } })).toBe(false)
-  expect(keepsRing({ origin: { kind: 'plugin' } })).toBe(false)
 })

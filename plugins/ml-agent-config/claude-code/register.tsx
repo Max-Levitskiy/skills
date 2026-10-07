@@ -221,35 +221,14 @@ async function describe($: EngineInterface, component: Component): Promise<Pick<
   }
 }
 
-// The pane opens once its buttons are drawn: a pane with nothing to focus hands the keys back to the
-// message box, where the arrows are the engine's.
 async function openPanel($: EngineInterface): Promise<void> {
+  await update($, panel, now => ({ ...now, isLoading: true, editing: null, message: null }))
+  await $.ui.open({ id: PANE, title: 'agent-config', focus: true, closeOnEscape: true })
   const list = await components($)
   const kept = (await read($, panel)).selected
   const selected = list.find(one => one.name === kept) ?? list.find(one => one.name !== OWN) ?? list[0]!
   const detail = await describe($, selected)
-  await update($, panel, now => ({ ...now, ...detail, components: list, selected: selected.name, editing: null, isLoading: false }))
-  await $.ui.open({ id: PANE, title: 'agent-config', focus: true, closeOnEscape: true })
-}
-
-// When the focused element leaves the drawing (the edit field after a save), the ring goes back to
-// a button that stays, instead of the keys going back to the message box.
-async function refocus($: EngineInterface, key: string): Promise<void> {
-  try {
-    await $.ui.focus({ requestId: PANE, key })
-  } catch {
-    // The pane does not hold the keys; nothing to move.
-  }
-}
-
-async function startEdit($: EngineInterface, setting: Setting): Promise<void> {
-  await update($, panel, latest => ({ ...latest, editing: setting.path, layer: targetLayer(setting, latest.layers), message: null }))
-  await refocus($, 'value')
-}
-
-async function stopEdit($: EngineInterface, dotPath: string): Promise<void> {
-  await update($, panel, latest => ({ ...latest, editing: null }))
-  await refocus($, `edit:${dotPath}`)
+  await update($, panel, now => ({ ...now, ...detail, components: list, selected: selected.name, isLoading: false }))
 }
 
 async function select($: EngineInterface, name: string): Promise<void> {
@@ -285,7 +264,6 @@ async function save($: EngineInterface, layer: string, dotPath: string, value: J
     editing: failed ? latest.editing : null,
     message: failed ? `Not saved: ${failed}` : done,
   }))
-  if (!failed && now.editing === dotPath) await refocus($, `edit:${dotPath}`)
 }
 
 // Text in the edit field is JSON when it parses and a plain string otherwise, so `acme` and
@@ -306,13 +284,6 @@ export function showValue(value: Json): string {
     return where === undefined ? value.source : `${value.source} ${String(where)}`
   }
   return JSON.stringify(value)
-}
-
-// The person's arrows walk the pane's ring past its last element onto the engine's own stops: the
-// close mark and the tab of another open pane, such as the agents view, which then takes over.
-// Their own moves stay inside this pane's elements; Esc still closes it.
-export function keepsRing(move: { element?: string; origin: { kind: string } }): boolean {
-  return move.origin.kind === 'person' && move.element === undefined
 }
 
 function isBoolean(setting: Setting): boolean {
@@ -439,7 +410,6 @@ export const register: Register = on => {
           {now.components.map(one => (
             <Button
               key={`component:${one.name}`}
-              autoFocus={one.name === now.selected ? true : undefined}
               label={`${one.name} ${one.ready === null ? '?' : one.ready ? 'ready' : 'needs setup'}`}
               variant={one.name === now.selected ? 'primary' : undefined}
               onPress={() => select($, one.name)}
@@ -481,7 +451,9 @@ export const register: Register = on => {
                       key={`edit:${setting.path}`}
                       label="Edit"
                       dimColor
-                      onPress={() => startEdit($, setting)}
+                      onPress={() =>
+                        update($, panel, latest => ({ ...latest, editing: setting.path, layer: targetLayer(setting, latest.layers), message: null }))
+                      }
                     />
                   )}
                 </Box>
@@ -500,7 +472,7 @@ export const register: Register = on => {
                       onPress={() => update($, panel, latest => ({ ...latest, layer }))}
                     />
                   ))}
-                  <Button key="cancel" label="Cancel" dimColor onPress={() => stopEdit($, editing.path)} />
+                  <Button key="cancel" label="Cancel" dimColor onPress={() => update($, panel, latest => ({ ...latest, editing: null }))} />
                 </Box>
                 <Input
                   key="value"
@@ -520,8 +492,6 @@ export const register: Register = on => {
       </Box>
     )
   })
-
-  on('ui.focus', { component: 'Pane', requestId: PANE }, async ($, e, next) => (keepsRing(e) ? {} : next(e)))
 
   // A command cannot run inside the tool call the turn waits on, so a timer queues it for idle.
   // The command can refuse (a remote connection does), so its answer goes into the resume prompt.
