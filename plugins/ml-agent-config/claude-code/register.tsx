@@ -125,6 +125,13 @@ async function hideBannerForGood($: EngineInterface): Promise<void> {
   if (wrote.exitCode !== 0) $.ui.toast(`agent-config: could not save the choice: ${wrote.stderr.trim().split('\n')[0]}`)
 }
 
+// Drops every cached secret and the band; the next skill of a ready component asks 1Password again.
+async function forget($: EngineInterface): Promise<void> {
+  await $.env.set('AGENT_CONFIG_SECRETS', undefined)
+  await update($, unlocks, () => [])
+  await update($, notice, () => null)
+}
+
 export function summary(plan: Plan, cached: readonly Unlock[]): string {
   const lines = [plan.ready ? `${plan.name}: ready.` : `${plan.name}: needs setup.`]
   const missing = plan.actions.flatMap(action => action.keys)
@@ -176,7 +183,7 @@ export const register: Register = on => {
     const unlocked = plan.ready && !earlier ? await unlock($, plan) : undefined
     if (!plan.ready) $.ui.status(`agent-config: ${plan.name} needs setup`)
     if (unlocked?.isCached && (await showsBanner($))) {
-      await update($, notice, () => `1Password cached for ${plan.name} for this session (/agent-config forget)`)
+      await update($, notice, () => `1Password cached for ${plan.name} for this session`)
     }
 
     const block = [
@@ -193,9 +200,7 @@ export const register: Register = on => {
   on('command.run', { command: 'agent-config' }, async ($, e) => {
     const [first = '', second = ''] = e.args.trim().split(/\s+/)
     if (first === 'forget') {
-      await $.env.set('AGENT_CONFIG_SECRETS', undefined)
-      await update($, unlocks, () => [])
-      await update($, notice, () => null)
+      await forget($)
       $.ui.status(undefined)
       return { text: 'Forgot every cached 1Password secret for this session.' }
     }
@@ -212,9 +217,7 @@ export const register: Register = on => {
   })
 
   on('session.end', async ($, e, next) => {
-    await $.env.set('AGENT_CONFIG_SECRETS', undefined)
-    await update($, unlocks, () => [])
-    await update($, notice, () => null)
+    await forget($)
     return next(e)
   })
 
@@ -225,7 +228,9 @@ export const register: Register = on => {
     return (
       <Box>
         <Text dimColor>agent-config: {text} </Text>
+        <Button key="forget" label="Forget" onPress={() => forget($)} />
         <Button key="never" label="Don't show again" onPress={() => hideBannerForGood($)} />
+        <Button key="close" label="×" role="dismiss" onPress={() => update($, notice, () => null)} />
       </Box>
     )
   })

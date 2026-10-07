@@ -196,3 +196,24 @@ test('with the choice saved, a later session caches the secret and shows no band
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
   expect(await ui.find({ key: 'never' })).toBeUndefined()
 })
+
+test('Close hides the band and keeps the cache; Forget drops both', async ($, on) => {
+  const w = world(on)
+  await $.skill.prompt({ skill: 'demo', text: 'A' })
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  await ui.press({ key: 'close' })
+  expect(await ui.find({ key: 'close' })).toBeUndefined()
+  expect(w.env[SECRET_CACHE_VAR]).toBeDefined()
+  expect(w.writes).toHaveLength(0)
+
+  await $.command.run({ command: 'agent-config', args: 'unlock demo', ...COMMAND })
+  expect(await ui.find({ key: 'close' })).toBeUndefined()
+
+  await $.command.run({ command: 'agent-config', args: 'forget', ...COMMAND })
+  await $.skill.prompt({ skill: 'demo', text: 'B' })
+  expect(await ui.find({ key: 'forget' })).toBeDefined()
+  await ui.press({ key: 'forget' })
+  expect(w.env[SECRET_CACHE_VAR]).toBeUndefined()
+  expect(await ui.find({ key: 'forget' })).toBeUndefined()
+  await ui.unmount()
+})
