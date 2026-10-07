@@ -29,6 +29,9 @@ export type Panel = {
   /** The key whose edit field is open, and the layer the edit writes to. */
   editing: string | null
   layer: string
+  /** While a credential is edited: the source picked, and the text of each of its fields. */
+  source: string
+  draft: Record<string, string>
   message: string | null
   isLoading: boolean
 }

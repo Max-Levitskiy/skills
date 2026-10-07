@@ -36,6 +36,8 @@ const panel = atom({ plugin: 'ml-agent-config', key: 'panel' } as const, {
   layers: [],
   editing: null,
   layer: 'global',
+  source: '1password',
+  draft: {},
   message: null,
   isLoading: false,
 } as Panel)
@@ -266,24 +268,123 @@ async function save($: EngineInterface, layer: string, dotPath: string, value: J
   }))
 }
 
-// Text in the edit field is JSON when it parses and a plain string otherwise, so `acme` and
-// `"acme"` both mean the string; empty removes the key from the layer.
-export function parseValue(text: string): Json | undefined {
-  if (text.trim() === '') return undefined
-  try {
-    return JSON.parse(text) as Json
-  } catch {
-    return text
-  }
+// What each credential source needs, in the order asked. The same required fields as
+// REQUIRED_FIELDS in src/credentials.ts, which this module cannot import (it needs Node).
+export const SOURCES: Record<string, { label: string; fields: { name: string; label: string; hint: string }[] }> = {
+  '1password': { label: '1Password', fields: [{ name: 'ref', label: 'Reference', hint: 'op://Vault/Item/field' }] },
+  env: { label: 'Environment variable', fields: [{ name: 'var', label: 'Variable', hint: 'MY_API_KEY' }] },
+  dotenv: {
+    label: '.env file',
+    fields: [
+      { name: 'path', label: 'File', hint: '~/.config/my-app/.env' },
+      { name: 'var', label: 'Variable', hint: 'MY_API_KEY' },
+    ],
+  },
+  keychain: {
+    label: 'Keychain',
+    fields: [
+      { name: 'service', label: 'Service', hint: 'my-app' },
+      { name: 'account', label: 'Account', hint: 'me@example.com' },
+    ],
+  },
+  command: { label: 'Command', fields: [{ name: 'command', label: 'Command', hint: 'pass show my-app/key' }] },
 }
 
+type Stored = { source: string; [field: string]: Json }
+
+function isReference(value: Json): value is Stored {
+  return value !== null && typeof value === 'object' && !Array.isArray(value) && typeof value.source === 'string'
+}
+
+// A value as a person reads it: no quotes or braces. A credential shows where the secret lives.
 export function showValue(value: Json): string {
-  if (typeof value === 'string') return parseValue(value) === value ? value : JSON.stringify(value)
-  if (value !== null && typeof value === 'object' && 'source' in value && typeof value.source === 'string') {
-    const where = 'ref' in value ? value.ref : 'var' in value ? value.var : 'path' in value ? value.path : undefined
-    return where === undefined ? value.source : `${value.source} ${String(where)}`
+  if (value === null) return 'not set'
+  if (typeof value === 'boolean') return value ? 'on' : 'off'
+  if (typeof value === 'string' || typeof value === 'number') return String(value)
+  if (Array.isArray(value)) return value.map(showValue).join(', ')
+  if (isReference(value)) {
+    const kind = SOURCES[value.source]
+    const where = (kind?.fields ?? []).map(field => value[field.name]).filter(part => typeof part === 'string' && part)
+    return `${kind?.label ?? value.source}: ${where.join(' / ')}`
   }
-  return JSON.stringify(value)
+  return Object.entries(value)
+    .map(([key, child]) => `${key}: ${showValue(child)}`)
+    .join(', ')
+}
+
+// The edit field's starting text, in the form parseText reads back.
+export function editText(value: Json): string {
+  if (value === null) return ''
+  if (typeof value === 'boolean') return value ? 'on' : 'off'
+  if (Array.isArray(value)) return value.map(String).join(', ')
+  if (typeof value === 'object') return JSON.stringify(value)
+  return String(value)
+}
+
+// The text typed for a plain key, read as the type of its current value or default: a number, on
+// or off, a comma-separated list, or text. Empty removes the key from the layer.
+export function parseText(text: string, like: Json): { value?: Json; error?: string } {
+  const trimmed = text.trim()
+  if (trimmed === '') return {}
+  if (typeof like === 'number') {
+    const number = Number(trimmed)
+    return Number.isFinite(number) ? { value: number } : { error: `${trimmed} is not a number` }
+  }
+  if (typeof like === 'boolean') {
+    if (/^(on|true|yes)$/i.test(trimmed)) return { value: true }
+    if (/^(off|false|no)$/i.test(trimmed)) return { value: false }
+    return { error: 'type on or off' }
+  }
+  if (Array.isArray(like)) return { value: trimmed.split(',').map(part => part.trim()).filter(Boolean) }
+  if (like !== null && typeof like === 'object') {
+    try {
+      return { value: JSON.parse(trimmed) as Json }
+    } catch {
+      return { error: 'this key holds an object: type it as JSON' }
+    }
+  }
+  return { value: trimmed }
+}
+
+async function startEdit($: EngineInterface, setting: Setting): Promise<void> {
+  const current = setting.value ?? setting.default
+  const reference = isReference(current) ? current : undefined
+  const draft = Object.fromEntries(
+    Object.entries(reference ?? {}).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
+  )
+  await update($, panel, latest => ({
+    ...latest,
+    editing: setting.path,
+    layer: targetLayer(setting, latest.layers),
+    source: reference && SOURCES[reference.source] ? reference.source : '1password',
+    draft,
+    message: null,
+  }))
+}
+
+async function savePlain($: EngineInterface, setting: Setting, text: string): Promise<void> {
+  const parsed = parseText(text, setting.value ?? setting.default)
+  if (parsed.error) {
+    await update($, panel, latest => ({ ...latest, message: `Not saved: ${parsed.error}` }))
+    return
+  }
+  await save($, (await read($, panel)).layer, setting.path, parsed.value)
+}
+
+// A reference keeps its other fields (an account, a cacheVar) while its source stays the same.
+async function saveReference($: EngineInterface, setting: Setting): Promise<void> {
+  const now = await read($, panel)
+  const fields = SOURCES[now.source]?.fields ?? []
+  const missing = fields.filter(field => !now.draft[field.name]?.trim())
+  if (missing.length > 0) {
+    await update($, panel, latest => ({ ...latest, message: `Not saved: fill in ${missing.map(field => field.label).join(' and ')}` }))
+    return
+  }
+  const before = setting.value
+  const base = isReference(before) && before.source === now.source ? before : { source: now.source }
+  const value: Stored = { ...base, source: now.source }
+  for (const field of fields) value[field.name] = now.draft[field.name]!.trim()
+  await save($, now.layer, setting.path, value)
 }
 
 function isBoolean(setting: Setting): boolean {
@@ -451,9 +552,7 @@ export const register: Register = on => {
                       key={`edit:${setting.path}`}
                       label="Edit"
                       dimColor
-                      onPress={() =>
-                        update($, panel, latest => ({ ...latest, editing: setting.path, layer: targetLayer(setting, latest.layers), message: null }))
-                      }
+                      onPress={() => startEdit($, setting)}
                     />
                   )}
                 </Box>
@@ -474,16 +573,52 @@ export const register: Register = on => {
                   ))}
                   <Button key="cancel" label="Cancel" dimColor onPress={() => update($, panel, latest => ({ ...latest, editing: null }))} />
                 </Box>
-                <Input
-                  key="value"
-                  label={`${editing.path} = `}
-                  value={editing.value === null ? '' : editing.credential ? JSON.stringify(editing.value) : showValue(editing.value)}
-                  placeholder="JSON or text; empty removes it from this layer"
-                  submitLabel="save"
-                  autoFocus
-                  onSubmit={text => save($, now.layer, editing.path, parseValue(text))}
-                />
-                {editing.credential && <Text dimColor>A reference, never the secret: {'{"source":"1password","ref":"op://…"}'}</Text>}
+                {editing.credential ? (
+                  <Box flexDirection="column">
+                    <Box flexWrap="wrap">
+                      <Text>Source </Text>
+                      {Object.entries(SOURCES).map(([source, kind]) => (
+                        <Button
+                          key={`source:${source}`}
+                          label={kind.label}
+                          variant={source === now.source ? 'primary' : undefined}
+                          onPress={() => update($, panel, latest => ({ ...latest, source }))}
+                        />
+                      ))}
+                    </Box>
+                    {(SOURCES[now.source]?.fields ?? []).map((field, index) => (
+                      <Input
+                        key={`field:${field.name}`}
+                        label={`${field.label} `}
+                        value={now.draft[field.name] ?? ''}
+                        placeholder={field.hint}
+                        submitLabel="save"
+                        autoFocus={index === 0 ? true : undefined}
+                        onInput={text => update($, panel, latest => ({ ...latest, draft: { ...latest.draft, [field.name]: text } }))}
+                        onSubmit={text =>
+                          update($, panel, latest => ({ ...latest, draft: { ...latest.draft, [field.name]: text } })).then(() =>
+                            saveReference($, editing),
+                          )
+                        }
+                      />
+                    ))}
+                    <Box>
+                      <Button key="save" label="Save" variant="primary" onPress={() => saveReference($, editing)} />
+                      <Button key="remove" label={`Remove from ${now.layer}`} dimColor onPress={() => save($, now.layer, editing.path, undefined)} />
+                    </Box>
+                    <Text dimColor>Where the secret lives, never the secret itself.</Text>
+                  </Box>
+                ) : (
+                  <Input
+                    key="value"
+                    label={`${editing.path} `}
+                    value={editText(editing.value)}
+                    placeholder={Array.isArray(editing.value ?? editing.default) ? 'a, b, c; empty removes it from this layer' : 'empty removes it from this layer'}
+                    submitLabel="save"
+                    autoFocus
+                    onSubmit={text => savePlain($, editing, text)}
+                  />
+                )}
               </Box>
             )}
             {now.message && <Text>{now.message}</Text>}

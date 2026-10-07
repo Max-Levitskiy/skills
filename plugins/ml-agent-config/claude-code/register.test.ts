@@ -1,6 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On, RenderElement } from 'claude-code'
 
+import { editText, parseText, showValue } from './register'
 import { SECRET_CACHE_VAR, cacheKey, parseCache } from '../src/secret-cache'
 
 const REF = { source: '1password', ref: 'op://Private/Demo/key' }
@@ -35,6 +36,7 @@ type World = {
   layer: string | undefined
   writes: string[]
   layers: string[]
+  apiKey: object
 }
 
 const SETTING = { layer: 'global', default: null, credential: false, group: null, required: true, problems: [] }
@@ -45,7 +47,7 @@ const ran = (exitCode: number, stdout: string, stderr = '') => ({
 
 // Everything beneath the plugin: the CLI, the environment, and the engine's own answers.
 function world(on: On, loadExit = 0): World {
-  const w: World = { env: { AGENT_CONFIG_ROOT: '/ac' }, runs: [], commands: [], prompts: [], reloadAnswer: 'Reloaded 4 plugins.', banner: true, layer: undefined, writes: [], layers: ['global', 'repo', 'user-repo', 'local'] }
+  const w: World = { env: { AGENT_CONFIG_ROOT: '/ac' }, runs: [], commands: [], prompts: [], reloadAnswer: 'Reloaded 4 plugins.', banner: true, layer: undefined, writes: [], layers: ['global', 'repo', 'user-repo', 'local'], apiKey: REF }
   on('env.get', ($, e) => ({ value: w.env[e.name] }))
   on('env.set', ($, e) => {
     if (e.value === undefined) delete w.env[e.name]
@@ -71,7 +73,7 @@ function world(on: On, loadExit = 0): World {
         e.argv[2] === 'agent-config'
           ? [{ ...SETTING, path: 'notices.cacheBanner', description: 'Show the band', default: true, value: w.banner, source: 'default' }]
           : [
-              { ...SETTING, path: 'credentials.apiKey', description: 'API key', credential: true, value: REF, source: 'global' },
+              { ...SETTING, path: 'credentials.apiKey', description: 'API key', credential: true, value: w.apiKey, source: 'global' },
               { ...SETTING, path: 'workspace.subdomain', description: 'Subdomain', layer: 'repo', value: 'acme', source: 'repo' },
             ]
       return ran(0, JSON.stringify({ keys, layers: w.layers.map(layer => ({ layer, path: `/${layer}.json` })) }))
@@ -251,7 +253,7 @@ test('/agent-config alone opens a pane listing every component, agent-config inc
   expect(await ui.find({ key: 'component:demo' })).toBeDefined()
   // The installed component is shown first; its credential shows the reference, never a secret.
   expect(await ui.find({ key: 'edit:credentials.apiKey' })).toBeDefined()
-  expect(JSON.stringify(await ui.find({ key: 'setting:credentials.apiKey' }))).toContain('1password op://Private/Demo/key')
+  expect(JSON.stringify(await ui.find({ key: 'setting:credentials.apiKey' }))).toContain('1Password: op://Private/Demo/key')
   expect(w.runs.some(argv => argv[0] === 'sh')).toBe(false)
   await ui.unmount()
 })
@@ -297,4 +299,42 @@ test('the mobile pane draws no edit field and keeps the toggles', async ($, on) 
   await ui.press({ key: 'component:agent-config' })
   expect(await ui.find({ key: 'toggle:notices.cacheBanner' })).toBeDefined()
   await ui.unmount()
+})
+
+test('a credential is edited as a source and its fields, never as JSON', async ($, on) => {
+  const w = world(on)
+  w.apiKey = { ...REF, account: 'me' }
+  w.layer = JSON.stringify({ credentials: { apiKey: w.apiKey } })
+  await $.command.run({ command: 'agent-config', args: '', ...COMMAND })
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  await ui.press({ key: 'edit:credentials.apiKey' })
+  expect(await ui.find({ key: 'value' })).toBeUndefined()
+
+  // Same source: the other fields of the reference are kept.
+  await ui.input({ key: 'field:ref', text: 'op://Private/Demo/other' })
+  expect(JSON.parse(w.writes.at(-1)!).credentials.apiKey).toEqual({ source: '1password', ref: 'op://Private/Demo/other', account: 'me' })
+
+  // Another source: a fresh reference, saved only once every field is filled in.
+  await ui.press({ key: 'edit:credentials.apiKey' })
+  await ui.press({ key: 'source:dotenv' })
+  await ui.input({ key: 'field:path', text: '~/.env', kind: 'change' })
+  await ui.press({ key: 'save' })
+  expect(w.writes).toHaveLength(1)
+  await ui.input({ key: 'field:var', text: 'DEMO_KEY' })
+  expect(JSON.parse(w.writes.at(-1)!).credentials.apiKey).toEqual({ source: 'dotenv', path: '~/.env', var: 'DEMO_KEY' })
+  await ui.unmount()
+})
+
+test('values read and write as plain text, typed by the current value', () => {
+  expect(showValue({ source: 'keychain', service: 'app', account: 'me' })).toBe('Keychain: app / me')
+  expect(showValue(['a', 'b'])).toBe('a, b')
+  expect(showValue(false)).toBe('off')
+  expect(showValue({ subdomain: 'acme', port: 8080 })).toBe('subdomain: acme, port: 8080')
+  expect(editText(['a', 'b'])).toBe('a, b')
+  expect(parseText(' 42 ', 7)).toEqual({ value: 42 })
+  expect(parseText('many', 7).error).toBe('many is not a number')
+  expect(parseText('off', true)).toEqual({ value: false })
+  expect(parseText('a, b,, c', [])).toEqual({ value: ['a', 'b', 'c'] })
+  expect(parseText('true', 'text')).toEqual({ value: 'true' })
+  expect(parseText('  ', 'text')).toEqual({})
 })
