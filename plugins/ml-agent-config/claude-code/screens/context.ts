@@ -15,6 +15,8 @@ export type Actions = {
   openEdit: (setting: Setting) => Promise<void>
   /** Point the edit at another level, staying on the edit screen. */
   setLevel: (layer: string) => Promise<void>
+  /** Point the edit at an empty level above the one in effect, focused on the value. */
+  overrideAt: (layer: string) => Promise<void>
   /** The same from the levels screen, which then closes. */
   chooseLevel: (layer: string) => Promise<void>
   chooseSource: (source: string) => Promise<void>

@@ -386,6 +386,12 @@ function actions($: EngineInterface, canType: boolean): Actions {
     toggle: setting => toggle($, setting),
     openEdit: setting => openEdit($, setting, canType),
     setLevel: layer => setLevel($, layer),
+    overrideAt: async layer => {
+      await setLevel($, layer)
+      const now = await read($, panel)
+      const setting = editing(now)
+      if (setting && now.edit) await refocus($, firstEdit(setting, now.edit, canType))
+    },
     chooseLevel: async layer => {
       await setLevel($, layer)
       await back($)

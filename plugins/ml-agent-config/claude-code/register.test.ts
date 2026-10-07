@@ -309,12 +309,12 @@ test('an edit writes at the level switched to on top, showing its file, and goes
   await ui.press({ key: 'setting:workspace.subdomain' })
   // Set now in the repo layer, so the edit starts there.
   expect(await text(ui, 'where')).toContain('~/repo.json')
-  expect(await text(ui, 'where')).toContain('Project, shared holds acme; wins.')
+  expect(await text(ui, 'where')).toContain('Holds acme, in effect for the whole team in this repo.')
   // The level switch on top: typed text stays when the level changes.
   await ui.input({ key: 'value', text: 'beta', kind: 'change' })
   await ui.press({ key: 'at:local' })
   expect(await text(ui, 'where')).toContain('~/local.json')
-  expect(await text(ui, 'where')).toContain('This checkout sets nothing; would win.')
+  expect(await text(ui, 'where')).toContain('Saving here overrides Project, shared (acme) in this checkout only.')
   await ui.input({ key: 'value', text: 'beta' })
   expect(w.runs.find(argv => argv[1] === 'write')).toEqual(['/ac/bin/agent-config', 'write', 'demo', '--layer', 'local'])
   expect(JSON.parse(w.writes.at(-1)!)).toEqual({ workspace: { subdomain: 'beta', team: 'x' } })
@@ -322,6 +322,30 @@ test('an edit writes at the level switched to on top, showing its file, and goes
   expect(await ui.find({ key: 'value' })).toBeUndefined()
   expect(await text(ui, 'row:setting:workspace.subdomain')).toBeDefined()
   expect(JSON.stringify(await ui.find({}))).toContain('Saved workspace.subdomain in This checkout.')
+  await ui.unmount()
+})
+
+test('a value set Everywhere offers overrides for the team, for me, and for this checkout', async ($, on) => {
+  const w = world(on)
+  w.layer = '{}'
+  w.subdomain = { value: 'acme', source: 'global', levels: { global: 'acme' } }
+  const ui = await open($)
+  await ui.press({ key: 'component:demo' })
+  await ui.press({ key: 'setting:workspace.subdomain' })
+  expect(await text(ui, 'where')).toContain('Holds acme, in effect in every project, for you.')
+  expect(await text(ui, 'row:override:repo')).toContain('For the team in this repo')
+  expect(await text(ui, 'row:override:repo')).toContain('~/repo.json')
+  expect(await ui.find({ key: 'override:user-repo' })).toBeDefined()
+  expect(await ui.find({ key: 'override:local' })).toBeDefined()
+
+  // For the team: the edit moves to the shared project level, starting from the value now.
+  await ui.press({ key: 'override:repo' })
+  expect(await text(ui, 'where')).toContain('Saving here overrides Everywhere (acme) for the whole team in this repo.')
+  expect(await ui.find({ key: 'override:repo' })).toBeUndefined()
+  expect(await text(ui, 'value')).toContain('acme')
+  await ui.input({ key: 'value', text: 'team' })
+  expect(w.runs.filter(argv => argv[1] === 'write').at(-1)).toEqual(['/ac/bin/agent-config', 'write', 'demo', '--layer', 'repo'])
+  expect(JSON.parse(w.writes.at(-1)!)).toEqual({ workspace: { subdomain: 'team' } })
   await ui.unmount()
 })
 
@@ -338,7 +362,7 @@ test('Remove here drops the key from one level; Block inherited writes null ther
   expect(await text(ui, 'row:level:local')).toContain('beta  wins')
   expect(await text(ui, 'row:level:repo')).toContain('acme')
   await ui.press({ key: 'level:repo' })
-  expect(await text(ui, 'where')).toContain('Project, shared holds acme; This checkout overrides it.')
+  expect(await text(ui, 'where')).toContain('Holds acme, but This checkout overrides it.')
   await ui.press({ key: 'at:local' })
   expect(await text(ui, 'row:remove')).toContain('falls back to acme (Project, shared)')
   await ui.press({ key: 'remove' })
@@ -362,7 +386,7 @@ test('Show switches the settings to one level’s own values', async ($, on) => 
   expect(await text(ui, 'row:setting:workspace.subdomain')).toContain('not set here')
   // An edit opened while one level shows writes to that level.
   await ui.press({ key: 'setting:workspace.subdomain' })
-  expect(await text(ui, 'where')).toContain('Project, just me sets nothing')
+  expect(await text(ui, 'where')).toContain('This checkout overrides this level')
   await ui.unmount()
 })
 

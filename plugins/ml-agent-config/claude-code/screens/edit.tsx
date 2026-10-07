@@ -5,7 +5,7 @@
 import type { RenderElement } from 'claude-code'
 
 import { editing, layerNames, selected } from '../panel'
-import { LEVELS, ORDER, levelLabel, over, under } from '../ui/levels'
+import { LEVELS, ORDER, effect, openAbove, under } from '../ui/levels'
 import { note, row, screen } from '../ui/screen'
 import { SOURCES, isBoolean, showValue } from '../values'
 import type { Ctx } from './context'
@@ -19,11 +19,12 @@ export function edit({ now, ui, Input, act }: Ctx): RenderElement {
 
   const layers = layerNames(now)
   const here = setting.levels[draft.layer]
-  const above = over(setting, draft.layer, layers)
   const below = under(setting, draft.layer, layers)
-  const file = now.layers.find(one => one.layer === draft.layer)
-  const holds = here === undefined ? 'sets nothing' : here === null ? 'blocks the levels under it' : `holds ${showValue(here)}`
-  const status = above ? `${above} overrides it` : setting.source === draft.layer ? 'wins' : here === undefined ? 'would win' : 'is in effect'
+  const fileOf = (layer: string) => {
+    const file = now.layers.find(one => one.layer === layer)
+    return file ? `${file.path}${file.exists ? '' : ' (new file)'}` : ''
+  }
+  const overrides = openAbove(setting, layers).filter(layer => layer !== draft.layer)
   const kind = SOURCES[draft.source]
   const isOn = typeof here === 'boolean' ? here : (setting.value ?? setting.default) === true
 
@@ -45,11 +46,11 @@ export function edit({ now, ui, Input, act }: Ctx): RenderElement {
     <Box key="where" flexDirection="column">
       <Text dimColor>
         {'  '}
-        {file ? `${file.path}${file.exists ? '' : ' (new file)'}` : ''}
+        {fileOf(draft.layer)}
       </Text>
       <Text dimColor>
         {'  '}
-        {levelLabel(draft.layer)} {holds}; {status}.
+        {effect(setting, draft.layer, layers)}
       </Text>
     </Box>,
     isBoolean(setting) && (
@@ -119,6 +120,21 @@ export function edit({ now, ui, Input, act }: Ctx): RenderElement {
         detail: `no value here, even though ${below.label} has one`,
         onPress: () => act.blockHere(),
       }),
+    // The common wish, spelled out: keep the value where it is, and add one above it for a team,
+    // for yourself, or for this checkout. A press points the edit there, starting from the value now.
+    overrides.length > 0 && (
+      <Box key="override" marginTop={1}>
+        <Text bold>{setting.source ? 'Override it' : 'Or set it'}</Text>
+      </Box>
+    ),
+    ...overrides.map(layer =>
+      row(ui, {
+        key: `override:${layer}`,
+        label: `+ ${LEVELS[layer]!.offer}`,
+        detail: fileOf(layer),
+        onPress: () => act.overrideAt(layer),
+      }),
+    ),
     row(ui, {
       key: 'levels',
       label: '› Every level',

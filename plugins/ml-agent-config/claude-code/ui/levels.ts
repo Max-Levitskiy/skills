@@ -2,12 +2,14 @@
 // in that order: a higher level overrides a lower one key by key, and the default sits under all.
 
 import type { Json, Setting } from '../../types'
+import { showValue } from '../values'
 
-export const LEVELS: Record<string, { label: string; short: string; hint: string }> = {
-  global: { label: 'Everywhere', short: 'Everywhere', hint: '~/.agents, every project' },
-  repo: { label: 'Project, shared', short: 'Project', hint: 'committed, the whole team' },
-  'user-repo': { label: 'Project, just me', short: 'Me', hint: '~/.agents, this repo, only you' },
-  local: { label: 'This checkout', short: 'Checkout', hint: 'gitignored, this folder only' },
+/** Each level's name, its chip, a hint, who a value there reaches, and how an override there is offered. */
+export const LEVELS: Record<string, { label: string; short: string; hint: string; audience: string; offer: string }> = {
+  global: { label: 'Everywhere', short: 'Everywhere', hint: '~/.agents, every project', audience: 'in every project, for you', offer: 'Everywhere, in all my projects' },
+  repo: { label: 'Project, shared', short: 'Project', hint: 'committed, the whole team', audience: 'for the whole team in this repo', offer: 'For the team in this repo' },
+  'user-repo': { label: 'Project, just me', short: 'Me', hint: '~/.agents, this repo, only you', audience: 'for you in this repo', offer: 'Just for me in this repo' },
+  local: { label: 'This checkout', short: 'Checkout', hint: 'gitignored, this folder only', audience: 'in this checkout only', offer: 'In this checkout only' },
 }
 
 export const ORDER = ['global', 'repo', 'user-repo', 'local']
@@ -51,4 +53,28 @@ export function over(setting: Setting, layer: string, layers: readonly string[])
   const above = ORDER.slice(ORDER.indexOf(layer) + 1).filter(one => layers.includes(one))
   const top = above.reverse().find(one => setting.levels[one] !== undefined)
   return top && levelLabel(top)
+}
+
+/** What a value at this level does, in one sentence: who it reaches and what it overrides. */
+export function effect(setting: Setting, layer: string, layers: readonly string[]): string {
+  const here = setting.levels[layer]
+  const audience = LEVELS[layer]?.audience ?? ''
+  const above = over(setting, layer, layers)
+  if (here === null) return `Blocks the levels under it ${audience}.`
+  if (above) {
+    return here === undefined
+      ? `${above} overrides this level, so a value saved here does not apply.`
+      : `Holds ${showValue(here)}, but ${above} overrides it.`
+  }
+  const below = under(setting, layer, layers)
+  if (here === undefined) {
+    return below ? `Saving here overrides ${below.label} (${showValue(below.value)}) ${audience}.` : `Saving here sets it ${audience}.`
+  }
+  return `Holds ${showValue(here)}, in effect ${audience}${below ? `, over ${showValue(below.value)} from ${below.label}` : ''}.`
+}
+
+/** The levels above the one in effect that set nothing yet: where an override can be added. */
+export function openAbove(setting: Setting, layers: readonly string[]): string[] {
+  const from = setting.source && setting.source !== 'default' ? ORDER.indexOf(setting.source) : -1
+  return ORDER.filter((layer, index) => index > from && layers.includes(layer) && setting.levels[layer] === undefined)
 }
