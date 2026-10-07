@@ -27,7 +27,7 @@ export type Level = { layer: string; path: string; exists: boolean }
 
 /** One screen of the pane. The pane draws the top of the stack; Back pops it. */
 export type Screen = {
-  kind: 'components' | 'settings' | 'edit' | 'levels' | 'files' | 'source' | 'onepassword' | 'filter' | 'fields'
+  kind: 'components' | 'settings' | 'show' | 'edit' | 'levels' | 'files' | 'source' | 'onepassword' | 'filter' | 'fields'
   /** A filter screen's subject. */
   by?: 'account' | 'vault' | 'type'
   /** The element pressed to open the next screen, focused again when it closes. */

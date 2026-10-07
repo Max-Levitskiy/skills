@@ -12,12 +12,14 @@ import { filter } from './filter'
 import { levels } from './levels'
 import { onePassword } from './onepassword'
 import { settings } from './settings'
+import { show } from './show'
 import { source } from './source'
 import type { Screen } from '../../types'
 
 const SCREENS: Record<Screen['kind'], (ctx: Ctx) => RenderElement> = {
   components,
   settings,
+  show,
   edit,
   levels,
   files,

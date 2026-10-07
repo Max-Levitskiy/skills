@@ -380,8 +380,12 @@ test('Show switches the settings to one level’s own values', async ($, on) => 
   w.subdomain = { value: 'beta', source: 'local', levels: { repo: 'acme', local: 'beta' } }
   const ui = await open($)
   await ui.press({ key: 'component:demo' })
+  expect(await text(ui, 'show')).toContain('Show: Effective ›')
+  await ui.press({ key: 'show' })
   await ui.press({ key: 'show:repo' })
+  expect(await text(ui, 'show')).toContain('Show: Project ›')
   expect(await text(ui, 'row:setting:workspace.subdomain')).toContain('acme')
+  await ui.press({ key: 'show' })
   await ui.press({ key: 'show:user-repo' })
   expect(await text(ui, 'row:setting:workspace.subdomain')).toContain('not set here')
   // An edit opened while one level shows writes to that level.

@@ -5,7 +5,7 @@ import type { RenderElement } from 'claude-code'
 
 import type { Setting } from '../../types'
 import { layerNames, selected } from '../panel'
-import { LEVELS, ORDER, levelLabel, under } from '../ui/levels'
+import { LEVELS, levelLabel, under } from '../ui/levels'
 import { note, row, screen } from '../ui/screen'
 import { isBoolean, showValue } from '../values'
 import type { Ctx } from './context'
@@ -26,7 +26,6 @@ export function settings({ now, ui, Input, act }: Ctx): RenderElement {
   const { Box, Button, Text } = ui
   const component = selected(now)
   const layers = layerNames(now)
-  const shows = ['effective', ...ORDER.filter(layer => layers.includes(layer))]
   const settingRow = (setting: Setting) => {
     if (!isBoolean(setting)) {
       return row(ui, {
@@ -52,23 +51,15 @@ export function settings({ now, ui, Input, act }: Ctx): RenderElement {
       </Box>
     )
   }
-  return screen(ui, { path: ['Components', component?.name ?? ''], onBack: () => act.back(), message: now.message }, [
+  // What the rows show sits beside the path, and opens its own screen: it is rarely changed, so it
+  // takes no row of its own.
+  const tools =
+    !now.isLoading && layers.length > 1
+      ? [<Button key="show" label={` Show: ${now.show === 'effective' ? 'Effective' : LEVELS[now.show]!.short} ›`} plain dimColor onPress={() => act.go({ kind: 'show' }, 'show', `show:${now.show}`)} />]
+      : []
+  return screen(ui, { path: ['Components', component?.name ?? ''], onBack: () => act.back(), tools, message: now.message }, [
     now.isLoading && note(ui, 'Loading…'),
     !now.isLoading && component?.ready === false && note(ui, `${component.plugin} · needs setup`, 'yellow'),
-    !now.isLoading && shows.length > 2 && (
-      <Box key="show" flexWrap="wrap">
-        <Text>Show </Text>
-        {shows.map(show => (
-          <Button
-            key={`show:${show}`}
-            label={show === 'effective' ? 'Effective' : LEVELS[show]!.short}
-            variant={now.show === show ? 'primary' : undefined}
-            dimColor={now.show === show ? undefined : true}
-            onPress={() => act.setShow(show)}
-          />
-        ))}
-      </Box>
-    ),
     ...(now.isLoading ? [] : now.settings.map(settingRow)),
     !now.isLoading && now.settings.length === 0 && note(ui, 'No declared settings.'),
     !now.isLoading &&
