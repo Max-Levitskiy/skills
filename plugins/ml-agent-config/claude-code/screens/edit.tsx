@@ -22,7 +22,8 @@ export function edit({ now, ui, Input, act }: Ctx): RenderElement {
   const below = under(setting, draft.layer, layers)
   const overrides = openAbove(setting, layers).filter(layer => layer !== draft.layer)
   const kind = SOURCES[draft.source]
-  const isOn = typeof here === 'boolean' ? here : (setting.value ?? setting.default) === true
+  // On or off is picked like any value, and saved with Save here or Save to….
+  const isOn = draft.text === 'on'
 
   // The level sits on the title line, at the right; a press opens the level list. With one level
   // there is nothing to pick, so it is only named.
@@ -48,9 +49,9 @@ export function edit({ now, ui, Input, act }: Ctx): RenderElement {
     isBoolean(setting) && (
       <Box key="booleans">
         <Text>Value </Text>
-        <Button key="value:on" label="on" variant={here !== undefined && isOn ? 'primary' : undefined} onPress={() => act.saveBoolean(true)} />
+        <Button key="value:on" label="on" variant={isOn ? 'primary' : undefined} onPress={() => act.typeText('on')} />
         <Text> </Text>
-        <Button key="value:off" label="off" variant={here !== undefined && !isOn ? 'primary' : undefined} onPress={() => act.saveBoolean(false)} />
+        <Button key="value:off" label="off" variant={isOn ? undefined : 'primary'} onPress={() => act.typeText('off')} />
       </Box>
     ),
     !isBoolean(setting) && !setting.credential && Input && (
@@ -91,7 +92,7 @@ export function edit({ now, ui, Input, act }: Ctx): RenderElement {
     setting.credential &&
       draft.source === '1password' &&
       row(ui, { key: 'pick', label: '› Pick from 1Password', onPress: () => act.openOnePassword() }),
-    !isBoolean(setting) && (Input || setting.credential) && (
+    (isBoolean(setting) || Input || setting.credential) && (
       <Box key="actions" marginTop={1}>
         <Button key="save" label="Save here" variant="primary" onPress={() => act.saveEdit()} />
         {others.length > 0 && <Text> </Text>}

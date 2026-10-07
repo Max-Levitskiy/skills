@@ -63,7 +63,7 @@ export function readDescribe(stdout: string, home: string | undefined): Pick<Pan
 /** The settings screen's first row, where the focus starts. */
 export function firstSetting(settings: readonly Setting[]): string {
   const first = settings[0]
-  return first ? `${isBoolean(first) ? 'toggle' : 'setting'}:${first.path}` : 'files'
+  return first ? `setting:${first.path}` : 'files'
 }
 
 /** An edit at one level starts from what that level sets, else from the value in effect. */
@@ -91,7 +91,7 @@ export function switchLevel(edit: Edit, setting: Setting, layer: string): Edit {
 
 /** The edit screen's first element: the field to type in, or the first choice. */
 export function firstEdit(setting: Setting, edit: Edit, canType: boolean, levels = 2): string {
-  if (isBoolean(setting)) return 'value:on'
+  if (isBoolean(setting)) return `value:${edit.text === 'off' ? 'off' : 'on'}`
   if (!canType) return levels > 1 ? 'level' : 'save'
   if (!setting.credential) return 'value'
   if (edit.source === '1password') return 'pick'

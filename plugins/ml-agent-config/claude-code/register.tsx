@@ -231,16 +231,6 @@ async function save($: EngineInterface, layer: string, path: string, value: Json
 }
 
 /** An on/off key flips in place: at the level shown, or where it lives now. */
-async function toggle($: EngineInterface, setting: Setting): Promise<void> {
-  const now = await read($, panel)
-  const layer = now.show !== 'effective' ? now.show : targetLayer(setting, layerNames(now))
-  const here = setting.levels[layer]
-  const value = !(typeof here === 'boolean' ? here : (setting.value ?? setting.default))
-  if (!(await save($, layer, setting.path, value))) {
-    await update($, panel, latest => ({ ...latest, message: savedAt(setting.path, layer, value) }))
-  }
-}
-
 async function openEdit($: EngineInterface, setting: Setting, canType: boolean): Promise<void> {
   const now = await read($, panel)
   const layers = layerNames(now)
@@ -390,7 +380,6 @@ function actions($: EngineInterface, canType: boolean): Actions {
     setShow: async show => {
       await update($, panel, now => ({ ...now, show }))
     },
-    toggle: setting => toggle($, setting),
     openEdit: setting => openEdit($, setting, canType),
     setLevel: layer => setLevel($, layer),
     overrideAt: async layer => {
@@ -412,7 +401,6 @@ function actions($: EngineInterface, canType: boolean): Actions {
     },
     saveEdit: () => saveEdit($),
     saveTo: layer => saveEdit($, layer, 2),
-    saveBoolean: value => saveHere($, value),
     removeHere: () => saveHere($, undefined),
     blockHere: () => saveHere($, null),
     turnPage: async (list, offset, focus) => {

@@ -11,7 +11,6 @@ export type Actions = {
   openComponent: (name: string) => Promise<void>
   setup: (name: string) => Promise<void>
   setShow: (show: string) => Promise<void>
-  toggle: (setting: Setting) => Promise<void>
   openEdit: (setting: Setting) => Promise<void>
   /** Point the edit at another level, staying on the edit screen. */
   setLevel: (layer: string) => Promise<void>
@@ -25,7 +24,6 @@ export type Actions = {
   saveEdit: () => Promise<void>
   /** Save the value at another level, leaving the edit's own level as it is. */
   saveTo: (layer: string) => Promise<void>
-  saveBoolean: (value: boolean) => Promise<void>
   removeHere: () => Promise<void>
   blockHere: () => Promise<void>
   turnPage: (list: string, offset: number, focus: string) => Promise<void>

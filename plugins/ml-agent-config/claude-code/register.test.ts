@@ -289,17 +289,22 @@ test('/agent-config opens on the components; one opens its settings, and Back re
   await ui.unmount()
 })
 
-test("agent-config's own flag toggles in place, merged into its global layer", async ($, on) => {
+test("agent-config's own on/off flag is picked on its edit screen and saved there, merged into its global layer", async ($, on) => {
   const w = world(on)
   w.layer = '{"notices":{"other":1}}'
   const ui = await open($)
   await ui.press({ key: 'component:agent-config' })
-  expect(await text(ui, 'setting:notices.cacheBanner')).toContain('from default ›')
-  await ui.press({ key: 'toggle:notices.cacheBanner' })
+  expect(await text(ui, 'row:setting:notices.cacheBanner')).toContain('on · default')
+  await ui.press({ key: 'setting:notices.cacheBanner' })
+  // Picking off saves nothing yet.
+  await ui.press({ key: 'value:off' })
+  expect(w.writes).toEqual([])
+  expect(await text(ui, 'value:off')).toContain('primary')
+  await ui.press({ key: 'save' })
   expect(JSON.parse(w.writes.at(-1)!)).toEqual({ notices: { other: 1, cacheBanner: false } })
   const write = w.runs.find(argv => argv[1] === 'write')!
   expect(write).toEqual(['/ac/bin/agent-config', 'write', 'agent-config', '--layer', 'global', '--from', expect.stringContaining('/claude-code')])
-  expect(await text(ui, 'toggle:notices.cacheBanner')).toContain('[ off ]')
+  expect(await text(ui, 'row:setting:notices.cacheBanner')).toContain('› notices.cacheBanner  off')
   await ui.unmount()
 })
 
@@ -435,8 +440,8 @@ test('Show switches the settings to one level’s own values', async ($, on) => 
   await ui.unmount()
 })
 
-test('the mobile pane has no fields, and still toggles', async ($, on) => {
-  world(on)
+test('the mobile pane has no fields, and still saves an on/off key', async ($, on) => {
+  const w = world(on)
   await $.command.run({ command: 'agent-config', args: '', ...COMMAND })
   const ui = await $.ui.mount({ ...PANE, surface: 'mobile' })
   await ui.press({ key: 'component:demo' })
@@ -446,7 +451,10 @@ test('the mobile pane has no fields, and still toggles', async ($, on) => {
   await ui.press({ key: 'back' })
   await ui.press({ key: 'back' })
   await ui.press({ key: 'component:agent-config' })
-  expect(await ui.find({ key: 'toggle:notices.cacheBanner' })).toBeDefined()
+  await ui.press({ key: 'setting:notices.cacheBanner' })
+  await ui.press({ key: 'value:off' })
+  await ui.press({ key: 'save' })
+  expect(JSON.parse(w.writes.at(-1)!).notices.cacheBanner).toBe(false)
   await ui.unmount()
 })
 

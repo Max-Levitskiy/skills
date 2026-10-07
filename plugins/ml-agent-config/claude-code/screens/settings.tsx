@@ -1,5 +1,5 @@
 // One component's settings: each key's value and the level it comes from, or one level's own
-// values. An on/off key flips in place; every other key opens its edit screen.
+// values. Every key, on/off ones included, opens its edit screen and is saved from there.
 
 import type { RenderElement } from 'claude-code'
 
@@ -7,7 +7,7 @@ import type { Setting } from '../../types'
 import { layerNames, selected } from '../panel'
 import { LEVELS, levelLabel, under } from '../ui/levels'
 import { note, row, screen } from '../ui/screen'
-import { isBoolean, showValue } from '../values'
+import { showValue } from '../values'
 import type { Ctx } from './context'
 
 /** The value line: in effect and from where, or what one level sets. */
@@ -22,42 +22,18 @@ export function valueLine(setting: Setting, show: string, layers: readonly strin
   return `${showValue(setting.value)} · ${levelLabel(setting.source)}${overrides}`
 }
 
-/** An on/off row's way in: where its value comes from, so it reads as a place to open, not a feature. */
-export function whereFrom(setting: Setting, show: string): string {
-  if (show !== 'effective') return 'edit'
-  if (!setting.source || setting.source === 'default') return 'from default'
-  return `from ${levelLabel(setting.source)}`
-}
-
 export function settings({ now, ui, Input, act }: Ctx): RenderElement {
   const { Box, Button, Text } = ui
   const component = selected(now)
   const layers = layerNames(now)
-  const settingRow = (setting: Setting) => {
-    if (!isBoolean(setting)) {
-      return row(ui, {
-        key: `setting:${setting.path}`,
-        label: `› ${setting.path}`,
-        detail: valueLine(setting, now.show, layers),
-        color: setting.value === null && setting.required && now.show === 'effective' ? 'red' : undefined,
-        onPress: () => act.openEdit(setting),
-      })
-    }
-    const here = now.show === 'effective' ? (setting.value ?? setting.default) : setting.levels[now.show]
-    const state = here === undefined ? '·' : here === null ? 'blocked' : here ? 'on' : 'off'
-    return (
-      <Box key={`row:setting:${setting.path}`} flexDirection="column">
-        <Box>
-          <Button key={`toggle:${setting.path}`} label={`${setting.path}  [ ${state} ]`} plain onPress={() => act.toggle(setting)} />
-          <Button key={`setting:${setting.path}`} label={`  ${whereFrom(setting, now.show)} ›`} plain dimColor onPress={() => act.openEdit(setting)} />
-        </Box>
-        <Text dimColor>
-          {'  '}
-          {setting.description}
-        </Text>
-      </Box>
-    )
-  }
+  const settingRow = (setting: Setting) =>
+    row(ui, {
+      key: `setting:${setting.path}`,
+      label: `› ${setting.path}`,
+      detail: valueLine(setting, now.show, layers),
+      color: setting.value === null && setting.required && now.show === 'effective' ? 'red' : undefined,
+      onPress: () => act.openEdit(setting),
+    })
   // What the rows show sits beside the path, and opens its own screen: it is rarely changed, so it
   // takes no row of its own.
   const tools =
