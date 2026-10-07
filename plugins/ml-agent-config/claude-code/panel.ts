@@ -4,7 +4,7 @@
 
 import type { Component, Edit, Json, Level, Panel, Screen, Setting } from '../types'
 import { levelLabel } from './ui/levels'
-import { SOURCES, editText, isBoolean, isReference } from './values'
+import { SOURCES, editText, isBoolean, isReference, valueAt } from './values'
 
 export const PANE = 'agent-config'
 
@@ -68,8 +68,7 @@ export function firstSetting(settings: readonly Setting[]): string {
 
 /** An edit at one level starts from what that level sets, else from the value in effect. */
 export function editAt(setting: Setting, layer: string): Edit {
-  const here = setting.levels[layer]
-  const from = here !== undefined && here !== null ? here : (setting.value ?? setting.default)
+  const from = valueAt(setting, layer)
   const reference = isReference(from) ? from : undefined
   return {
     path: setting.path,
@@ -91,7 +90,7 @@ export function switchLevel(edit: Edit, setting: Setting, layer: string): Edit {
 
 /** The edit screen's first element: the field to type in, or the first choice. */
 export function firstEdit(setting: Setting, edit: Edit, canType: boolean, levels = 2): string {
-  if (isBoolean(setting)) return `value:${edit.text === 'off' ? 'off' : 'on'}`
+  if (isBoolean(setting, edit.layer)) return `value:${edit.text === 'off' ? 'off' : 'on'}`
   if (!canType) return levels > 1 ? 'level' : 'save'
   if (!setting.credential) return 'value'
   if (edit.source === '1password') return 'pick'

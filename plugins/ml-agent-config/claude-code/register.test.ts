@@ -40,7 +40,7 @@ type World = {
   writes: string[]
   layers: string[]
   apiKey: object
-  subdomain: { value: string; source: string; levels: Record<string, string | number[] | null> }
+  subdomain: { value: string | boolean; source: string; levels: Record<string, string | boolean | number[] | null> }
   store: Record<string, unknown>
   /** Layers whose file is behind the declaration's schema, so `start` plans their migration. */
   behind: string[]
@@ -535,6 +535,19 @@ test('a level is typed as its own value, not as the one that overrides it', asyn
   await ui.unmount()
 })
 
+test('a level holding text under an on/off override is edited as text', async ($, on) => {
+  const w = world(on)
+  w.subdomain = { value: true, source: 'local', levels: { repo: 'acme', local: true } }
+  const ui = await open($)
+  await ui.press({ key: 'component:demo' })
+  await ui.press({ key: 'show' })
+  await ui.press({ key: 'show:repo' })
+  await ui.press({ key: 'setting:workspace.subdomain' })
+  expect(await ui.find({ key: 'value:on' })).toBeUndefined()
+  expect(await ui.find({ key: 'value' })).toBeDefined()
+  await ui.unmount()
+})
+
 test('the mobile pane has no fields, and still saves an on/off key', async ($, on) => {
   const w = world(on)
   await $.command.run({ command: 'agent-config', args: '', ...COMMAND })
@@ -647,7 +660,7 @@ test('values read and write as plain text, typed by the current value', () => {
   expect(parseText('a, b,, c', [])).toEqual({ value: ['a', 'b', 'c'] })
   expect(parseText('[]', ['a'])).toEqual({ value: [] })
   // A list of anything but text is typed as JSON, so a save keeps its types.
-  for (const list of [[1, true], [{ host: 'a', port: 1 }], []]) {
+  for (const list of [[1, true], [{ host: 'a', port: 1 }], [], ['a,b'], ['a', ''], [' a'], ['[x]']]) {
     expect(parseText(editText(list), list)).toEqual({ value: list })
   }
   expect(parseText('true', 'text')).toEqual({ value: 'true' })

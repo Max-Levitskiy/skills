@@ -23,7 +23,7 @@ import { draw } from './screens'
 import { readableReference } from './screens/onepassword'
 import type { Actions } from './screens/context'
 import { EMPTY_PANEL, NO_ONE_PASSWORD } from './state'
-import { SOURCES, isReference, parseText, targetLayer, type Stored } from './values'
+import { SOURCES, isReference, parseText, targetLayer, valueAt, type Stored } from './values'
 
 export type { Plan } from './cli'
 export { editText, parseText, showValue } from './values'
@@ -329,8 +329,7 @@ async function saveEdit($: EngineInterface, layer?: string, close = 1): Promise<
   }
   if (!setting.credential) {
     // Typed as the value the edit showed: this level's own, else the one in effect.
-    const shown = setting.levels[edit.layer]
-    const parsed = parseText(edit.text, shown !== undefined && shown !== null ? shown : (setting.value ?? setting.default))
+    const parsed = parseText(edit.text, valueAt(setting, edit.layer))
     if (parsed.error) return refuse(parsed.error)
     return saveHere($, parsed.value, at, close)
   }

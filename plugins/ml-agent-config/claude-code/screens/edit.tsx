@@ -47,7 +47,7 @@ export function edit({ now, ui, Input, act }: Ctx): RenderElement {
         {others.length === 0 && <Text dimColor>The only level outside a git repo. Open Claude Code in one for the project levels.</Text>}
       </Box>
     ),
-    isBoolean(setting) && (
+    isBoolean(setting, draft.layer) && (
       <Box key="booleans">
         <Text>Value </Text>
         <Button key="value:on" label="on" variant={isOn ? 'primary' : undefined} onPress={() => act.typeText('on')} />
@@ -55,7 +55,7 @@ export function edit({ now, ui, Input, act }: Ctx): RenderElement {
         <Button key="value:off" label="off" variant={isOn ? undefined : 'primary'} onPress={() => act.typeText('off')} />
       </Box>
     ),
-    !isBoolean(setting) && !setting.credential && Input && (
+    !isBoolean(setting, draft.layer) && !setting.credential && Input && (
       <Input
         key="value"
         label="Value"
@@ -66,7 +66,7 @@ export function edit({ now, ui, Input, act }: Ctx): RenderElement {
         onSubmit={text => act.typeText(text).then(() => act.saveEdit())}
       />
     ),
-    !isBoolean(setting) && !setting.credential && !Input && note(ui, `Value  ${draft.text || 'not set'}`),
+    !isBoolean(setting, draft.layer) && !setting.credential && !Input && note(ui, `Value  ${draft.text || 'not set'}`),
     setting.credential &&
       row(ui, {
         key: 'source',
@@ -93,7 +93,7 @@ export function edit({ now, ui, Input, act }: Ctx): RenderElement {
     setting.credential &&
       draft.source === '1password' &&
       row(ui, { key: 'pick', label: '› Pick from 1Password', onPress: () => act.openOnePassword() }),
-    (isBoolean(setting) || Input || setting.credential) && (
+    (isBoolean(setting, draft.layer) || Input || setting.credential) && (
       <Box key="actions" marginTop={1}>
         <Button key="save" label="Save here" variant="primary" onPress={() => act.saveEdit()} />
         {others.length > 0 && <Text> </Text>}

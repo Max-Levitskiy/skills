@@ -58,11 +58,17 @@ export function showValue(value: Json, names: Names = {}): string {
 }
 
 /**
- * A list of text, typed as `a, b, c`. Any other list is typed as JSON, so its types survive, and
- * an empty one is `[]`, since empty text removes the key.
+ * A list of text that `a, b, c` reads back unchanged: no item blank, padded or holding a comma, and
+ * not starting with `[`. Any other list is typed as JSON, so it survives a save; an empty one is
+ * `[]`, since empty text removes the key.
  */
 function isTextList(value: Json): value is string[] {
-  return Array.isArray(value) && value.length > 0 && value.every(one => typeof one === 'string')
+  return (
+    Array.isArray(value) &&
+    value.length > 0 &&
+    value.every(one => typeof one === 'string' && one !== '' && one === one.trim() && !one.includes(',')) &&
+    !(value[0] as string).startsWith('[')
+  )
 }
 
 // The edit field's starting text, in the form parseText reads back.
@@ -100,8 +106,15 @@ export function parseText(text: string, like: Json): { value?: Json; error?: str
   return { value: trimmed }
 }
 
-export function isBoolean(setting: Setting): boolean {
-  return typeof (setting.value ?? setting.default) === 'boolean'
+/** What an edit at this level starts from, and is typed as: its own value, else the one in effect. */
+export function valueAt(setting: Setting, layer: string): Json {
+  const here = setting.levels[layer]
+  return here !== undefined && here !== null ? here : (setting.value ?? setting.default)
+}
+
+/** An on/off key at this level, or, with no level, as it is in effect. */
+export function isBoolean(setting: Setting, layer?: string): boolean {
+  return typeof (layer ? valueAt(setting, layer) : (setting.value ?? setting.default)) === 'boolean'
 }
 
 // Where an edit lands unless the person picks another level: where the value is set now, else
