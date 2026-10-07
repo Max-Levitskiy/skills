@@ -1,7 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On, RenderElement } from 'claude-code'
 
-import { editText, parseText, showValue } from './register'
+import { editText, parseText, scrollBy, showValue } from './register'
 import { SECRET_CACHE_VAR, cacheKey, parseCache } from '../src/secret-cache'
 
 const REF = { source: '1password', ref: 'op://Private/Demo/key' }
@@ -375,4 +375,17 @@ test('Browse 1Password picks account, vault, item and field into the reference',
     ['fields', '--vault', 'V1', '--item', 'IG', '--account', 'A2'],
   ])
   await ui.unmount()
+})
+
+test('an arrow off the list box edge scrolls the box, not the pane', () => {
+  const options = Array.from({ length: 40 }, (_, n) => ({ value: `I${n}`, label: `Item ${n}` }))
+  const at = (offset: number) => ({ step: 'item', account: null, vault: null, item: null, options, filter: '', offset, isLoading: false, error: null }) as const
+  // Down off the last shown row (row 14) scrolls; down inside the box moves the ring as usual.
+  expect(scrollBy(at(0), 'pick:I14', 'browse-back')).toBe(1)
+  expect(scrollBy(at(0), 'pick:I3', 'pick:I4')).toBe(0)
+  // Up off the first shown row scrolls back while rows are hidden above, then reaches the filter.
+  expect(scrollBy(at(5), 'pick:I5', 'filter')).toBe(-1)
+  expect(scrollBy(at(0), 'pick:I0', 'filter')).toBe(0)
+  // At the end of the list the ring leaves for the buttons below.
+  expect(scrollBy(at(25), 'pick:I39', 'browse-back')).toBe(0)
 })

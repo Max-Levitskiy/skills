@@ -29,6 +29,8 @@ export type Browse = {
   /** The current step's choices; a field's value is its op:// reference, never the secret. */
   options: { value: string; label: string }[]
   filter: string
+  /** The first matching choice the list box shows; the box scrolls by moving it. */
+  offset: number
   isLoading: boolean
   error: string | null
 }

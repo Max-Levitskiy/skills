@@ -226,7 +226,7 @@ async function describe($: EngineInterface, component: Component): Promise<Pick<
 
 async function openPanel($: EngineInterface): Promise<void> {
   await update($, panel, now => ({ ...now, isLoading: true, editing: null, message: null }))
-  await $.ui.open({ id: PANE, title: 'agent-config', focus: true, closeOnEscape: true })
+  await $.ui.open({ id: PANE, title: 'agent-config', focus: true, closeOnEscape: true, rows: 40 })
   const list = await components($)
   const kept = (await read($, panel)).selected
   const selected = list.find(one => one.name === kept) ?? list.find(one => one.name !== OWN) ?? list[0]!
@@ -353,7 +353,7 @@ async function browseStep<T>($: EngineInterface, what: string, flags: string[]):
   return ran.exitCode === 0 ? (JSON.parse(ran.stdout) as T) : firstLine(ran.stderr) || `op ${what} failed`
 }
 
-const BROWSE_START: Browse = { step: 'account', account: null, vault: null, item: null, options: [], filter: '', isLoading: true, error: null }
+const BROWSE_START: Browse = { step: 'account', account: null, vault: null, item: null, options: [], filter: '', offset: 0, isLoading: true, error: null }
 
 async function showStep($: EngineInterface, step: Browse['step'], options: Browse['options'] | string, at: Partial<Browse>): Promise<void> {
   await update($, panel, latest =>
@@ -364,9 +364,21 @@ async function showStep($: EngineInterface, step: Browse['step'], options: Brows
           browse:
             typeof options === 'string'
               ? { ...latest.browse, ...at, isLoading: false, error: options }
-              : { ...latest.browse, ...at, step, options, filter: '', isLoading: false, error: null },
+              : { ...latest.browse, ...at, step, options, filter: '', offset: 0, isLoading: false, error: null },
         },
   )
+  // The row just pressed is gone from the new list, and with it the focus: put it on the new list.
+  if (typeof options !== 'string' && options.length > 0) await refocus($, options.length > FILTER_FROM ? 'filter' : `pick:${options[0]!.value}`)
+}
+
+// When the focused element leaves the drawing, the keys would go back to the message box; this
+// puts the ring on an element that is drawn now (awaited until it is).
+async function refocus($: EngineInterface, key: string): Promise<void> {
+  try {
+    await $.ui.focus({ requestId: PANE, key })
+  } catch {
+    // The pane does not hold the keys; nothing to move.
+  }
 }
 
 async function browseVaults($: EngineInterface, account: string | null): Promise<void> {
@@ -428,6 +440,7 @@ async function pickBrowse($: EngineInterface, value: string): Promise<void> {
     browse: null,
     message: `Picked ${value}. Press Save to keep it.`,
   }))
+  await refocus($, 'save')
 }
 
 // One step up: the list it came from, listed again.
@@ -440,8 +453,39 @@ async function browseBack($: EngineInterface): Promise<void> {
   await update($, panel, latest => ({ ...latest, browse: null }))
 }
 
-// The rows drawn at once; the pane scrolls through them, and past this the filter narrows them.
-const SHOWN = 200
+// The list box: this many rows at once, scrolled by the arrows at its edges; a filter from this many.
+const WINDOW = 15
+const FILTER_FROM = 10
+
+// The rows the box shows now, after the filter.
+function visible(browse: Browse): Browse['options'] {
+  return matching(browse.options, browse.filter).slice(browse.offset, browse.offset + WINDOW)
+}
+
+// The ring's last element, so a move off the box's edge row reads as a scroll. A reload forgets it,
+// which costs one move that leaves the box instead of scrolling it.
+let lastFocus: string | undefined
+
+// An arrow off the box's first or last row scrolls the box one row and keeps the ring in it, the
+// way a list scrolls, instead of leaving for the filter or the buttons below.
+export function scrollBy(browse: Browse, from: string | undefined, to: string | undefined): number {
+  const rows = visible(browse)
+  if (!from?.startsWith('pick:') || to?.startsWith('pick:') || rows.length === 0) return 0
+  const total = matching(browse.options, browse.filter).length
+  if (from === `pick:${rows.at(-1)!.value}` && to !== 'filter' && browse.offset + WINDOW < total) return 1
+  if (from === `pick:${rows[0]!.value}` && browse.offset > 0) return -1
+  return 0
+}
+
+async function scrollBox($: EngineInterface, by: number): Promise<void> {
+  await update($, panel, latest =>
+    latest.browse ? { ...latest, browse: { ...latest.browse, offset: Math.max(0, latest.browse.offset + by) } } : latest,
+  )
+  const browse = (await read($, panel)).browse
+  const rows = browse ? visible(browse) : []
+  const row = by > 0 ? rows.at(-1) : rows[0]
+  if (row) await refocus($, `pick:${row.value}`)
+}
 
 export function matching(options: Browse['options'], filter: string): Browse['options'] {
   const words = filter.toLowerCase().split(/\s+/).filter(Boolean)
@@ -718,13 +762,13 @@ export const register: Register = on => {
                         </Text>
                         {browse.isLoading && <Text dimColor>Asking 1Password; approve it if it asks.</Text>}
                         {browse.error && <Text color="red">{browse.error}</Text>}
-                        {!browse.isLoading && !browse.error && browse.options.length > 10 && (
+                        {!browse.isLoading && !browse.error && browse.options.length > FILTER_FROM && (
                           <Input
                             key="filter"
                             label="Filter "
                             value={browse.filter}
                             placeholder="type to narrow the list"
-                            onInput={text => update($, panel, latest => ({ ...latest, browse: latest.browse && { ...latest.browse, filter: text } }))}
+                            onInput={text => update($, panel, latest => ({ ...latest, browse: latest.browse && { ...latest.browse, filter: text, offset: 0 } }))}
                             autoFocus
                             submitLabel="pick first"
                             onSubmit={text => {
@@ -734,17 +778,20 @@ export const register: Register = on => {
                           />
                         )}
                         {/* Buttons, not a Select: a Select keeps the arrows, so up never returned to the filter. */}
-                        {!browse.isLoading &&
-                          shown.slice(0, SHOWN).map((option, index) => (
+                        {browse.offset > 0 && <Text dimColor>↑ {browse.offset} more</Text>}
+                        <Box flexDirection="column">
+                          {visible(browse).map((option, index) => (
                             <Button
                               key={`pick:${option.value}`}
                               label={option.label}
                               plain
-                              autoFocus={index === 0 && browse.options.length <= 10 ? true : undefined}
+                              dimColor={browse.isLoading}
+                              autoFocus={index === 0 && browse.options.length <= FILTER_FROM ? true : undefined}
                               onPress={() => pickBrowse($, option.value)}
                             />
                           ))}
-                        {shown.length > SHOWN && <Text dimColor>{shown.length - SHOWN} more; type to narrow the list.</Text>}
+                        </Box>
+                        {shown.length > browse.offset + WINDOW && <Text dimColor>↓ {shown.length - browse.offset - WINDOW} more</Text>}
                         {!browse.isLoading && !browse.error && shown.length === 0 && <Text dimColor>Nothing matches.</Text>}
                         <Box>
                           <Button key="browse-back" label="Back" dimColor onPress={() => browseBack($)} />
@@ -778,10 +825,15 @@ export const register: Register = on => {
     )
   })
 
-  // The arrows walk the picker's rows; the pane scrolls so the focused one shows.
   on('ui.focus', { component: 'Pane', requestId: PANE }, async ($, e, next) => {
+    const browse = (await read($, panel)).browse
+    const by = browse && e.origin.kind === 'person' ? scrollBy(browse, lastFocus, e.element) : 0
+    if (by !== 0) {
+      void scrollBox($, by)
+      return {}
+    }
     const moved = await next(e)
-    if (!moved.deny && e.element?.startsWith('pick:')) $.ui.scroll({ in: PANE, to: { key: e.element } }).catch(() => undefined)
+    if (!moved.deny) lastFocus = e.element
     return moved
   })
 
