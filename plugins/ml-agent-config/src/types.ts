@@ -82,6 +82,11 @@ export interface DescribedKey {
   required: boolean;
   value: ConfigValue | null;
   source: Layer | "default" | null;
+  /**
+   * What each layer itself sets for this key, before the merge: a layer that does not set it is
+   * absent, and a null is a layer blocking what the layers under it set.
+   */
+  levels: Partial<Record<Layer, ConfigValue>>;
   problems: string[];
 }
 

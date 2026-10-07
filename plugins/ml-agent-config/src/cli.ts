@@ -17,6 +17,7 @@ import {
   readJournal,
   readLayer,
   writeLayer,
+  valueAt,
   type ConfigObject,
   type Layer,
   type LoadedLayers,
@@ -28,6 +29,7 @@ import { CredentialError, resolveCredential, type CredentialRef } from "./creden
 import * as onePassword from "./onepassword";
 import {
   ACS_VERSION,
+  type DescribedKey,
   type DescribeOutput,
   type ListOutput,
   type LoadOutput,
@@ -69,7 +71,9 @@ const USAGE = `agent-config <command>
   path <name> [--layer <layer>] [--from <dir>]    where the layers live
   list                                            every installed component that declares a name
   1password accounts | vaults | items | fields    browse for a reference: --account, --vault, --item;
-                                                  names and op:// addresses only, never a value
+                                                  names and op:// addresses only, never a value;
+                                                  items with no --vault lists every vault, and with
+                                                  no --account every account
   repos register [--alias <alias>]                add this repository to the repo registry
 
 Layers: ${LAYERS.join(", ")}. Output is JSON only — rendering for a human is the agent's job.`;
@@ -321,6 +325,9 @@ function describe(parsed: ParsedArgs): number {
   const name = requireName(parsed);
   const harness = detectHarness();
   const { found, repo, loaded, effective } = resolve(name, parsed.from);
+  const own = loaded.files
+    .filter((file) => file.exists)
+    .map((file) => ({ layer: file.layer, config: readLayer(name, file.layer, repo) ?? {} }));
 
   const output: DescribeOutput = {
     acs: ACS_VERSION,
@@ -328,12 +335,28 @@ function describe(parsed: ParsedArgs): number {
     harness,
     schemaVersion: found.schemaVersion,
     repo: repoReport(repo),
-    keys: effective.keys,
+    keys: effective.keys.map((key) => withLevels(key, own)),
     layers: loaded.files.map((file) => ({ ...file, journal: readJournal(name, file.layer, repo) })),
     problems: [...effective.problems, ...legacyProblems(name, repo)],
   };
   out(`${JSON.stringify(output, null, 2)}\n`);
   return EXIT.ok;
+}
+
+/**
+ * Each layer's own value for one key, so an editor can show what every level sets and which one
+ * wins. Provenance is kept per leaf, so a key whose value is an object (a credential reference) has
+ * none: its source is the top layer that sets it, unless that layer blocks it with null.
+ */
+function withLevels(key: DescribedKey, own: { layer: Layer; config: ConfigObject }[]): DescribedKey {
+  const levels: DescribedKey["levels"] = {};
+  for (const { layer, config } of own) {
+    const value = valueAt(config, key.path);
+    if (value !== undefined) levels[layer] = value;
+  }
+  const top = [...LAYERS].reverse().find((layer) => layer in levels);
+  const source = key.source ?? (top && levels[top] !== null && key.value !== null ? top : null);
+  return { ...key, levels, source };
 }
 
 function path(parsed: ParsedArgs): number {
@@ -369,7 +392,8 @@ function browseOnePassword(parsed: ParsedArgs): number {
   let found: object;
   if (what === "accounts") found = { accounts: onePassword.accounts() };
   else if (what === "vaults") found = { vaults: onePassword.vaults(parsed.account) };
-  else if (what === "items") found = { items: onePassword.items(need(parsed.vault, "--vault"), parsed.account) };
+  else if (what === "items" && !parsed.vault) found = onePassword.everything(parsed.account);
+  else if (what === "items") found = { items: onePassword.items(parsed.vault, parsed.account) };
   else if (what === "fields") {
     found = { fields: onePassword.fields(need(parsed.vault, "--vault"), need(parsed.item, "--item"), parsed.account) };
   } else throw new ConfigError(`Unknown 1password subcommand ${JSON.stringify(what ?? "")}: accounts, vaults, items, fields`);

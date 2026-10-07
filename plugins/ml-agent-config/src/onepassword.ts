@@ -24,6 +24,8 @@ function op(args: string[], account?: string): unknown {
 export interface OnePasswordAccount {
   id: string;
   label: string;
+  /** A short name for lists: the sign-in address's first part, or the email on my.1password.com. */
+  short: string;
 }
 
 export interface OnePasswordVault {
@@ -37,6 +39,12 @@ export interface OnePasswordItem {
   category: string;
 }
 
+/** One item of every vault, with the vault and account it sits in, so a picker can filter by them. */
+export interface OnePasswordListed extends OnePasswordItem {
+  vault: OnePasswordVault;
+  account: string | null;
+}
+
 export interface OnePasswordField {
   id: string;
   label: string;
@@ -48,7 +56,10 @@ export interface OnePasswordField {
 
 export function accounts(): OnePasswordAccount[] {
   const listed = op(["account", "list"]) as { account_uuid: string; email: string; url: string }[];
-  return listed.map((one) => ({ id: one.account_uuid, label: `${one.email} (${one.url})` }));
+  return listed.map((one) => {
+    const host = one.url.replace(/^https?:\/\//, "").split(".")[0] ?? "";
+    return { id: one.account_uuid, label: `${one.email} (${one.url})`, short: host && host !== "my" ? host : one.email };
+  });
 }
 
 export function vaults(account?: string): OnePasswordVault[] {
@@ -62,6 +73,37 @@ export function items(vault: string, account?: string): OnePasswordItem[] {
   return listed
     .map(({ id, title, category }) => ({ id, title, category }))
     .sort((a, b) => a.title.localeCompare(b.title));
+}
+
+/**
+ * Every item of every vault, one `op item list` per account, so the person approves each account
+ * once. An account that refuses is reported and the others are still listed; only when every
+ * account refuses is it an error.
+ */
+export function everything(account?: string): {
+  accounts: OnePasswordAccount[];
+  items: OnePasswordListed[];
+  problems: string[];
+} {
+  const known = accounts();
+  const wanted = account ? known.filter((one) => one.id === account) : known;
+  const asked = wanted.length > 0 ? wanted.map((one) => one.id) : [account];
+  const listed: OnePasswordListed[] = [];
+  const problems: string[] = [];
+  for (const id of asked) {
+    try {
+      const got = op(["item", "list"], id) as { id: string; title: string; category: string; vault: OnePasswordVault }[];
+      for (const { id: item, title, category, vault } of got) {
+        listed.push({ id: item, title, category, vault: { id: vault.id, name: vault.name }, account: id ?? null });
+      }
+    } catch (error) {
+      if (asked.length === 1) throw error;
+      problems.push((error as Error).message);
+    }
+  }
+  if (problems.length === asked.length) throw new CredentialError(problems[0]!);
+  listed.sort((a, b) => a.title.localeCompare(b.title));
+  return { accounts: known, items: listed, problems };
 }
 
 export function fields(vault: string, item: string, account?: string): OnePasswordField[] {
