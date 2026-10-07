@@ -22,6 +22,13 @@ export function valueLine(setting: Setting, show: string, layers: readonly strin
   return `${showValue(setting.value)} · ${levelLabel(setting.source)}${overrides}`
 }
 
+/** An on/off row's way in: where its value comes from, so it reads as a place to open, not a feature. */
+export function whereFrom(setting: Setting, show: string): string {
+  if (show !== 'effective') return 'edit'
+  if (!setting.source || setting.source === 'default') return 'from default'
+  return `from ${levelLabel(setting.source)}`
+}
+
 export function settings({ now, ui, Input, act }: Ctx): RenderElement {
   const { Box, Button, Text } = ui
   const component = selected(now)
@@ -42,7 +49,7 @@ export function settings({ now, ui, Input, act }: Ctx): RenderElement {
       <Box key={`row:setting:${setting.path}`} flexDirection="column">
         <Box>
           <Button key={`toggle:${setting.path}`} label={`${setting.path}  [ ${state} ]`} plain onPress={() => act.toggle(setting)} />
-          <Button key={`setting:${setting.path}`} label="  levels ›" plain dimColor onPress={() => act.openEdit(setting)} />
+          <Button key={`setting:${setting.path}`} label={`  ${whereFrom(setting, now.show)} ›`} plain dimColor onPress={() => act.openEdit(setting)} />
         </Box>
         <Text dimColor>
           {'  '}

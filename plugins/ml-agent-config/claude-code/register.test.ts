@@ -293,6 +293,7 @@ test("agent-config's own flag toggles in place, merged into its global layer", a
   w.layer = '{"notices":{"other":1}}'
   const ui = await open($)
   await ui.press({ key: 'component:agent-config' })
+  expect(await text(ui, 'setting:notices.cacheBanner')).toContain('from default ›')
   await ui.press({ key: 'toggle:notices.cacheBanner' })
   expect(JSON.parse(w.writes.at(-1)!)).toEqual({ notices: { other: 1, cacheBanner: false } })
   const write = w.runs.find(argv => argv[1] === 'write')!
