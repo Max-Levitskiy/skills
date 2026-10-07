@@ -30,6 +30,8 @@ export { editText, parseText, showValue } from './values'
 
 const unlocks = atom({ plugin: 'ml-agent-config', key: 'unlocks' } as const, [] as Unlock[])
 const notice = atom({ plugin: 'ml-agent-config', key: 'notice' } as const, null as string | null)
+// × closes the band for the session: a later unlock does not open it again.
+const isBandClosed = atom({ plugin: 'ml-agent-config', key: 'isBandClosed' } as const, false)
 const panel = atom({ plugin: 'ml-agent-config', key: 'panel' } as const, EMPTY_PANEL)
 
 async function bin($: EngineInterface): Promise<string> {
@@ -163,6 +165,11 @@ async function hideBannerForGood($: EngineInterface): Promise<void> {
   const failed = await writeKey($, own($), 'global', 'notices.cacheBanner', false)
   await update($, notice, () => null)
   if (failed) $.ui.toast(`agent-config: could not save the choice: ${failed}`)
+}
+
+async function closeBand($: EngineInterface): Promise<void> {
+  await update($, isBandClosed, () => true)
+  await update($, notice, () => null)
 }
 
 // Drops every cached secret and the band; the next skill of a ready component asks 1Password again.
@@ -548,7 +555,7 @@ export const register: Register = on => {
     const wasDeclined = earlier && !earlier.isCached && pending.every(key => earlier.refs.includes(cacheKey(plan.config.credentials![key]!)))
     const unlocked = plan.ready && !wasDeclined ? await unlock($, plan) : undefined
     if (!plan.ready) $.ui.status(`agent-config: ${plan.name} needs setup`)
-    if (unlocked?.isCached && (await showsBanner($))) {
+    if (unlocked?.isCached && !(await read($, isBandClosed)) && (await showsBanner($))) {
       await update($, notice, () => `1Password cached for ${plan.name} for this session`)
     }
 
@@ -600,7 +607,7 @@ export const register: Register = on => {
         <Text dimColor>agent-config: {text} </Text>
         <Button key="forget" label="Forget" onPress={() => forget($)} />
         <Button key="never" label="Don't show again" onPress={() => hideBannerForGood($)} />
-        <Button key="close" label="×" role="dismiss" onPress={() => update($, notice, () => null)} />
+        <Button key="close" label="×" role="dismiss" onPress={() => closeBand($)} />
       </Box>
     )
   })

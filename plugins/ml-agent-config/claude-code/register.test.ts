@@ -291,7 +291,7 @@ test('with the choice saved, a later session caches the secret and shows no band
   expect(await ui.find({ key: 'never' })).toBeUndefined()
 })
 
-test('Close hides the band and keeps the cache; Forget drops both', async ($, on) => {
+test('Close hides the band for the session and keeps the cache', async ($, on) => {
   const w = world(on)
   await $.skill.prompt({ skill: 'demo', text: 'A' })
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
@@ -302,9 +302,18 @@ test('Close hides the band and keeps the cache; Forget drops both', async ($, on
 
   await $.command.run({ command: 'agent-config', args: 'unlock demo', ...COMMAND })
   expect(await ui.find({ key: 'close' })).toBeUndefined()
-
-  await $.command.run({ command: 'agent-config', args: 'forget', ...COMMAND })
+  // Closed for the session: a reference unlocked later does not open it again.
+  w.apiKey = { source: '1password', ref: 'op://Private/Other/key' }
   await $.skill.prompt({ skill: 'demo', text: 'B' })
+  expect(loads(w)).toHaveLength(2)
+  expect(await ui.find({ key: 'close' })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('Forget on the band drops the cache and the band', async ($, on) => {
+  const w = world(on)
+  await $.skill.prompt({ skill: 'demo', text: 'A' })
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
   expect(await ui.find({ key: 'forget' })).toBeDefined()
   await ui.press({ key: 'forget' })
   expect(w.env[SECRET_CACHE_VAR]).toBeUndefined()
@@ -684,6 +693,10 @@ test('values read and write as plain text, typed by the current value', () => {
   expect(parseText('true', 'text')).toEqual({ value: 'true' })
   expect(parseText('  ', 'text')).toEqual({})
   expect(parseText('  indented', 'text')).toEqual({ value: '  indented' })
+  // JSON for an object or a list stays that kind: null is Block inherited's to write.
+  for (const typed of ['null', '[]', '"text"']) expect(parseText(typed, { a: 1 }).error).toBeDefined()
+  expect(parseText('{"a":2}', { a: 1 })).toEqual({ value: { a: 2 } })
+  expect(parseText('null', [1]).error).toBeDefined()
 })
 
 test('an id-only 1Password reference reads by name once a listing has named it, across sessions', async ($, on) => {

@@ -94,14 +94,20 @@ export function parseText(text: string, like: Json): { value?: Json; error?: str
     if (/^(off|false|no)$/i.test(trimmed)) return { value: false }
     return { error: 'type on or off' }
   }
-  // A list may be typed as `a, b` or, starting with `[`, as JSON.
-  if (Array.isArray(like) && !trimmed.startsWith('[')) return { value: trimmed.split(',').map(part => part.trim()).filter(Boolean) }
+  // A list of text may be typed as `a, b` or, starting with `[`, as JSON; any other list as JSON.
+  const isTextKind = Array.isArray(like) && like.every(one => typeof one === 'string')
+  if (isTextKind && !trimmed.startsWith('[')) return { value: trimmed.split(',').map(part => part.trim()).filter(Boolean) }
   if (like !== null && typeof like === 'object') {
+    const kind = Array.isArray(like) ? 'a list' : 'an object'
+    let parsed: Json
     try {
-      return { value: JSON.parse(trimmed) as Json }
+      parsed = JSON.parse(trimmed) as Json
     } catch {
-      return { error: `this key holds ${Array.isArray(like) ? 'a list' : 'an object'}: type it as JSON` }
+      return { error: `this key holds ${kind}: type it as JSON` }
     }
+    // Still the same kind: null would block the levels under it, which Block inherited is for.
+    const isSameKind = Array.isArray(like) ? Array.isArray(parsed) : parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)
+    return isSameKind ? { value: parsed } : { error: `this key holds ${kind}: type ${Array.isArray(like) ? '[…]' : '{…}'}` }
   }
   // Text is kept as typed: its spaces may mean something.
   return { value: text }

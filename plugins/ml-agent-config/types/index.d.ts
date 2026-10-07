@@ -90,6 +90,6 @@ export type Panel = {
 
 declare module 'claude-code' {
   interface PluginState {
-    'ml-agent-config': { unlocks: Unlock[]; notice: string | null; panel: Panel }
+    'ml-agent-config': { unlocks: Unlock[]; notice: string | null; isBandClosed: boolean; panel: Panel }
   }
 }
