@@ -327,7 +327,8 @@ test('an edit writes at the level switched to on top, showing its file, and goes
   await ui.press({ key: 'setting:workspace.subdomain' })
   // Set now in the repo layer, so the edit starts there.
   expect(await text(ui, 'where')).toContain('~/repo.json')
-  expect(await text(ui, 'where')).toContain('Holds acme, in effect for the whole team in this repo.')
+  // The plain case says nothing beyond the file: no "Holds acme, in effect …".
+  expect(await text(ui, 'where')).not.toContain('Holds')
   // The level on the title line opens the level list: typed text stays when the level changes.
   expect(await text(ui, 'level')).toContain('Project ›')
   await ui.input({ key: 'value', text: 'beta', kind: 'change' })
@@ -352,7 +353,6 @@ test('Save to writes the typed value at another level and leaves the edit level 
   const ui = await open($)
   await ui.press({ key: 'component:demo' })
   await ui.press({ key: 'setting:workspace.subdomain' })
-  expect(JSON.stringify(await ui.find({}))).toContain('another level: Everywhere, Me, Checkout')
   await ui.input({ key: 'value', text: 'mine', kind: 'change' })
   await ui.press({ key: 'saveto' })
   // Top first, the edit's own level left out, each with its file and what it would replace.
@@ -374,9 +374,7 @@ test('a value set Everywhere offers overrides for the team, for me, and for this
   const ui = await open($)
   await ui.press({ key: 'component:demo' })
   await ui.press({ key: 'setting:workspace.subdomain' })
-  expect(await text(ui, 'where')).toContain('Holds acme, in effect in every project, for you.')
   expect(await text(ui, 'row:override:repo')).toContain('For the team in this repo')
-  expect(await text(ui, 'row:override:repo')).toContain('~/repo.json')
   expect(await ui.find({ key: 'override:user-repo' })).toBeDefined()
   expect(await ui.find({ key: 'override:local' })).toBeDefined()
 
@@ -399,15 +397,15 @@ test('Remove here drops the key from one level; Block inherited writes null ther
   await ui.press({ key: 'component:demo' })
   expect(await text(ui, 'row:setting:workspace.subdomain')).toContain('beta · This checkout, overrides acme')
   await ui.press({ key: 'setting:workspace.subdomain' })
-  // Every level, compared, and a pick there points the edit at it.
-  await ui.press({ key: 'levels' })
+  // The level button opens every level, compared, and a pick there points the edit at it.
+  await ui.press({ key: 'level' })
   expect(await text(ui, 'row:level:local')).toContain('beta  wins')
   expect(await text(ui, 'row:level:repo')).toContain('acme')
   await ui.press({ key: 'level:repo' })
   expect(await text(ui, 'where')).toContain('Holds acme, but This checkout overrides it.')
   await ui.press({ key: 'level' })
   await ui.press({ key: 'level:local' })
-  expect(await text(ui, 'row:remove')).toContain('falls back to acme (Project, shared)')
+  expect(await text(ui, 'row:remove')).toContain('Remove here (back to acme)')
   await ui.press({ key: 'remove' })
   expect(JSON.parse(w.writes.at(-1)!)).toEqual({ workspace: {} })
 

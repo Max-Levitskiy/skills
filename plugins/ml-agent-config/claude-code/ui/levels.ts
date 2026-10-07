@@ -55,7 +55,10 @@ export function over(setting: Setting, layer: string, layers: readonly string[])
   return top && levelLabel(top)
 }
 
-/** What a value at this level does, in one sentence: who it reaches and what it overrides. */
+/**
+ * What a value at this level does, in one sentence: who it reaches and what it overrides. Empty
+ * when it would only repeat the level: the value in effect here, over nothing different.
+ */
 export function effect(setting: Setting, layer: string, layers: readonly string[]): string {
   const here = setting.levels[layer]
   const audience = LEVELS[layer]?.audience ?? ''
@@ -72,7 +75,7 @@ export function effect(setting: Setting, layer: string, layers: readonly string[
   }
   // Over a lower value only when it differs: "on, over on from the default" says nothing.
   const differs = below && showValue(below.value) !== showValue(here)
-  return `Holds ${showValue(here)}, in effect ${audience}${differs ? `, over ${showValue(below.value)} from ${below.label}` : ''}.`
+  return differs ? `Holds ${showValue(here)}, in effect ${audience}, over ${showValue(below.value)} from ${below.label}.` : ''
 }
 
 /** The levels above the one in effect that set nothing yet: where an override can be added. */

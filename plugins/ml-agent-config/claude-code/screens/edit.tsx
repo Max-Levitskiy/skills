@@ -26,6 +26,7 @@ export function edit({ now, ui, Input, act }: Ctx): RenderElement {
 
   // The level sits on the title line, at the right; a press opens the level list. With one level
   // there is nothing to pick, so it is only named.
+  const said = effect(setting, draft.layer, layers)
   const others = ORDER.filter(layer => layers.includes(layer) && layer !== draft.layer)
   const tools =
     others.length > 0
@@ -40,7 +41,8 @@ export function edit({ now, ui, Input, act }: Ctx): RenderElement {
     note(ui, setting.description),
     <Box key="where" flexDirection="column" marginBottom={1}>
       <Text dimColor>{fileOf(now, draft.layer)}</Text>
-      <Text dimColor>{effect(setting, draft.layer, layers)}</Text>
+      {/* Only when it says more than the level's name: an override, a block, what saving would hide. */}
+      {said ? <Text dimColor>{said}</Text> : null}
       {others.length === 0 && <Text dimColor>The only level outside a git repo. Open Claude Code in one for the project levels.</Text>}
     </Box>,
     isBoolean(setting) && (
@@ -67,7 +69,6 @@ export function edit({ now, ui, Input, act }: Ctx): RenderElement {
       row(ui, {
         key: 'source',
         label: `› Source  ${kind?.label ?? draft.source}`,
-        detail: 'where the secret lives, never the secret',
         onPress: () => act.go({ kind: 'source' }, 'source', `source:${draft.source}`),
       }),
     ...(setting.credential
@@ -89,7 +90,7 @@ export function edit({ now, ui, Input, act }: Ctx): RenderElement {
       : []),
     setting.credential &&
       draft.source === '1password' &&
-      row(ui, { key: 'pick', label: '› Pick from 1Password', detail: 'every item, every account', onPress: () => act.openOnePassword() }),
+      row(ui, { key: 'pick', label: '› Pick from 1Password', onPress: () => act.openOnePassword() }),
     !isBoolean(setting) && (Input || setting.credential) && (
       <Box key="actions" marginTop={1}>
         <Button key="save" label="Save here" variant="primary" onPress={() => act.saveEdit()} />
@@ -97,15 +98,10 @@ export function edit({ now, ui, Input, act }: Ctx): RenderElement {
         {others.length > 0 && <Button key="saveto" label="Save to…" onPress={() => act.go({ kind: 'saveto' }, 'saveto', `saveto:${others.at(-1)}`)} />}
       </Box>
     ),
-    !isBoolean(setting) &&
-      (Input || setting.credential) &&
-      others.length > 0 &&
-      note(ui, `  another level: ${others.map(layer => LEVELS[layer]!.short).join(', ')}`),
     here !== undefined &&
       row(ui, {
         key: 'remove',
-        label: '› Remove here',
-        detail: below ? `falls back to ${showValue(below.value)} (${below.label})` : 'leaves it not set',
+        label: below ? `› Remove here (back to ${showValue(below.value)})` : '› Remove here',
         onPress: () => act.removeHere(),
       }),
     here !== null &&
@@ -114,7 +110,6 @@ export function edit({ now, ui, Input, act }: Ctx): RenderElement {
       row(ui, {
         key: 'block',
         label: '› Block inherited',
-        detail: `no value here, even though ${below.label} has one`,
         onPress: () => act.blockHere(),
       }),
     // The common wish, spelled out: keep the value where it is, and add one above it for a team,
@@ -128,16 +123,8 @@ export function edit({ now, ui, Input, act }: Ctx): RenderElement {
       row(ui, {
         key: `override:${layer}`,
         label: `+ ${LEVELS[layer]!.offer}`,
-        detail: fileOf(now, layer),
         onPress: () => act.overrideAt(layer),
       }),
     ),
-    others.length > 0 &&
-      row(ui, {
-        key: 'levels',
-        label: '› Every level',
-        detail: 'what each level sets, and which wins',
-        onPress: () => act.go({ kind: 'levels' }, 'levels', `level:${draft.layer}`),
-      }),
   ])
 }
