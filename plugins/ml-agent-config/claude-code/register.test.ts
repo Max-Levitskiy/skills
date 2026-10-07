@@ -1,7 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On, RenderElement } from 'claude-code'
 
-import { editText, parseText, scrollBy, showValue } from './register'
+import { arrowMove, editText, parseText, scrollBy, showValue } from './register'
 import { SECRET_CACHE_VAR, cacheKey, parseCache } from '../src/secret-cache'
 
 const REF = { source: '1password', ref: 'op://Private/Demo/key' }
@@ -388,4 +388,23 @@ test('an arrow off the list box edge scrolls the box, not the pane', () => {
   expect(scrollBy(at(0), 'pick:I0', 'filter')).toBe(0)
   // At the end of the list the ring leaves for the buttons below.
   expect(scrollBy(at(25), 'pick:I39', 'browse-back')).toBe(0)
+})
+
+test('in an overflowing pane the arrows walk the 1Password list instead of scrolling the pane', () => {
+  const options = Array.from({ length: 40 }, (_, n) => ({ value: `I${n}`, label: `Item ${n}` }))
+  const at = (offset: number, filter = '') =>
+    ({ step: 'item', account: null, vault: null, item: null, options, filter, offset, isLoading: false, error: null }) as const
+  expect(arrowMove(at(0), 'filter', 1)).toEqual({ offset: 0, focus: 'pick:I0' })
+  expect(arrowMove(at(0), 'pick:I0', 1)).toEqual({ offset: 0, focus: 'pick:I1' })
+  expect(arrowMove(at(0), 'pick:I14', 1)).toEqual({ offset: 1, focus: 'pick:I15' })
+  expect(arrowMove(at(25), 'pick:I39', 1)).toEqual({ offset: 25, focus: 'browse-back' })
+  expect(arrowMove(at(3), 'pick:I3', -1)).toEqual({ offset: 2, focus: 'pick:I2' })
+  expect(arrowMove(at(0), 'pick:I0', -1)).toEqual({ offset: 0, focus: 'filter' })
+  expect(arrowMove(at(25), 'browse-back', -1)).toEqual({ offset: 25, focus: 'pick:I39' })
+  // Outside the list, or up from the filter, the engine keeps the key.
+  expect(arrowMove(at(0), 'filter', -1)).toBeUndefined()
+  expect(arrowMove(at(0), 'save', 1)).toBeUndefined()
+  // Five vaults: no filter, so up from the first row is the engine's.
+  expect(arrowMove({ ...at(0), options: options.slice(0, 5) }, 'pick:I0', -1)).toBeUndefined()
+  expect(arrowMove({ ...at(0), options: options.slice(0, 5) }, 'pick:I0', 1)).toEqual({ offset: 0, focus: 'pick:I1' })
 })

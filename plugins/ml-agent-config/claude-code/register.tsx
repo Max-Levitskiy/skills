@@ -477,6 +477,28 @@ export function scrollBy(browse: Browse, from: string | undefined, to: string | 
   return 0
 }
 
+// While the pane is taller than its room, the engine spends ↑ and ↓ on scrolling the whole pane
+// instead of walking the ring. In the 1Password list they move the ring a row instead, scrolling the
+// list box at its edges. Undefined leaves the key to the engine.
+export function arrowMove(browse: Browse, from: string | undefined, by: number): { offset: number; focus: string } | undefined {
+  const all = matching(browse.options, browse.filter)
+  const rows = visible(browse).map(option => `pick:${option.value}`)
+  const offset = browse.offset
+  if (rows.length === 0 || from === undefined) return undefined
+  if (from === 'filter') return by > 0 ? { offset, focus: rows[0]! } : undefined
+  if (from === 'browse-back' || from === 'browse-close') return by < 0 ? { offset, focus: rows.at(-1)! } : undefined
+  const at = rows.indexOf(from)
+  if (at < 0) return undefined
+  if (by > 0) {
+    if (at < rows.length - 1) return { offset, focus: rows[at + 1]! }
+    if (offset + WINDOW < all.length) return { offset: offset + 1, focus: `pick:${all[offset + WINDOW]!.value}` }
+    return { offset, focus: 'browse-back' }
+  }
+  if (at > 0) return { offset, focus: rows[at - 1]! }
+  if (offset > 0) return { offset: offset - 1, focus: `pick:${all[offset - 1]!.value}` }
+  return browse.options.length > FILTER_FROM ? { offset, focus: 'filter' } : undefined
+}
+
 async function scrollBox($: EngineInterface, by: number): Promise<void> {
   await update($, panel, latest =>
     latest.browse ? { ...latest, browse: { ...latest.browse, offset: Math.max(0, latest.browse.offset + by) } } : latest,
@@ -823,6 +845,19 @@ export const register: Register = on => {
         )}
       </Box>
     )
+  })
+
+  on('ui.scroll', { component: 'Pane', requestId: PANE }, async ($, e, next) => {
+    // A wheel tick carries a pointer; an arrow key moves one row and carries none.
+    if (e.origin.kind !== 'person' || e.pointer || Math.abs(e.by) !== 1) return next(e)
+    const browse = (await read($, panel)).browse
+    const move = browse ? arrowMove(browse, lastFocus, e.by) : undefined
+    if (!browse || !move) return next(e)
+    if (move.offset !== browse.offset) {
+      await update($, panel, latest => (latest.browse ? { ...latest, browse: { ...latest.browse, offset: move.offset } } : latest))
+    }
+    void refocus($, move.focus)
+    return {}
   })
 
   on('ui.focus', { component: 'Pane', requestId: PANE }, async ($, e, next) => {
