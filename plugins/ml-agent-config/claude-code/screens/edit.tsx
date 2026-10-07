@@ -39,20 +39,9 @@ export function edit({ now, ui, Input, act }: Ctx): RenderElement {
   return screen(ui, { path, onBack: () => act.back(), tools, message: now.message }, [
     note(ui, setting.description),
     <Box key="where" flexDirection="column">
-      <Text dimColor>
-        {'  '}
-        {fileOf(now, draft.layer)}
-      </Text>
-      <Text dimColor>
-        {'  '}
-        {effect(setting, draft.layer, layers)}
-      </Text>
-      {others.length === 0 && (
-        <Text dimColor>
-          {'  '}
-          The only level here: open Claude Code in a git repo to set it for a project.
-        </Text>
-      )}
+      <Text dimColor>{fileOf(now, draft.layer)}</Text>
+      <Text dimColor>{effect(setting, draft.layer, layers)}</Text>
+      {others.length === 0 && <Text dimColor>The only level here: open Claude Code in a git repo to set it for a project.</Text>}
     </Box>,
     isBoolean(setting) && (
       <Box key="booleans">

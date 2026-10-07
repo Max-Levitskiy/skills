@@ -13,7 +13,7 @@ export function components({ now, ui, act }: Ctx): RenderElement {
         key: `component:${one.name}`,
         label: `› ${one.name}`,
         detail: `${one.plugin} · ${one.ready === null ? 'no answer' : one.ready ? 'ready' : 'needs setup'}`,
-        color: one.ready === false ? 'yellow' : undefined,
+        color: one.ready === false ? 'red' : undefined,
         onPress: () => act.openComponent(one.name),
       }),
     ),
