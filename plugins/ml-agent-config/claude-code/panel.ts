@@ -24,6 +24,12 @@ export function layerNames(now: Panel): string[] {
   return now.layers.map(one => one.layer)
 }
 
+/** The file a level is kept in, as the screens show it. */
+export function fileOf(now: Panel, layer: string): string {
+  const file = now.layers.find(one => one.layer === layer)
+  return file ? `${file.path}${file.exists ? '' : ' (new file)'}` : ''
+}
+
 /** `describe` as the screens read it: paths shortened to ~ and to the repository's root. */
 export function readDescribe(stdout: string, home: string | undefined): Pick<Panel, 'settings' | 'layers'> {
   const out = JSON.parse(stdout) as {
@@ -86,7 +92,7 @@ export function switchLevel(edit: Edit, setting: Setting, layer: string): Edit {
 /** The edit screen's first element: the field to type in, or the first choice. */
 export function firstEdit(setting: Setting, edit: Edit, canType: boolean, levels = 2): string {
   if (isBoolean(setting)) return 'value:on'
-  if (!canType) return levels > 1 ? `at:${edit.layer}` : 'save'
+  if (!canType) return levels > 1 ? 'level' : 'save'
   if (!setting.credential) return 'value'
   if (edit.source === '1password') return 'pick'
   return `field:${SOURCES[edit.source]!.fields[0]!.name}`

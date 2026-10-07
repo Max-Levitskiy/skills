@@ -309,10 +309,12 @@ test('outside a repository the one level is said, not offered as a switch', asyn
   const ui = await open($)
   await ui.press({ key: 'component:demo' })
   await ui.press({ key: 'setting:workspace.subdomain' })
-  expect(await ui.find({ key: 'at:global' })).toBeUndefined()
+  // Named on the title line, not a button; no level list and no Save to.
+  expect(await text(ui, 'level')).toContain('Everywhere')
+  expect(await text(ui, 'level')).not.toContain('›')
   expect(await ui.find({ key: 'levels' })).toBeUndefined()
-  expect(await text(ui, 'level')).toContain('Level Everywhere')
-  expect(await text(ui, 'level')).toContain('open Claude Code in a git repo')
+  expect(await ui.find({ key: 'saveto' })).toBeUndefined()
+  expect(await text(ui, 'where')).toContain('open Claude Code in a git repo')
   await ui.unmount()
 })
 
@@ -325,9 +327,12 @@ test('an edit writes at the level switched to on top, showing its file, and goes
   // Set now in the repo layer, so the edit starts there.
   expect(await text(ui, 'where')).toContain('~/repo.json')
   expect(await text(ui, 'where')).toContain('Holds acme, in effect for the whole team in this repo.')
-  // The level switch on top: typed text stays when the level changes.
+  // The level on the title line opens the level list: typed text stays when the level changes.
+  expect(await text(ui, 'level')).toContain('Project ›')
   await ui.input({ key: 'value', text: 'beta', kind: 'change' })
-  await ui.press({ key: 'at:local' })
+  await ui.press({ key: 'level' })
+  await ui.press({ key: 'level:local' })
+  expect(await text(ui, 'level')).toContain('Checkout ›')
   expect(await text(ui, 'where')).toContain('~/local.json')
   expect(await text(ui, 'where')).toContain('Saving here overrides Project, shared (acme) in this checkout only.')
   await ui.input({ key: 'value', text: 'beta' })
@@ -337,6 +342,27 @@ test('an edit writes at the level switched to on top, showing its file, and goes
   expect(await ui.find({ key: 'value' })).toBeUndefined()
   expect(await text(ui, 'row:setting:workspace.subdomain')).toBeDefined()
   expect(JSON.stringify(await ui.find({}))).toContain('Saved workspace.subdomain in This checkout.')
+  await ui.unmount()
+})
+
+test('Save to writes the typed value at another level and leaves the edit level as it was', async ($, on) => {
+  const w = world(on)
+  w.layer = '{"workspace":{"subdomain":"acme"}}'
+  const ui = await open($)
+  await ui.press({ key: 'component:demo' })
+  await ui.press({ key: 'setting:workspace.subdomain' })
+  expect(JSON.stringify(await ui.find({}))).toContain('another level: Everywhere, Me, Checkout')
+  await ui.input({ key: 'value', text: 'mine', kind: 'change' })
+  await ui.press({ key: 'saveto' })
+  // Top first, the edit's own level left out, each with its file and what it would replace.
+  expect(await ui.find({ key: 'saveto:repo' })).toBeUndefined()
+  expect(await text(ui, 'row:saveto:user-repo')).toContain('~/user-repo.json · not set there now')
+  await ui.press({ key: 'saveto:user-repo' })
+  expect(w.runs.find(argv => argv[1] === 'write')).toEqual(['/ac/bin/agent-config', 'write', 'demo', '--layer', 'user-repo'])
+  expect(JSON.parse(w.writes.at(-1)!)).toEqual({ workspace: { subdomain: 'mine' } })
+  // Both screens close: back on the settings, saying where.
+  expect(await text(ui, 'row:setting:workspace.subdomain')).toBeDefined()
+  expect(JSON.stringify(await ui.find({}))).toContain('Saved workspace.subdomain in Project, just me.')
   await ui.unmount()
 })
 
@@ -378,7 +404,8 @@ test('Remove here drops the key from one level; Block inherited writes null ther
   expect(await text(ui, 'row:level:repo')).toContain('acme')
   await ui.press({ key: 'level:repo' })
   expect(await text(ui, 'where')).toContain('Holds acme, but This checkout overrides it.')
-  await ui.press({ key: 'at:local' })
+  await ui.press({ key: 'level' })
+  await ui.press({ key: 'level:local' })
   expect(await text(ui, 'row:remove')).toContain('falls back to acme (Project, shared)')
   await ui.press({ key: 'remove' })
   expect(JSON.parse(w.writes.at(-1)!)).toEqual({ workspace: {} })
@@ -416,7 +443,7 @@ test('the mobile pane has no fields, and still toggles', async ($, on) => {
   await ui.press({ key: 'component:demo' })
   await ui.press({ key: 'setting:workspace.subdomain' })
   expect(await ui.find({ key: 'value' })).toBeUndefined()
-  expect(await ui.find({ key: 'at:repo' })).toBeDefined()
+  expect(JSON.stringify(await ui.find({ key: 'level' }))).toContain('Project ›')
   await ui.press({ key: 'back' })
   await ui.press({ key: 'back' })
   await ui.press({ key: 'component:agent-config' })

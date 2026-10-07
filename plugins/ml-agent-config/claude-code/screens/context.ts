@@ -23,6 +23,8 @@ export type Actions = {
   typeText: (text: string) => Promise<void>
   typeField: (field: string, text: string) => Promise<void>
   saveEdit: () => Promise<void>
+  /** Save the value at another level, leaving the edit's own level as it is. */
+  saveTo: (layer: string) => Promise<void>
   saveBoolean: (value: boolean) => Promise<void>
   removeHere: () => Promise<void>
   blockHere: () => Promise<void>

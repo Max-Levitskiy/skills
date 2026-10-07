@@ -266,36 +266,41 @@ async function chooseSource($: EngineInterface, source: string): Promise<void> {
   await back($)
 }
 
-async function saveHere($: EngineInterface, value: Json | undefined): Promise<void> {
+// Saved, the screens it took close: the edit, and the level list when the value went elsewhere.
+async function saveHere($: EngineInterface, value: Json | undefined, layer?: string, close = 1): Promise<void> {
   const edit = (await read($, panel)).edit
   if (!edit) return
-  if (!(await save($, edit.layer, edit.path, value))) await back($, 1, { message: savedAt(edit.path, edit.layer, value) })
+  const at = layer ?? edit.layer
+  if (!(await save($, at, edit.path, value))) await back($, close, { message: savedAt(edit.path, at, value) })
 }
 
 // A plain value is read as its type; a credential keeps its other fields (an account, a cacheVar)
 // while its source stays the same, and is saved once every field of its source is filled in.
-async function saveEdit($: EngineInterface): Promise<void> {
+async function saveEdit($: EngineInterface, layer?: string, close = 1): Promise<void> {
   const now = await read($, panel)
   const setting = editing(now)
   const edit = now.edit
   if (!setting || !edit) return
+  const at = layer ?? edit.layer
+  // Refused, the edit screen says why, so the value can be fixed where it was typed.
   const refuse = async (why: string) => {
+    if (close > 1) return back($, close - 1, { message: `Not saved: ${why}` })
     await update($, panel, latest => ({ ...latest, message: `Not saved: ${why}` }))
   }
   if (!setting.credential) {
     const parsed = parseText(edit.text, setting.value ?? setting.default)
     if (parsed.error) return refuse(parsed.error)
-    return saveHere($, parsed.value)
+    return saveHere($, parsed.value, at, close)
   }
   const fields = SOURCES[edit.source]?.fields ?? []
   const missing = fields.filter(field => !edit.draft[field.name]?.trim())
   if (missing.length > 0) return refuse(`fill in ${missing.map(field => field.label).join(' and ')}`)
-  const before = setting.levels[edit.layer] ?? setting.value
+  const before = setting.levels[at] ?? setting.value
   const base = isReference(before) && before.source === edit.source ? before : { source: edit.source }
   const value: Stored = { ...base, source: edit.source }
   for (const field of fields) value[field.name] = edit.draft[field.name]!.trim()
   if (edit.source === '1password' && edit.draft.account) value.account = edit.draft.account
-  return saveHere($, value)
+  return saveHere($, value, at, close)
 }
 
 // 1Password, through `agent-config 1password`, which prints names and op:// addresses only.
@@ -404,6 +409,7 @@ function actions($: EngineInterface, canType: boolean): Actions {
       await update($, panel, now => ({ ...now, edit: now.edit && { ...now.edit, draft: { ...now.edit.draft, [field]: text }, isDirty: true } }))
     },
     saveEdit: () => saveEdit($),
+    saveTo: layer => saveEdit($, layer, 2),
     saveBoolean: value => saveHere($, value),
     removeHere: () => saveHere($, undefined),
     blockHere: () => saveHere($, null),

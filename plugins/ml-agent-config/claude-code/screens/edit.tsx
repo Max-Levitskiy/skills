@@ -1,10 +1,10 @@
-// One setting at one level. The level switch sits on top with the file it writes; the value is
-// typed (or for a credential, its source picked and filled in), and Save, Remove and Block act on
-// that level alone.
+// One setting at one level. The level sits on the title line, the file it writes under it; the
+// value is typed (or for a credential, its source picked and filled in). Save, Remove and Block act
+// on that level alone; Save to… writes the value at another.
 
 import type { RenderElement } from 'claude-code'
 
-import { editing, layerNames, selected } from '../panel'
+import { editing, fileOf, layerNames, selected } from '../panel'
 import { LEVELS, ORDER, effect, openAbove, under } from '../ui/levels'
 import { note, row, screen } from '../ui/screen'
 import { SOURCES, isBoolean, showValue } from '../values'
@@ -20,47 +20,39 @@ export function edit({ now, ui, Input, act }: Ctx): RenderElement {
   const layers = layerNames(now)
   const here = setting.levels[draft.layer]
   const below = under(setting, draft.layer, layers)
-  const fileOf = (layer: string) => {
-    const file = now.layers.find(one => one.layer === layer)
-    return file ? `${file.path}${file.exists ? '' : ' (new file)'}` : ''
-  }
   const overrides = openAbove(setting, layers).filter(layer => layer !== draft.layer)
   const kind = SOURCES[draft.source]
   const isOn = typeof here === 'boolean' ? here : (setting.value ?? setting.default) === true
 
-  return screen(ui, { path, onBack: () => act.back(), message: now.message }, [
+  // The level sits on the title line, at the right; a press opens the level list. With one level
+  // there is nothing to pick, so it is only named.
+  const others = ORDER.filter(layer => layers.includes(layer) && layer !== draft.layer)
+  const tools =
+    others.length > 0
+      ? [<Button key="level" label={` ${LEVELS[draft.layer]!.short} ›`} plain onPress={() => act.go({ kind: 'levels' }, 'level', `level:${draft.layer}`)} />]
+      : [
+          <Box key="level">
+            <Text dimColor> {LEVELS[draft.layer]?.short ?? draft.layer}</Text>
+          </Box>,
+        ]
+
+  return screen(ui, { path, onBack: () => act.back(), tools, message: now.message }, [
     note(ui, setting.description),
-    // One level is no choice: outside a git repository only Everywhere exists, so it is said, not offered.
-    layers.length === 1 && (
-      <Box key="level" flexDirection="column">
-        <Text>Level {LEVELS[draft.layer]?.label ?? draft.layer}</Text>
-        <Text dimColor>{'  '}The only level here: open Claude Code in a git repo to set it for a project.</Text>
-      </Box>
-    ),
-    // A dot marks the levels that set this key now.
-    layers.length > 1 && (
-      <Box key="level" flexWrap="wrap">
-        <Text>Level </Text>
-        {ORDER.filter(layer => layers.includes(layer)).map(layer => (
-          <Button
-            key={`at:${layer}`}
-            label={`${LEVELS[layer]!.short}${setting.levels[layer] !== undefined ? ' •' : ''}`}
-            variant={layer === draft.layer ? 'primary' : undefined}
-            dimColor={layer === draft.layer ? undefined : true}
-            onPress={() => act.setLevel(layer)}
-          />
-        ))}
-      </Box>
-    ),
     <Box key="where" flexDirection="column">
       <Text dimColor>
         {'  '}
-        {fileOf(draft.layer)}
+        {fileOf(now, draft.layer)}
       </Text>
       <Text dimColor>
         {'  '}
         {effect(setting, draft.layer, layers)}
       </Text>
+      {others.length === 0 && (
+        <Text dimColor>
+          {'  '}
+          The only level here: open Claude Code in a git repo to set it for a project.
+        </Text>
+      )}
     </Box>,
     isBoolean(setting) && (
       <Box key="booleans">
@@ -111,8 +103,13 @@ export function edit({ now, ui, Input, act }: Ctx): RenderElement {
     !isBoolean(setting) && (Input || setting.credential) && (
       <Box key="actions" marginTop={1}>
         <Button key="save" label="Save here" variant="primary" onPress={() => act.saveEdit()} />
+        {others.length > 0 && <Button key="saveto" label="Save to…" onPress={() => act.go({ kind: 'saveto' }, 'saveto', `saveto:${others.at(-1)}`)} />}
       </Box>
     ),
+    !isBoolean(setting) &&
+      (Input || setting.credential) &&
+      others.length > 0 &&
+      note(ui, `  another level: ${others.map(layer => LEVELS[layer]!.short).join(', ')}`),
     here !== undefined &&
       row(ui, {
         key: 'remove',
@@ -140,11 +137,11 @@ export function edit({ now, ui, Input, act }: Ctx): RenderElement {
       row(ui, {
         key: `override:${layer}`,
         label: `+ ${LEVELS[layer]!.offer}`,
-        detail: fileOf(layer),
+        detail: fileOf(now, layer),
         onPress: () => act.overrideAt(layer),
       }),
     ),
-    layers.length > 1 &&
+    others.length > 0 &&
       row(ui, {
         key: 'levels',
         label: '› Every level',
