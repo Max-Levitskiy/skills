@@ -204,6 +204,16 @@ export async function unlock($: EngineInterface, plan: Plan): Promise<Unlock | u
     missing.length === 0
       ? { name: plan.name, keys, refs, isCached: true }
       : { name: plan.name, keys, refs, isCached: false, reason: ran.stderr.trim().split('\n')[0] || `no value for ${missing.join(', ')}` }
+  // The references read again after the load: one changed meanwhile may be what load resolved, and
+  // its secret must not be kept under the reference the plan named.
+  if (result.isCached) {
+    const again = await start($, plan.name)
+    const isSame = again !== undefined && keys.every((key, index) => {
+      const reference = again.config.credentials?.[key]
+      return onePasswordKeys(again, {}).includes(key) && cacheKey(reference!) === refs[index]
+    })
+    if (!isSame) return { name: plan.name, keys, refs, isCached: false, reason: 'a reference changed while 1Password was asked' }
+  }
   const isKept = await onCache(async () => {
     // Forget pressed while 1Password was asked: what came back is dropped, as everything cached was.
     if (epoch !== forgets) return false
@@ -226,6 +236,8 @@ async function showsBanner($: EngineInterface): Promise<boolean> {
 }
 
 async function hideBannerForGood($: EngineInterface): Promise<void> {
+  // Closed for this session too, at once: a band being decided right now must not reopen it.
+  await update($, isBandClosed, () => true)
   const failed = await writeKey($, own($), 'global', 'notices.cacheBanner', false)
   await update($, notice, () => null)
   if (failed) $.ui.toast(`agent-config: could not save the choice: ${failed}`)
@@ -382,8 +394,10 @@ async function save($: EngineInterface, layer: string, path: string, value: Json
   saves.set(component.name, mine)
   const opened = componentOpens
   const failed = await writeKey($, component, layer, path, value).catch((error: Error) => error.message || 'the write failed')
-  if (!failed && component.name === OWN && path === 'notices.cacheBanner' && value === false) {
-    await update($, notice, () => null)
+  if (!failed && component.name === OWN && path === 'notices.cacheBanner') {
+    // Off hides the band now; on lets it show again this session, after × or Don't show again.
+    if (value === false) await update($, notice, () => null)
+    if (value === true) await update($, isBandClosed, () => false)
   }
   const detail = await describe($, component)
   const ready = (await start($, component.name, component.from))?.ready ?? null

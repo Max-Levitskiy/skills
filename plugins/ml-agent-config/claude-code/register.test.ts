@@ -50,6 +50,8 @@ type World = {
   apiKeyLevels?: Record<string, object>
   /** What the status line was set to, in order. */
   statuses: (string | undefined)[]
+  /** The API key's reference becomes this the moment load runs. */
+  changeOnLoad?: object
   /** 1Password refuses an item's fields. */
   fieldsFail?: boolean
   /** `path` leaves out whether the file exists. */
@@ -104,6 +106,8 @@ function world(on: On, loadExit = 0): World {
     if (e.init?.env?.CLAUDECODE !== '1') return ran(2, '', 'no CLAUDECODE')
     // As the CLI does: fd 3 holds one entry per requested key, spelled as requested.
     if (e.argv[0] === 'sh') {
+      // The config edited while load runs: load reads it, and so does every later start.
+      if (w.changeOnLoad) w.apiKey = w.changeOnLoad
       const keys = e.argv.slice(e.argv.indexOf('--secrets') + 1)
       if (loadExit === -1) throw new Error('timed out after 120000ms')
       if (loadExit === -2) return ran(0, '{"credentials.api')
@@ -240,7 +244,8 @@ test('a component whose layer file is broken is looked up again, so a fix takes 
   w.broken = null
   const { text } = await $.skill.prompt({ skill: 'demo', text: 'B' })
   expect(text).toContain('B')
-  expect(w.runs.filter(argv => argv[1] === 'start' && argv[2] === 'demo')).toHaveLength(2)
+  // Two lookups, and one more after the unlock to check its references did not change.
+  expect(w.runs.filter(argv => argv[1] === 'start' && argv[2] === 'demo')).toHaveLength(3)
   expect(loads(w)).toHaveLength(1)
 })
 
@@ -288,6 +293,13 @@ test('a load that times out is a declined unlock, and the skill still expands', 
   expect(w.env[SECRET_CACHE_VAR]).toBeUndefined()
   const shown = await $.command.run({ command: 'agent-config', args: 'demo', ...COMMAND })
   expect(shown.text).toContain('1Password: not cached (')
+})
+
+test('a reference that changes while 1Password is asked is not cached under the old one', async ($, on) => {
+  const w = world(on)
+  w.changeOnLoad = { source: '1password', ref: 'op://Private/Other/key' }
+  await $.skill.prompt({ skill: 'demo', text: 'A' })
+  expect(parseCache(w.env[SECRET_CACHE_VAR])[cacheKey(REF)]).toBeUndefined()
 })
 
 test('a load that answers garbage is a declined unlock, and the skill still expands', async ($, on) => {
@@ -418,18 +430,17 @@ const BAND = {
 
 test('the cached-secrets band offers "Don\'t show again", which saves the choice in agent-config', async ($, on) => {
   const w = world(on)
-  for (const surface of ['terminal', 'desktop'] as const) {
-    w.banner = true
-    w.layer = '{"notices":{"other":1},"schemaVersion":1}'
-    await $.command.run({ command: 'agent-config', args: 'forget', ...COMMAND })
-    await $.skill.prompt({ skill: 'demo', text: 'A' })
-    const ui = await $.ui.mount({ ...BAND, surface })
-    expect(await ui.find({ key: 'never' })).toBeDefined()
-    await ui.press({ key: 'never' })
-    expect(JSON.parse(w.writes.at(-1)!)).toEqual({ notices: { other: 1, cacheBanner: false }, schemaVersion: 1 })
-    expect(await ui.find({ key: 'never' })).toBeUndefined()
-    await ui.unmount()
-  }
+  w.layer = '{"notices":{"other":1},"schemaVersion":1}'
+  await $.skill.prompt({ skill: 'demo', text: 'A' })
+  const terminal = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  const desktop = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect(await desktop.find({ key: 'never' })).toBeDefined()
+  await terminal.press({ key: 'never' })
+  expect(JSON.parse(w.writes.at(-1)!)).toEqual({ notices: { other: 1, cacheBanner: false }, schemaVersion: 1 })
+  expect(await terminal.find({ key: 'never' })).toBeUndefined()
+  expect(await desktop.find({ key: 'never' })).toBeUndefined()
+  await terminal.unmount()
+  await desktop.unmount()
 })
 
 test('with the choice saved, a later session caches the secret and shows no band', async ($, on) => {
@@ -467,6 +478,24 @@ test("/agent-config unlock shows the band, as a skill's unlock does", async ($, 
   await $.command.run({ command: 'agent-config', args: 'unlock demo', ...COMMAND })
   expect(await ui.find({ key: 'forget' })).toBeDefined()
   await ui.unmount()
+})
+
+test('turning the band on in the pane lets it show again after ×', async ($, on) => {
+  const w = world(on)
+  w.layer = '{}'
+  await $.skill.prompt({ skill: 'demo', text: 'A' })
+  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  await band.press({ key: 'close' })
+  const ui = await open($)
+  await ui.press({ key: 'component:agent-config' })
+  await ui.press({ key: 'setting:notices.cacheBanner' })
+  await ui.press({ key: 'value:on' })
+  await ui.press({ key: 'save' })
+  await ui.unmount()
+  await $.command.run({ command: 'agent-config', args: 'forget', ...COMMAND })
+  await $.skill.prompt({ skill: 'demo', text: 'B' })
+  expect(await band.find({ key: 'forget' })).toBeDefined()
+  await band.unmount()
 })
 
 test('Forget on the band drops the cache and the band', async ($, on) => {
