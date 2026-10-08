@@ -126,6 +126,9 @@ export function candidates(skill: string): string[] {
 // starts it over, which only costs one more spawn.
 const undeclared = new Set<string>()
 
+// The component the status line says needs setup, if any.
+let needsSetup: string | undefined
+
 async function find($: EngineInterface, names: string[]): Promise<Plan | undefined> {
   for (const name of names) {
     if (undeclared.has(name)) continue
@@ -280,7 +283,7 @@ async function openPanel($: EngineInterface): Promise<void> {
   const kept = (await read($, panel)).onePassword ?? NO_ONE_PASSWORD
   const names = await storedNames($)
   // The 1Password list stays for the session; everything else starts over.
-  await update($, panel, () => ({ ...EMPTY_PANEL, onePassword: { ...kept, isLoading: false }, names, isLoading: true }))
+  await update($, panel, () => ({ ...EMPTY_PANEL, onePassword: { ...kept, isLoading: false, isLoadingFields: false }, names, isLoading: true }))
   await $.ui.open({ id: PANE, title: 'agent-config', focus: true, closeOnEscape: true, rows: 40 })
   const list = await components($)
   if (mine !== panelOpens) return
@@ -466,18 +469,18 @@ async function openItem($: EngineInterface, id: string): Promise<void> {
   const item = (await read($, panel)).onePassword.items.find(one => one.id === id)
   if (!item) return
   const mine = ++itemOpens
-  await setOnePassword($, { item, fields: [], isLoading: true, error: null }, { ref: 0 })
+  await setOnePassword($, { item, fields: [], isLoadingFields: true, error: null }, { ref: 0 })
   await go($, { kind: 'fields' }, `item:${id}`)
   try {
     const flags = ['--vault', item.vault.id, '--item', item.id, ...(item.account ? ['--account', item.account] : [])]
     const got = (await onePassword($, ['fields', ...flags])) as { fields: OnePassword['fields'] }
     // Another open, of this item or another, while it loaded: its fields are not that one's.
     if (mine !== itemOpens || (await read($, panel)).onePassword.item?.id !== id) return
-    await setOnePassword($, { fields: got.fields, isLoading: false })
+    await setOnePassword($, { fields: got.fields, isLoadingFields: false })
     await refocus($, got.fields[0] && `ref:${got.fields[0].reference}`)
   } catch (error) {
     if (mine !== itemOpens || (await read($, panel)).onePassword.item?.id !== id) return
-    await setOnePassword($, { isLoading: false, error: (error as Error).message })
+    await setOnePassword($, { isLoadingFields: false, error: (error as Error).message })
   }
 }
 
@@ -609,7 +612,14 @@ export const register: Register = on => {
     const pending = onePasswordKeys(plan, parseCache(await $.env.get('AGENT_CONFIG_SECRETS')))
     const wasDeclined = earlier && !earlier.isCached && pending.every(key => earlier.refs.includes(cacheKey(plan.config.credentials![key]!)))
     const unlocked = plan.ready && !wasDeclined ? await unlock($, plan) : undefined
-    if (!plan.ready) $.ui.status(`agent-config: ${plan.name} needs setup`)
+    // The needs-setup status goes once its component is ready; another component's stays.
+    if (!plan.ready) {
+      $.ui.status(`agent-config: ${plan.name} needs setup`)
+      needsSetup = plan.name
+    } else if (needsSetup === plan.name) {
+      $.ui.status(undefined)
+      needsSetup = undefined
+    }
     if (unlocked?.isCached && !(await read($, isBandClosed)) && (await showsBanner($))) {
       await update($, notice, () => `1Password cached for ${plan.name} for this session`)
     }
@@ -630,6 +640,7 @@ export const register: Register = on => {
     if (first === 'forget') {
       await forget($)
       $.ui.status(undefined)
+      needsSetup = undefined
       return { text: 'Forgot every cached 1Password secret for this session.' }
     }
     const name = first === 'unlock' ? second : first

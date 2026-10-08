@@ -67,6 +67,8 @@ export type OnePassword = {
   /** The item whose fields are listed, and those fields: names and op:// addresses. */
   item: Item | null
   fields: { label: string; section: string | null; type: string; reference: string }[]
+  /** The item's fields are being asked for: apart from the listing, so Back finds the list usable. */
+  isLoadingFields: boolean
 }
 
 export type Panel = {

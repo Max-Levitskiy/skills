@@ -16,6 +16,7 @@ export const NO_ONE_PASSWORD: OnePassword = {
   type: null,
   item: null,
   fields: [],
+  isLoadingFields: false,
 }
 
 export const EMPTY_PANEL: Panel = {

@@ -48,6 +48,10 @@ type World = {
   unreadable: boolean
   /** The API key's own value at each level, when not the one reference set Everywhere. */
   apiKeyLevels?: Record<string, object>
+  /** What the status line was set to, in order. */
+  statuses: (string | undefined)[]
+  /** A component's readiness, when not its plan's. */
+  ready: Record<string, boolean>
   /** A declared component whose start fails, as for an unreadable layer. */
   failing?: string
   /** 1Password lists one account instead of two. */
@@ -64,7 +68,7 @@ const ran = (exitCode: number, stdout: string, stderr = '') => ({
 
 // Everything beneath the plugin: the CLI, the environment, and the engine's own answers.
 function world(on: On, loadExit = 0): World {
-  const w: World = { env: { AGENT_CONFIG_ROOT: '/ac', HOME: '/home/me' }, runs: [], commands: [], prompts: [], reloadAnswer: 'Reloaded 4 plugins.', banner: true, layer: undefined, writes: [], layers: ['global', 'repo', 'user-repo', 'local'], apiKey: REF, subdomain: { value: 'acme', source: 'repo', levels: { repo: 'acme' } }, store: {}, behind: [], unreadable: false, oneAccount: false, broken: null }
+  const w: World = { env: { AGENT_CONFIG_ROOT: '/ac', HOME: '/home/me' }, runs: [], commands: [], prompts: [], reloadAnswer: 'Reloaded 4 plugins.', banner: true, layer: undefined, writes: [], layers: ['global', 'repo', 'user-repo', 'local'], apiKey: REF, subdomain: { value: 'acme', source: 'repo', levels: { repo: 'acme' } }, store: {}, behind: [], unreadable: false, oneAccount: false, broken: null, statuses: [], ready: {} }
   on('store.get', ($, e) => ({ value: w.store[e.key] }))
   on('store.set', ($, e) => {
     w.store[e.key] = e.value
@@ -129,11 +133,15 @@ function world(on: On, loadExit = 0): World {
     const listed = PLANS[e.argv[2] ?? ''] as { actions: object[]; config: object } | undefined
     const plan = listed && e.argv[2] === 'demo' ? { ...listed, config: { ...listed.config, credentials: { apiKey: w.apiKey } } } : listed
     const migrations = w.behind.map(layer => ({ id: `agent-config:migrate:${layer}`, type: 'builtin', keys: [] }))
-    return plan ? ran(0, JSON.stringify({ ...plan, actions: [...plan.actions, ...migrations] })) : ran(2, '', `No installed plugin declares the agent-config name "${e.argv[2]}".`)
+    const ready = w.ready[e.argv[2] ?? '']
+    return plan ? ran(0, JSON.stringify({ ...plan, ...(ready === undefined ? {} : { ready }), actions: [...plan.actions, ...migrations] })) : ran(2, '', `No installed plugin declares the agent-config name "${e.argv[2]}".`)
   })
   on('fs.read', () => (w.unreadable ? { deny: 'permission denied' } : w.layer === undefined ? { deny: 'no such file' } : { value: w.layer }))
   on('skill.prompt', ($, e) => ({ text: e.text }))
-  on('ui.status', () => ({ value: undefined }))
+  on('ui.status', ($, e) => {
+    w.statuses.push(e.text)
+    return { value: undefined }
+  })
   // The engine's own band: nothing.
   on('ui.render', ($, e) => {
     const { Box } = $.ui.resolve(e)
@@ -168,6 +176,17 @@ test('a skill of a declared component gets the start output instead of running i
   expect(text).toContain('"ready": false')
   expect(text).toEndWith('SKILL BODY')
   expect(loads(w)).toHaveLength(0)
+})
+
+test('the needs-setup status goes once its component is ready, and not for another one', async ($, on) => {
+  const w = world(on)
+  await $.skill.prompt({ skill: 'fresh', text: 'A' })
+  expect(w.statuses).toEqual(['agent-config: fresh needs setup'])
+  await $.skill.prompt({ skill: 'demo', text: 'B' })
+  expect(w.statuses).toHaveLength(1)
+  w.ready.fresh = true
+  await $.skill.prompt({ skill: 'fresh', text: 'C' })
+  expect(w.statuses).toEqual(['agent-config: fresh needs setup', undefined])
 })
 
 test('a skill with no declaration passes through, and is not looked up twice', async ($, on) => {

@@ -13,9 +13,9 @@ export function fields({ now, ui, Input, act }: Ctx): RenderElement {
   const where = item ? [item.vault.name, op.accounts.length > 1 ? accountName(op, item.account) : ''].filter(Boolean).join(' · ') : ''
   return screen(ui, { path: ['1Password', item?.title ?? ''], onBack: () => act.back(), message: now.message }, [
     note(ui, where),
-    op.isLoading && note(ui, 'Asking 1Password; approve it if it asks.'),
+    op.isLoadingFields && note(ui, 'Asking 1Password; approve it if it asks.'),
     op.error && note(ui, op.error, 'red'),
-    ...(op.isLoading
+    ...(op.isLoadingFields
       ? []
       : pickList(ui, Input, {
           name: 'ref',
