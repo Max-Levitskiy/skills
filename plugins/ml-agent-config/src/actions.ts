@@ -13,7 +13,7 @@
 
 import { join } from "path";
 import { existsSync, readFileSync, readdirSync } from "fs";
-import { ConfigError, type ConfigObject, type LayerFile } from "./layers";
+import { ConfigError, type ConfigObject, type LayerFile, type LegacyFile } from "./layers";
 import {
   isMarketplaceInstall,
   type Declaration,
@@ -168,7 +168,13 @@ export interface PlanInput {
   layers: LayerFile[];
   /** The user-repo layer's own contents — an opt-out must be authored there, not inherited (D1). */
   userRepoLayer: ConfigObject | null;
+  /** v1 files at `.agents/skill-config/`; the adoptable ones become one adopt action. */
+  legacy?: LegacyFile[];
+  /** The `--from` this plan was made with, so the adopt command finds the same declaration. */
+  from?: string;
 }
+
+const quote = (text: string) => `'${text.replace(/'/g, `'\\''`)}'`;
 
 export interface Plan {
   actions: EmittedAction[];
@@ -284,6 +290,20 @@ export function buildPlan(input: PlanInput): Plan {
   const actions: EmittedAction[] = [];
   const problems: Problem[] = [];
 
+  // 0. A v1 config whose layer has no v2 file yet is copied over before anything asks for its
+  //    keys: onboarding must not interview the person for answers they already wrote down.
+  const adoptable = (input.legacy ?? []).filter((file) => file.adoptable);
+  const adoptId = `${BUILTIN_PREFIX}adopt`;
+  if (adoptable.length > 0) {
+    const bin = join(import.meta.dir, "..", "bin", "agent-config");
+    actions.push(
+      emit(builtin("adopt"), {
+        command: [quote(bin), "adopt", found.declaration.name, ...(input.from ? ["--from", quote(input.from)] : [])].join(" "),
+        context: { files: adoptable.map((file) => ({ layer: file.layer, from: file.path, to: file.current })) },
+      }),
+    );
+  }
+
   // 1. The component onboards its own config. Five missing keys pointing at one action produce one
   //    action carrying all five as context, not five identical interviews (D2).
   for (const gap of effective.gaps) {
@@ -294,7 +314,7 @@ export function buildPlan(input: PlanInput): Plan {
           `but ${found.dir}/actions/ has no action with that id`,
       );
     }
-    actions.push(emit(action, { keys: gap.keys }));
+    actions.push(emit(action, { keys: gap.keys, requires: [...action.requires, ...(adoptable.length > 0 ? [adoptId] : [])] }));
   }
 
   // 2. Missing skill and agent dependencies. The scan runs every time: caching it is stored

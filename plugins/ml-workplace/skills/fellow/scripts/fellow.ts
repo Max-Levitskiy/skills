@@ -5,10 +5,9 @@
 import { mkdirSync, writeFileSync } from "fs";
 import { join, dirname } from "path";
 import {
-  loadConfig, validate, layerPath, repoRoot, expandPath, recordSeriesVerdict,
-  ensureGitignored, LOCAL_GITIGNORE_PATTERN, type Layer, type FellowConfig,
+  loadConfig, loadWithKey, startPlan, layerPaths, expandPath, recordSeriesVerdict,
+  describeCredential, AgentConfigError, type FellowConfig,
 } from "./lib/config";
-import { resolveCredential, describeCredential } from "./lib/credentials";
 import { FellowClient, transcriptToText, aiNotesToMarkdown, daysAgo } from "./lib/client";
 import { partition, needsAttendees, meetingKey, type ProjectRules } from "./lib/relevance";
 
@@ -97,27 +96,22 @@ function scope(meetings: any[], config: FellowConfig) {
   };
 }
 
-function getClient(): FellowClient {
-  const { config, found } = loadConfig();
-  const problems = validate(config);
-  if (problems.length) {
-    const where = found.length
-      ? `Loaded config from:\n${found.map((f) => `  - ${f.layer}: ${f.path}`).join("\n")}`
-      : "No config file was found in any layer.";
-    fail(
-      `Fellow is not configured yet.\n\n${where}\n\nMissing:\n${problems.map((p) => `  - ${p}`).join("\n")}\n\n` +
-        `Run \`bun fellow.ts config path --layer global\` to see where to write it, ` +
-        `or ask Claude to walk you through setup.`,
-    );
+async function getClient(): Promise<FellowClient> {
+  try {
+    const { config, apiKey } = await loadWithKey();
+    return new FellowClient(config.workspace!.subdomain!, apiKey);
+  } catch (e) {
+    if (e instanceof AgentConfigError && e.exitCode === 2) {
+      fail(`Fellow is not configured yet.\n\n${e.message}\n\nRun \`agent-config start fellow\`, or ask Claude to walk you through setup.`);
+    }
+    throw e;
   }
-  const key = resolveCredential(config.credentials!.apiKey!);
-  return new FellowClient(config.workspace!.subdomain!, key);
 }
 
 // ------------------------------------------------------------------- commands
 
 async function cmdWhoami() {
-  const me = await getClient().me();
+  const me = await (await getClient()).me();
   out(me, () => {
     console.log(`${me.user.full_name} <${me.user.email}>`);
     console.log(`Workspace: ${me.workspace.name} (subdomain: ${me.workspace.subdomain})`);
@@ -135,9 +129,9 @@ function noteFilters() {
 }
 
 async function cmdNotesList() {
-  const { config } = loadConfig();
+  const config = loadConfig();
   const proj = activeProject(config);
-  const all = await getClient().listNotes({
+  const all = await (await getClient()).listNotes({
     filters: noteFilters(),
     include: {
       content_markdown: has("content"),
@@ -159,7 +153,7 @@ async function cmdNotesList() {
 }
 
 async function cmdNotesGet(id: string) {
-  const n = await getClient().getNote(id);
+  const n = await (await getClient()).getNote(id);
   out(n, () => {
     console.log(`# ${n.title ?? "(untitled)"}\n`);
     console.log(`Date: ${n.event_start ?? n.created_at}`);
@@ -172,8 +166,8 @@ async function cmdNotesGet(id: string) {
 }
 
 async function cmdRecordingsList() {
-  const { config } = loadConfig();
-  const all = await getClient().listRecordings({
+  const config = loadConfig();
+  const all = await (await getClient()).listRecordings({
     filters: noteFilters(),
     pageSize: num("limit", 50),
     all: has("all"),
@@ -194,7 +188,7 @@ async function cmdRecordingsList() {
 }
 
 async function cmdRecordingsGet(id: string) {
-  const client = getClient();
+  const client = await getClient();
   const r = await client.getRecording(id);
   if (asJson) return console.log(JSON.stringify(r, null, 2));
 
@@ -229,7 +223,7 @@ async function cmdActionItems() {
   if (!has("archived")) f.archived = false;
 
   const pageSize = num("limit", 50);
-  const items = await getClient().listActionItems({
+  const items = await (await getClient()).listActionItems({
     filters: f,
     pageSize,
     all: has("all"),
@@ -259,7 +253,7 @@ async function cmdActionItems() {
  */
 async function cmdSearch(query: string) {
   if (!query) fail("Usage: bun fellow.ts search <query> [--since 90] [--transcripts]");
-  const client = getClient();
+  const client = await getClient();
   const since = sinceToIso(str("since", "90"))!;
   const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
   const matches = (hay: string) => {
@@ -268,7 +262,7 @@ async function cmdSearch(query: string) {
   };
 
   const results: any[] = [];
-  const { config } = loadConfig();
+  const config = loadConfig();
   const proj = activeProject(config);
 
   const allNotes = await client.listNotes({
@@ -365,7 +359,7 @@ function buildRecap(note: any, recording: any, opts: { transcript?: boolean } = 
 /** Build a full recap for one meeting, given a note id or a recording id. */
 async function cmdRecap(id: string) {
   if (!id) fail("Usage: bun fellow.ts recap <note-id|recording-id> [--transcript]");
-  const client = getClient();
+  const client = await getClient();
 
   let note: any = null;
   let recording: any = null;
@@ -388,8 +382,8 @@ async function cmdRecap(id: string) {
 
 /** Bulk export to files. Honours storage.* config for default destinations. */
 async function cmdExport() {
-  const { config } = loadConfig();
-  const client = getClient();
+  const config = loadConfig();
+  const client = await getClient();
   const since = sinceToIso(str("since", "30"))!;
 
   const wantNotes = has("notes") || !has("transcripts");
@@ -490,7 +484,7 @@ function uniquePath(path: string, id: string): string {
  * lookup for every future occurrence of that series.
  */
 async function cmdProject(sub: string) {
-  const { config } = loadConfig();
+  const config = loadConfig();
   const projects = config.projects ?? {};
 
   if (!sub || sub === "list") {
@@ -517,7 +511,7 @@ async function cmdProject(sub: string) {
     const proj = activeProject(config);
     if (!proj) fail("No project selected. Pass --project <name> or set defaultProject.");
     const since = sinceToIso(str("since", "30"))!;
-    const notes = await getClient().listNotes({
+    const notes = await (await getClient()).listNotes({
       filters: { created_at_start: since },
       include: { event_attendees: true },
       all: true,
@@ -568,7 +562,7 @@ async function cmdProject(sub: string) {
     // worst failure mode for a cache, so check before writing.
     if (!has("force")) {
       const lookback = num("verify-days", 365)!;
-      const notes = await getClient().listNotes({
+      const notes = await (await getClient()).listNotes({
         filters: { created_at_start: daysAgo(lookback) },
         all: true,
       });
@@ -603,70 +597,55 @@ async function cmdProject(sub: string) {
 
 async function cmdConfig(sub: string) {
   if (sub === "path") {
-    const layer = (str("layer", "global") as Layer);
-    const p = layerPath(layer);
-    if (!p) fail(`The "${layer}" layer needs a git repository, and this directory is not inside one.`);
-    console.log(p);
+    const layer = str("layer", "global");
+    const found = layerPaths().find((one) => one.layer === layer);
+    if (!found) fail(`Unknown layer "${layer}". Layers: global, repo, user-repo, local.`);
+    if (!found.path) fail(`The "${layer}" layer needs a git repository, and this directory is not inside one.`);
+    console.log(found.path);
     return;
   }
 
   if (sub === "show") {
-    const { config, found, missing, legacy } = loadConfig();
-    if (asJson) return console.log(JSON.stringify({ config, found, missing, legacy }, null, 2));
-    const isLegacy = (p: string) => legacy.some((l) => l.path === p);
+    const plan = startPlan();
+    const layers = layerPaths();
+    if (asJson) return console.log(JSON.stringify({ ...plan, layers }, null, 2));
+    const { config, provenance } = plan;
     console.log("Config layers (later overrides earlier):");
-    for (const f of found) console.log(`  ✓ ${f.layer.padEnd(6)} ${f.path}${isLegacy(f.path) ? "  (pre-rename path)" : ""}`);
-    for (const m of missing) console.log(`  · ${m.layer.padEnd(6)} ${m.path} (absent)`);
-    if (legacy.length) {
-      console.log(
-        `\n${legacy.length} file(s) sit at the pre-rename .agents/skill-config/ path. Both locations are read\n` +
-          "and the new one wins, so nothing is broken — move them to .agents/config/ when convenient.",
-      );
+    for (const one of layers) {
+      if (!one.path) console.log(`  · ${one.layer.padEnd(9)} (needs a git repository)`);
+      else console.log(`  ${one.exists ? "✓" : "·"} ${one.layer.padEnd(9)} ${one.path}${one.exists ? "" : " (absent)"}`);
     }
-    console.log(`\nWorkspace: ${config.workspace?.subdomain ?? "(not set)"}`);
+    const from = (key: string) => (provenance[key] ? `  [${provenance[key]}]` : "");
+    console.log(`\nWorkspace: ${config.workspace?.subdomain ?? "(not set)"}${from("workspace.subdomain")}`);
     console.log(`Credential: ${config.credentials?.apiKey ? describeCredential(config.credentials.apiKey) : "(not set)"}`);
-    const st = (config.storage ?? {}) as Record<string, any>;
-    for (const k of ["recaps", "transcripts", "media"]) {
-      const v = st[k];
-      console.log(`Storage.${k}: ${!v ? "(not configured)" : v.enabled ? expandPath(v.path) : "disabled"}`);
-    }
+    console.log(`Storage.recaps: ${expandPath(config.storage?.recaps?.path ?? ".agents/fellow/export")}${from("storage.recaps.path")}`);
+    console.log(`Storage.transcripts: ${expandPath(config.storage?.transcripts?.path ?? ".agents/fellow/export")}${from("storage.transcripts.path")}`);
     const projects = Object.keys(config.projects ?? {});
     console.log(`Projects: ${projects.length ? projects.join(", ") : "(none)"}${config.defaultProject ? `  default=${config.defaultProject}` : ""}`);
     console.log(`Remembered series: ${Object.keys(config.series ?? {}).length}`);
-    const problems = validate(config);
-    console.log(problems.length ? `\nNot ready:\n${problems.map((p) => `  - ${p}`).join("\n")}` : "\nConfig looks complete.");
+    for (const problem of plan.problems) console.log(`\n! ${problem.message}`);
+    const missing = plan.actions.flatMap((action) => action.keys);
+    console.log(plan.ready ? "\nConfig looks complete." : `\nNot ready. Missing: ${missing.join(", ") || "see agent-config start fellow"}`);
     return;
   }
 
   if (sub === "check") {
-    const { config, found } = loadConfig();
-    const problems = validate(config);
-    if (problems.length) fail(`Config incomplete:\n${problems.map((p) => `  - ${p}`).join("\n")}`);
-    console.log(`Config loaded from ${found.map((f) => f.layer).join(" → ")}`);
-    process.stdout.write("Resolving credential… ");
-    const key = resolveCredential(config.credentials!.apiKey!);
-    console.log(`ok (${key.length} chars, not shown)`);
+    process.stdout.write("Loading config and resolving the credential… ");
+    let loaded: Awaited<ReturnType<typeof loadWithKey>>;
+    try {
+      loaded = await loadWithKey();
+    } catch (e: any) {
+      fail(`failed\n${e.message}`);
+    }
+    console.log(`ok (key not shown)`);
     process.stdout.write("Calling /me… ");
-    const me = await new FellowClient(config.workspace!.subdomain!, key).me();
+    const me = await new FellowClient(loaded!.config.workspace!.subdomain!, loaded!.apiKey).me();
     console.log(`ok`);
     console.log(`\nAuthenticated as ${me.user.full_name} <${me.user.email}> in ${me.workspace.name}.`);
     return;
   }
 
-  if (sub === "gitignore") {
-    // The shared implementation tests with `git check-ignore`, so a pattern already covered
-    // by a broader rule counts as ignored, and it carries the legacy pattern too.
-    const { path, action } = ensureGitignored();
-    if (action === "no-repo") fail("Not inside a git repository.");
-    console.log(
-      action === "already-ignored"
-        ? `Already ignored: ${LOCAL_GITIGNORE_PATTERN}`
-        : `Added to ${path}: ${LOCAL_GITIGNORE_PATTERN}`,
-    );
-    return;
-  }
-
-  fail("Usage: bun fellow.ts config <show|check|path|gitignore> [--layer global|repo|local]");
+  fail("Usage: bun fellow.ts config <show|check|path> [--layer global|repo|user-repo|local]");
 }
 
 // ----------------------------------------------------------------------- main
@@ -682,7 +661,7 @@ const HELP = `Fellow API CLI (read-only)
   recap <id> [--transcript]           Meeting recap: joins a note with its recording's AI notes
   search <query> [--transcripts]      Local full-text search (the API has none)
   export [--transcripts] [--out DIR]  Bulk export to markdown files
-  config show|check|path|gitignore    Inspect / verify configuration
+  config show|check|path              Inspect / verify configuration (through agent-config)
 
 Project scoping (filters meetings to one project)
   project list                        Show configured projects + remembered series

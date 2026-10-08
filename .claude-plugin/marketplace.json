@@ -39,7 +39,7 @@
       "name": "ml-workplace",
       "source": "./plugins/ml-workplace",
       "description": "The tools a team works in, driven from Claude Code through bundled zero-dependency bun CLIs, no MCP server. atlassian: Jira and Confluence over REST — JQL search, create, comment, and transition issues, sprints and boards, read and write Confluence pages, Cloud and Data Center. fellow: read-only Fellow meeting notes, transcripts, AI summaries, and action items, with recaps filed into a repo.",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "license": "MIT",
       "author": {
         "name": "Max Levitskiy"
@@ -97,7 +97,7 @@
       "name": "ml-agent-config",
       "source": "./plugins/ml-agent-config",
       "description": "The Agent Config Standard (ACS v1) as a reusable skill: layered global/repo/local settings, credential references that keep secrets out of git, and a re-runnable onboarding flow. Other skills and subagents invoke it instead of restating the rules, and vendor its zero-dependency loader instead of copying their own.",
-      "version": "0.7.0",
+      "version": "0.8.0",
       "license": "MIT",
       "author": {
         "name": "Max Levitskiy"

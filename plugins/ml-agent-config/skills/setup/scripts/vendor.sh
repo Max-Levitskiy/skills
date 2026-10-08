@@ -16,7 +16,6 @@ CANON="$ROOT/plugins/ml-agent-config/skills/setup/lib"
 
 # Each consumer's vendor directory, relative to ROOT.
 CONSUMERS=(
-  "plugins/ml-workplace/skills/fellow/scripts/lib/vendor/agent-config"
   "plugins/ml-subagents/skills/herdr/scripts/lib/vendor/agent-config"
   "plugins/ml-subagents/skills/orchestrate/scripts/lib/vendor/agent-config"
 )

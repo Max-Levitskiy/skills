@@ -2,7 +2,7 @@
 
 How a skill or subagent stores per-user and per-project settings, and how it gets hold of secrets without ever committing one.
 
-Status: **active**. Applies to any skill, subagent, command, or hook in this marketplace that needs configuration. Canonical implementation: [`plugins/ml-agent-config`](../plugins/ml-agent-config). Reference implementations: [`fellow`](../plugins/ml-workplace/skills/fellow) (credential-backed), [`orchestrate`](../plugins/ml-subagents/skills/orchestrate) (optional config), and [`herdr`](../plugins/ml-subagents/skills/herdr) (no credential at all — presets only).
+Status: **active**. Applies to any skill, subagent, command, or hook in this marketplace that needs configuration. Canonical implementation: [`plugins/ml-agent-config`](../plugins/ml-agent-config). Reference implementations of this v1 library: [`orchestrate`](../plugins/ml-subagents/skills/orchestrate) (optional config) and [`herdr`](../plugins/ml-subagents/skills/herdr) (no credential at all — presets only). [`fellow`](../plugins/ml-workplace/skills/fellow) (credential-backed) has moved to v2: it declares its keys in `agent-config.json` and reads its config through the `agent-config` CLI, as [`working-actions.md`](../plugins/ml-agent-config/docs/working-actions.md) describes.
 
 ## Why this exists
 
@@ -196,7 +196,7 @@ Ship a `config.example.json` next to the component showing every supported key w
 
 The previous standard, Skill Config Standard v1, used `.agents/skill-config/<skill>/`. Those files are still read, at lower precedence within each layer, so existing setups keep working untouched. This is a compatibility fallback, not a second supported location: write only to `.agents/config/`, and document only `.agents/config/`.
 
-To migrate, move the directory (`mv .agents/skill-config/<name> .agents/config/<name>`, and the same under `~`) and update the ignore pattern in `.gitignore` from `.agents/skill-config/*/config.local.json` to `.agents/config/*/config.local.json`. A component that reads a legacy file should say so once, naming both paths, so the user knows a move is available. No removal date is set; the fallback is read indefinitely until one is.
+agent-config v2 does this for you: when a v1 file's layer has no `.agents/config/` file yet, `agent-config start` emits an `agent-config:adopt` action that copies it over (`agent-config adopt <name>`), and leaves the old file in place. By hand, move the directory (`mv .agents/skill-config/<name> .agents/config/<name>`, and the same under `~`) and update the ignore pattern in `.gitignore` from `.agents/skill-config/*/config.local.json` to `.agents/config/*/config.local.json`. A component that reads a legacy file should say so once, naming both paths, so the user knows a move is available. No removal date is set; the fallback is read indefinitely until one is.
 
 ## Checklist
 

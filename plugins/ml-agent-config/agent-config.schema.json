@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/Max-Levitskiy/skills/main/plugins/ml-agent-config/agent-config.schema.json",
   "title": "agent-config declaration",
-  "description": "Declaration of a component's configuration keys and skill/agent dependencies, shipped as agent-config.json at a plugin's root.",
+  "description": "Declaration of a component's configuration keys and skill/agent dependencies, shipped as agent-config.json at a plugin's root, or in skills/<skill>/ for a plugin that holds several tools.",
   "type": "object",
   "properties": {
     "$schema": {

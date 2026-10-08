@@ -45,7 +45,7 @@ Missing config is the expected first-run state, not a failure — never report i
    - **repo** — project identity the whole team shares; it gets committed.
    - **local** — personal paths and per-checkout overrides on a shared repo; gitignored.
 
-4. **Write it and name the exact path.** `writeLayer(name, layer, config)` refuses any config carrying an inlined secret and gitignores the local layer at write time — the only reliable moment. If you write the file with the `Write` tool instead, run the skill's gitignore command (`fellow.ts config gitignore`), which is `ensureGitignored()` underneath.
+4. **Write it and name the exact path.** `writeLayer(name, layer, config)` refuses any config carrying an inlined secret and gitignores the local layer at write time — the only reliable moment. If you write the file with the `Write` tool instead, run the skill's gitignore command (`orchestrate-config.ts gitignore`), which is `ensureGitignored()` underneath.
 
 5. **Verify with one real call.** Resolve the credential, hit the API, show the user the identity that came back. **"Configured" means a call succeeded, not that a file was written** — don't report success before this step passes.
 
@@ -55,7 +55,7 @@ A failure at step 5 means the config is fine and the secret isn't reachable. Nam
 
 1. **Vendor the library.** Add the component's vendor directory to `CONSUMERS` in `plugins/ml-agent-config/skills/setup/scripts/vendor.sh`, then run `vendor.sh sync`. It writes `lib/config.ts` and `lib/credentials.ts` into `<skill>/scripts/lib/vendor/agent-config/` under a provenance header. Copies, not a cross-plugin import: a runtime dependency breaks for anyone who installed one plugin and not the other.
 
-2. **Write the component's own `scripts/lib/config.ts`** holding three things and nothing else — its config interface extending `BaseConfig`, a `validate(c)` returning human-readable problems (empty array = ready), and thin wrappers binding `<name>` so callers keep their zero-argument call shape. Re-export what the rest of the skill needs (`repoRoot`, `expandPath`, `Layer`) from there, so nothing else ever imports the vendor path. Worked example, 87 lines: `plugins/ml-workplace/skills/fellow/scripts/lib/config.ts`.
+2. **Write the component's own `scripts/lib/config.ts`** holding three things and nothing else — its config interface extending `BaseConfig`, a `validate(c)` returning human-readable problems (empty array = ready), and thin wrappers binding `<name>` so callers keep their zero-argument call shape. Re-export what the rest of the skill needs (`repoRoot`, `expandPath`, `Layer`) from there, so nothing else ever imports the vendor path. Worked example: `plugins/ml-subagents/skills/orchestrate/scripts/lib/config.ts`.
 
 3. **Check for drift** with `vendor.sh check` — it diffs every copy below the sentinel line and exits non-zero if one has been edited or left stale. Run it after any change to the canonical files; edits made in a vendored copy are silently overwritten by the next sync.
 

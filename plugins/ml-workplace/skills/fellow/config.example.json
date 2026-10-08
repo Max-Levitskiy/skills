@@ -1,12 +1,10 @@
 {
-  "//": "Example only. Copy to ~/.agents/config/fellow/config.json (global),",
-  "//1": "<repo>/.agents/config/fellow/config.json (repo, committed), or",
-  "//2": "<repo>/.agents/config/fellow/config.local.json (local, gitignored).",
-  "//3": "Never put the API key itself in here — only a reference to where it lives.",
-  "//4": "The older ~/.agents/skill-config/fellow/ location is still read, at lower",
-  "//5": "precedence, so an existing setup keeps working. See standards/agent-config.md.",
-
-  "version": 1,
+  "//": "Example only. Write it with `agent-config write fellow --layer <layer>`, never by hand:",
+  "//1": "write stamps schemaVersion, keeps a schema snapshot, and gitignores the local layer.",
+  "//2": "Layers: global ~/.agents/config/fellow/config.json, repo <repo>/.agents/config/fellow/config.json",
+  "//3": "(committed), user-repo, and local <repo>/.agents/config/fellow/config.local.json (gitignored).",
+  "//4": "Never put the API key itself in here, only a reference to where it lives.",
+  "//5": "The declared keys are in agent-config.json; `agent-config describe fellow` lists them.",
 
   "workspace": {
     "subdomain": "acme"
@@ -33,11 +31,6 @@
     "recaps": { "enabled": true, "path": "docs/meetings" },
     "transcripts": { "enabled": true, "path": "~/Documents/fellow/transcripts" },
     "media": { "enabled": false, "path": "~/Documents/fellow/media" }
-  },
-
-  "defaults": {
-    "pageSize": 50,
-    "lookbackDays": 30
   },
 
   "//projects": "Named scopes. Filtering applies automatically when defaultProject is set; --all-meetings turns it off. A plain string matches as a substring; wrap in /slashes/ for a regex.",
