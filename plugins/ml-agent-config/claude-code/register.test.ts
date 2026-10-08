@@ -50,6 +50,10 @@ type World = {
   apiKeyLevels?: Record<string, object>
   /** What the status line was set to, in order. */
   statuses: (string | undefined)[]
+  /** A file's own content, by path, where it is not the one layer file. */
+  files?: Record<string, string>
+  /** `path` answers with every layer, as a CLI that ignores --layer would. */
+  allLayers?: boolean
   /** What `describe` prints, when not the demo keys. */
   described?: string
   /** What `list` prints, when not the one demo component. */
@@ -131,7 +135,12 @@ function world(on: On, loadExit = 0): World {
             ]
       return ran(0, JSON.stringify({ keys, layers: w.layers.map(layer => ({ layer, path: `/home/me/${layer}.json`, exists: true })), repo: { checkout: null } }))
     }
-    if (e.argv[1] === 'path') return ran(0, JSON.stringify({ layers: [{ path: '/home/.agents/config/agent-config/config.json', exists: w.layer !== undefined || w.unreadable }] }))
+    if (e.argv[1] === 'path') {
+      const layer = e.argv[e.argv.indexOf('--layer') + 1]
+      const entry = (one: string) => ({ layer: one, path: `/home/me/${one}.json`, exists: w.layer !== undefined || w.unreadable })
+      // An older CLI that ignores --layer answers with every layer, global first.
+      return ran(0, JSON.stringify({ layers: w.allLayers ? ['global', 'repo', 'user-repo', 'local'].map(entry) : [entry(layer!)] }))
+    }
     if (e.argv[1] === 'write') {
       w.writes.push(e.init?.stdin ?? '')
       const banner = (JSON.parse(e.init?.stdin ?? '{}') as { notices?: { cacheBanner?: boolean } }).notices?.cacheBanner
@@ -146,7 +155,11 @@ function world(on: On, loadExit = 0): World {
     const ready = w.ready[e.argv[2] ?? '']
     return plan ? ran(0, JSON.stringify({ ...plan, ...(ready === undefined ? {} : { ready }), ...(w.config ? { config: w.config } : {}), actions: [...plan.actions, ...migrations] })) : ran(2, '', `No installed plugin declares the agent-config name "${e.argv[2]}".`)
   })
-  on('fs.read', () => (w.unreadable ? { deny: 'permission denied' } : w.layer === undefined ? { deny: 'no such file' } : { value: w.layer }))
+  on('fs.read', ($, e) => {
+    const own = w.files?.[e.path]
+    if (own !== undefined) return { value: own }
+    return w.unreadable ? { deny: 'permission denied' } : w.layer === undefined ? { deny: 'no such file' } : { value: w.layer }
+  })
   on('skill.prompt', ($, e) => ({ text: e.text }))
   on('ui.status', ($, e) => {
     w.statuses.push(e.text)
@@ -552,6 +565,19 @@ test('a save that makes its component ready clears the needs-setup status', asyn
   await ui.input({ key: 'value', text: 'beta' })
   expect(w.statuses.at(-1)).toBeUndefined()
   expect(w.statuses).toHaveLength(2)
+  await ui.unmount()
+})
+
+test('a save reads the layer it writes, even from a CLI that answers path with every layer', async ($, on) => {
+  const w = world(on)
+  w.layer = '{}'
+  w.allLayers = true
+  w.files = { '/home/me/global.json': '{"elsewhere":true}', '/home/me/repo.json': '{"workspace":{"team":"x"}}' }
+  const ui = await open($)
+  await ui.press({ key: 'component:demo' })
+  await ui.press({ key: 'setting:workspace.subdomain' })
+  await ui.input({ key: 'value', text: 'beta' })
+  expect(JSON.parse(w.writes.at(-1)!)).toEqual({ workspace: { team: 'x', subdomain: 'beta' } })
   await ui.unmount()
 })
 

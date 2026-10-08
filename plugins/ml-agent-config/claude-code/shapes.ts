@@ -34,11 +34,12 @@ export function listedComponents(value: unknown): { name: string; plugin: string
   return listed.filter((one): one is { name: string; plugin: string } => isObject(one) && isText(one.name) && isText(one.plugin))
 }
 
-/** `path`: the one layer asked for, or nothing. */
-export function pathLayer(value: unknown): { path: string | null; exists: boolean } | undefined {
-  const first = isObject(value) && Array.isArray(value.layers) ? value.layers[0] : undefined
-  if (!isObject(first) || !(first.path === null || isText(first.path))) return undefined
-  return { path: first.path, exists: first.exists === true }
+/** `path`: the entry for the layer asked for, found by name, never the first one there. */
+export function pathLayer(value: unknown, layer: string): { path: string | null; exists: boolean } | undefined {
+  const layers = isObject(value) && Array.isArray(value.layers) ? value.layers : []
+  const found = layers.find(one => isObject(one) && one.layer === layer)
+  if (!isObject(found) || !(found.path === null || isText(found.path))) return undefined
+  return { path: found.path, exists: found.exists === true }
 }
 
 /** `1password items`: accounts and items with the fields the picker shows. */

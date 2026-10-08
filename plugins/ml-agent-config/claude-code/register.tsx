@@ -94,8 +94,8 @@ async function writeKeyNow(
   const from = component.from ? ['--from', component.from] : []
   const where = await $.process.run([await bin($), 'path', component.name, '--layer', layer, ...from], { env: HARNESS })
   if (where.exitCode !== 0) return firstLine(where.stderr) || `no ${layer} layer here`
-  const found = pathLayer(JSON.parse(where.stdout))
-  if (!found) return 'agent-config path answered in another shape'
+  const found = pathLayer(JSON.parse(where.stdout), layer)
+  if (!found) return `agent-config path did not answer for the ${layer} layer`
   const file = found.path
   if (!file) return `no ${layer} layer here; it needs a repository`
   // `write` stamps the current schema, so a file behind it would lose the migration it is owed.
