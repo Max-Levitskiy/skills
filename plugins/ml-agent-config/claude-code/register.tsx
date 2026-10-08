@@ -151,9 +151,16 @@ async function find($: EngineInterface, names: string[]): Promise<Plan | undefin
   return undefined
 }
 
+// Only well-formed references count: a component that needs setup may hold anything here yet.
 export function onePasswordKeys(plan: Plan, cache: Record<string, string>): string[] {
-  return Object.entries(plan.config.credentials ?? {})
-    .filter(([, reference]) => reference.source === '1password' && !cache[cacheKey(reference)])
+  const credentials: unknown = plan.config.credentials
+  if (!credentials || typeof credentials !== 'object' || Array.isArray(credentials)) return []
+  return Object.entries(credentials as Record<string, unknown>)
+    .filter(([, reference]) => {
+      const one = reference as { source?: unknown; ref?: unknown } | null
+      return one !== null && typeof one === 'object' && one.source === '1password' && typeof one.ref === 'string'
+    })
+    .filter(([, reference]) => !cache[cacheKey(reference as Parameters<typeof cacheKey>[0])])
     .map(([key]) => key)
 }
 
@@ -443,7 +450,13 @@ async function loadOnePassword($: EngineInterface): Promise<void> {
     const got = (await onePassword($, ['items'])) as { accounts: { id: string; short: string }[]; items: Item[]; problems?: string[] }
     // Listed again while this one ran: the later listing is the one to show.
     if (mine !== listings) return
+    // A filter on an account or vault the new listing lacks would hide everything, with no control
+    // left to clear it.
+    const was = (await read($, panel)).onePassword
+    const isListed = { account: got.accounts.some(one => one.id === was.account), vault: got.items.some(item => item.vault.id === was.vault) }
     await setOnePassword($, {
+      account: isListed.account ? was.account : null,
+      vault: isListed.vault ? was.vault : null,
       accounts: got.accounts.map(({ id, short }) => ({ id, short })),
       items: got.items,
       problems: got.problems ?? [],
@@ -620,7 +633,7 @@ export const register: Register = on => {
     // A person who declined Touch ID once this session is not asked again on every skill, unless a
     // reference changed since. Anything cached is not asked for at all.
     const earlier = (await read($, unlocks)).find(one => one.name === plan.name)
-    const pending = onePasswordKeys(plan, parseCache(await $.env.get('AGENT_CONFIG_SECRETS')))
+    const pending = plan.ready ? onePasswordKeys(plan, parseCache(await $.env.get('AGENT_CONFIG_SECRETS'))) : []
     const wasDeclined = earlier && !earlier.isCached && pending.every(key => earlier.refs.includes(cacheKey(plan.config.credentials![key]!)))
     const unlocked = plan.ready && !wasDeclined ? await unlock($, plan) : undefined
     // The needs-setup status goes once its component is ready; another component's stays.

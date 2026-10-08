@@ -50,6 +50,8 @@ type World = {
   apiKeyLevels?: Record<string, object>
   /** What the status line was set to, in order. */
   statuses: (string | undefined)[]
+  /** Every plan's config, when not its own. */
+  config?: object
   /** A component's readiness, when not its plan's. */
   ready: Record<string, boolean>
   /** A declared component whose start fails, as for an unreadable layer. */
@@ -135,7 +137,7 @@ function world(on: On, loadExit = 0): World {
     const plan = listed && e.argv[2] === 'demo' ? { ...listed, config: { ...listed.config, credentials: { apiKey: w.apiKey } } } : listed
     const migrations = w.behind.map(layer => ({ id: `agent-config:migrate:${layer}`, type: 'builtin', keys: [] }))
     const ready = w.ready[e.argv[2] ?? '']
-    return plan ? ran(0, JSON.stringify({ ...plan, ...(ready === undefined ? {} : { ready }), actions: [...plan.actions, ...migrations] })) : ran(2, '', `No installed plugin declares the agent-config name "${e.argv[2]}".`)
+    return plan ? ran(0, JSON.stringify({ ...plan, ...(ready === undefined ? {} : { ready }), ...(w.config ? { config: w.config } : {}), actions: [...plan.actions, ...migrations] })) : ran(2, '', `No installed plugin declares the agent-config name "${e.argv[2]}".`)
   })
   on('fs.read', () => (w.unreadable ? { deny: 'permission denied' } : w.layer === undefined ? { deny: 'no such file' } : { value: w.layer }))
   on('skill.prompt', ($, e) => ({ text: e.text }))
@@ -278,6 +280,13 @@ test('a start that answers JSON of the wrong shape leaves the skill as it is', a
   expect(w.statuses).toEqual([])
   const shown = await $.command.run({ command: 'agent-config', args: 'demo', ...COMMAND })
   expect(shown.text).toBe('demo: no agent-config declaration found.')
+})
+
+test('a component that needs setup gets its plan even when its credentials are malformed', async ($, on) => {
+  const w = world(on)
+  w.config = { credentials: [null] }
+  const { text } = await $.skill.prompt({ skill: 'fresh', text: 'BODY' })
+  expect(text).toStartWith('<agent-config>')
 })
 
 test('a declared component that fails is not swapped for another one the skill name matches', async ($, on) => {
@@ -742,6 +751,22 @@ test('Pick from 1Password lists every item once, filters and searches it, and fi
   await ui.press({ key: 'pick' })
   const asked = w.runs.filter(argv => argv[1] === '1password').map(argv => argv.slice(2))
   expect(asked).toEqual([['items'], ['fields', '--vault', 'V2', '--item', 'IG', '--account', 'A2']])
+  await ui.unmount()
+})
+
+test('an account filter the new listing lacks is cleared, so the items show again', async ($, on) => {
+  const w = world(on)
+  w.layer = '{}'
+  const ui = await open($)
+  await ui.press({ key: 'component:demo' })
+  await ui.press({ key: 'setting:credentials.apiKey' })
+  await ui.press({ key: 'pick' })
+  await ui.press({ key: 'filter:account' })
+  await ui.press({ key: 'choice:A2' })
+  expect(await ui.find({ key: 'item:I0' })).toBeUndefined()
+  w.oneAccount = true
+  await ui.press({ key: 'reload' })
+  expect(await ui.find({ key: 'item:I0' })).toBeDefined()
   await ui.unmount()
 })
 
