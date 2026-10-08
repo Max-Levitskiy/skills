@@ -117,12 +117,13 @@ async function writeKeyNow(
     }
   }
   // A parent blocked here blocks its other keys too: writing this one under it would turn the block
-  // into an object and let those keys through again.
+  // into an object and let those keys through again. Remove here removes the block itself, which is
+  // what the key shows as blocked here.
   const parent = blockedParent(config, dotPath)
-  if (parent) return `${parent} is blocked at this level, which blocks this key too; remove that block in ${file} first`
+  if (parent && value !== undefined) return `${parent} is blocked at this level, which blocks this key too; use Remove here to lift it first`
   const wrote = await $.process.run([await bin($), 'write', component.name, '--layer', layer, ...from], {
     env: HARNESS,
-    stdin: JSON.stringify(withValue(config, dotPath, value)),
+    stdin: JSON.stringify(parent ? withValue(config, parent, undefined) : withValue(config, dotPath, value)),
   })
   return wrote.exitCode === 0 ? undefined : firstLine(wrote.stderr) || 'the write failed'
 }

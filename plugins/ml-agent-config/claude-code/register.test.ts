@@ -649,6 +649,20 @@ test('a key under a parent this level blocks is not written, so the block stays'
   await ui.unmount()
 })
 
+test('Remove here on a key its parent blocks lifts that block', async ($, on) => {
+  const w = world(on)
+  w.layer = '{"workspace":null,"other":1}'
+  w.subdomain = { value: 'acme', source: 'global', levels: { global: 'acme', repo: null } }
+  const ui = await open($)
+  await ui.press({ key: 'component:demo' })
+  await ui.press({ key: 'show' })
+  await ui.press({ key: 'show:repo' })
+  await ui.press({ key: 'setting:workspace.subdomain' })
+  await ui.press({ key: 'remove' })
+  expect(JSON.parse(w.writes.at(-1)!)).toEqual({ other: 1 })
+  await ui.unmount()
+})
+
 test('a CLI that prints garbage leaves the pane usable, never loading forever', async ($, on) => {
   const w = world(on)
   w.broken = 'garbled'
