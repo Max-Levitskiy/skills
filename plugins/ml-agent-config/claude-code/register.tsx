@@ -270,10 +270,13 @@ async function hideBannerForGood($: EngineInterface): Promise<void> {
 /** Cached secrets are said in the band, unless it was closed this session or turned off for good. */
 async function announceCache($: EngineInterface, name: string): Promise<void> {
   const epoch = forgets
+  const band = bandMoves
   if ((await read($, isBandClosed)) || !(await showsBanner($))) return
-  // × or Forget pressed while the preference was read: the band stays as they left it.
+  // ×, Don't show again, an off save or Forget since: the band stays as they left it. The counters
+  // are read with nothing awaited before the update, so no closing can slip between check and show;
+  // one that starts after clears the notice itself.
   await onCache(async () => {
-    if (epoch !== forgets || (await read($, isBandClosed))) return
+    if (epoch !== forgets || band !== bandMoves) return
     await update($, notice, () => `1Password cached for ${name} for this session`)
   })
 }
