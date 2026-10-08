@@ -94,8 +94,8 @@ async function writeKeyNow(
   const from = component.from ? ['--from', component.from] : []
   const where = await $.process.run([await bin($), 'path', component.name, '--layer', layer, ...from], { env: HARNESS })
   if (where.exitCode !== 0) return firstLine(where.stderr) || `no ${layer} layer here`
-  const found = pathLayer(JSON.parse(where.stdout), layer)
-  if (!found) return `agent-config path did not answer for the ${layer} layer`
+  const found = pathLayer(JSON.parse(where.stdout), component.name, layer)
+  if (!found) return `agent-config path did not answer for ${component.name}'s ${layer} layer`
   const file = found.path
   if (!file) return `no ${layer} layer here; it needs a repository`
   // `write` stamps the current schema, so a file behind it would lose the migration it is owed.
@@ -606,15 +606,28 @@ function actions($: EngineInterface, canType: boolean): Actions {
   }
 }
 
-export function summary(plan: Plan, cached: readonly Unlock[]): string {
+/** The 1Password references a ready plan holds that the session cache does not, by key. */
+async function uncached($: EngineInterface, plan: Plan): Promise<string[]> {
+  return plan.ready ? onePasswordKeys(plan, parseCache(await $.env.get('AGENT_CONFIG_SECRETS'))) : []
+}
+
+// What is cached is read from the cache against the plan's references now, not from the last unlock:
+// a reference changed since then is not cached, whatever that unlock got.
+export function summary(plan: Plan, cached: readonly Unlock[], pending: readonly string[] = []): string {
   const lines = [plan.ready ? `${plan.name}: ready.` : `${plan.name}: needs setup.`]
   const missing = plan.actions.flatMap(action => action.keys)
   if (missing.length > 0) lines.push(`Missing: ${missing.join(', ')}.`)
   for (const action of plan.actions) lines.push(`- action ${action.id} (${action.type})`)
   for (const problem of plan.problems) lines.push(`- problem ${problem.code}: ${problem.message}`)
   const one = cached.find(entry => entry.name === plan.name)
-  if (one?.isCached) lines.push(`1Password: cached for this session (${one.keys.join(', ')}).`)
-  if (one && !one.isCached) lines.push(`1Password: not cached (${one.reason}). Retry: /agent-config unlock ${plan.name}`)
+  if (pending.length > 0) {
+    const refs = pending.map(key => cacheKey(plan.config.credentials![key]!))
+    const wasDeclined = one && !one.isCached && refs.every(ref => one.refs.includes(ref))
+    const why = wasDeclined ? one.reason : `not asked yet for ${pending.join(', ')}`
+    lines.push(`1Password: not cached (${why}). Retry: /agent-config unlock ${plan.name}`)
+  } else if (one?.isCached) {
+    lines.push(`1Password: cached for this session (${one.keys.join(', ')}).`)
+  }
   return lines.join('\n')
 }
 
@@ -698,7 +711,7 @@ export const register: Register = on => {
       if (result?.isCached) await announceCache($, plan.name)
       if (!result) return { text: `${name}: nothing to unlock; its 1Password secrets are cached or it has none.` }
     }
-    return { text: summary(plan, await read($, unlocks)) }
+    return { text: summary(plan, await read($, unlocks), await uncached($, plan)) }
   })
 
   on('session.end', async ($, e, next) => {

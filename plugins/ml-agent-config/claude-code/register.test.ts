@@ -50,6 +50,8 @@ type World = {
   apiKeyLevels?: Record<string, object>
   /** What the status line was set to, in order. */
   statuses: (string | undefined)[]
+  /** The component `path` answers for, when not the one asked about. */
+  pathName?: string
   /** A file's own content, by path, where it is not the one layer file. */
   files?: Record<string, string>
   /** `path` answers with every layer, as a CLI that ignores --layer would. */
@@ -139,7 +141,7 @@ function world(on: On, loadExit = 0): World {
       const layer = e.argv[e.argv.indexOf('--layer') + 1]
       const entry = (one: string) => ({ layer: one, path: `/home/me/${one}.json`, exists: w.layer !== undefined || w.unreadable })
       // An older CLI that ignores --layer answers with every layer, global first.
-      return ran(0, JSON.stringify({ layers: w.allLayers ? ['global', 'repo', 'user-repo', 'local'].map(entry) : [entry(layer!)] }))
+      return ran(0, JSON.stringify({ name: w.pathName ?? e.argv[2], layers: w.allLayers ? ['global', 'repo', 'user-repo', 'local'].map(entry) : [entry(layer!)] }))
     }
     if (e.argv[1] === 'write') {
       w.writes.push(e.init?.stdin ?? '')
@@ -323,6 +325,27 @@ test('a declared component that fails is not swapped for another one the skill n
   const { text } = await $.skill.prompt({ skill: 'demo:fresh', text: 'BODY' })
   expect(text).toBe('BODY')
   expect(w.runs.some(argv => argv[1] === 'start' && argv[2] === 'fresh')).toBe(false)
+})
+
+test('/agent-config <name> reads the cache against the references now, not the last unlock', async ($, on) => {
+  const w = world(on)
+  await $.command.run({ command: 'agent-config', args: 'unlock demo', ...COMMAND })
+  w.apiKey = { source: '1password', ref: 'op://Private/Other/key' }
+  const { text } = await $.command.run({ command: 'agent-config', args: 'demo', ...COMMAND })
+  expect(text).toContain('1Password: not cached (not asked yet for apiKey)')
+})
+
+test('a path answer for another component is not read', async ($, on) => {
+  const w = world(on)
+  w.layer = '{}'
+  w.pathName = 'other'
+  const ui = await open($)
+  await ui.press({ key: 'component:demo' })
+  await ui.press({ key: 'setting:workspace.subdomain' })
+  await ui.input({ key: 'value', text: 'beta' })
+  expect(w.writes).toEqual([])
+  expect(JSON.stringify(await ui.find({}))).toContain("Not saved: agent-config path did not answer for demo's")
+  await ui.unmount()
 })
 
 test('/agent-config unlock retries, and forget clears the cache', async ($, on) => {

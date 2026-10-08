@@ -34,9 +34,10 @@ export function listedComponents(value: unknown): { name: string; plugin: string
   return listed.filter((one): one is { name: string; plugin: string } => isObject(one) && isText(one.name) && isText(one.plugin))
 }
 
-/** `path`: the entry for the layer asked for, found by name, never the first one there. */
-export function pathLayer(value: unknown, layer: string): { path: string | null; exists: boolean } | undefined {
-  const layers = isObject(value) && Array.isArray(value.layers) ? value.layers : []
+/** `path`: for the component asked about, the entry for the layer asked for, never the first one. */
+export function pathLayer(value: unknown, name: string, layer: string): { path: string | null; exists: boolean } | undefined {
+  if (!isObject(value) || value.name !== name) return undefined
+  const layers = Array.isArray(value.layers) ? value.layers : []
   const found = layers.find(one => isObject(one) && one.layer === layer)
   if (!isObject(found) || !(found.path === null || isText(found.path))) return undefined
   return { path: found.path, exists: found.exists === true }
