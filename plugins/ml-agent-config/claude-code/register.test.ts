@@ -57,7 +57,7 @@ type World = {
   /** 1Password lists one account instead of two. */
   oneAccount: boolean
   /** What every `start` prints instead of a plan: exit 2 for a broken layer file, or not JSON at all. */
-  broken: 'invalid' | 'garbled' | null
+  broken: 'invalid' | 'garbled' | 'shapeless' | null
 }
 
 const SETTING = { layer: 'global', default: null, credential: false, group: null, required: true, problems: [] }
@@ -108,6 +108,7 @@ function world(on: On, loadExit = 0): World {
       return ran(0, JSON.stringify({ fields: [{ id: 'credential', label: 'credential', section: null, type: 'CONCEALED', reference: 'op://V2/IG/credential' }] }))
     }
     if (w.broken === 'garbled') return ran(0, 'Segmentation fault')
+    if (w.broken === 'shapeless' && e.argv[1] === 'start') return ran(0, '{}')
     if (e.argv[1] === 'list') {
       return ran(0, JSON.stringify({ components: [{ name: 'demo', plugin: 'ml-demo@max-skills', version: '1.0.0', declaration: '/d' }] }))
     }
@@ -267,6 +268,16 @@ test('a load that answers JSON of the wrong shape is a declined unlock', async (
   const { text } = await $.skill.prompt({ skill: 'demo', text: 'A' })
   expect(text).toStartWith('<agent-config>')
   expect(w.env[SECRET_CACHE_VAR]).toBeUndefined()
+})
+
+test('a start that answers JSON of the wrong shape leaves the skill as it is', async ($, on) => {
+  const w = world(on)
+  w.broken = 'shapeless'
+  const { text } = await $.skill.prompt({ skill: 'demo', text: 'BODY' })
+  expect(text).toBe('BODY')
+  expect(w.statuses).toEqual([])
+  const shown = await $.command.run({ command: 'agent-config', args: 'demo', ...COMMAND })
+  expect(shown.text).toBe('demo: no agent-config declaration found.')
 })
 
 test('a declared component that fails is not swapped for another one the skill name matches', async ($, on) => {

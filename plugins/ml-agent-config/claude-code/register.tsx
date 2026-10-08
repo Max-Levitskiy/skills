@@ -45,11 +45,21 @@ function own($: EngineInterface): { name: string; from: string } {
 
 // The plan, or why there is none: a CLI that cannot start, times out or prints something else is
 // read as no plan, so no caller is left waiting on a rejection.
+// The fields the module reads; a CLI of another version could answer in another shape.
+function isPlan(value: unknown): value is Plan {
+  const plan = value as Partial<Plan> | null
+  const isObject = (one: unknown) => one !== null && typeof one === 'object' && !Array.isArray(one)
+  return isObject(plan) && typeof plan!.name === 'string' && typeof plan!.ready === 'boolean' && Array.isArray(plan!.actions) && isObject(plan!.config)
+}
+
 async function started($: EngineInterface, name: string, from?: string): Promise<{ plan?: Plan; isUndeclared: boolean }> {
   try {
     const argv = [await bin($), 'start', name, ...(from ? ['--from', from] : [])]
     const ran = await $.process.run(argv, { env: HARNESS, timeoutMs: 15000 })
-    if (ran.exitCode === 0) return { plan: JSON.parse(ran.stdout) as Plan, isUndeclared: false }
+    if (ran.exitCode === 0) {
+      const plan: unknown = JSON.parse(ran.stdout)
+      return { plan: isPlan(plan) ? plan : undefined, isUndeclared: false }
+    }
     // Exit 2 also covers a layer file that is not JSON, which a fix makes declared again.
     return { isUndeclared: ran.exitCode === 2 && ran.stderr.startsWith('No installed plugin declares') }
   } catch {
