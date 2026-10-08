@@ -207,6 +207,9 @@ test('the needs-setup status goes once its component is ready, and not for anoth
   expect(w.statuses).toEqual(['agent-config: fresh needs setup'])
   await $.skill.prompt({ skill: 'demo', text: 'B' })
   expect(w.statuses).toHaveLength(1)
+  // Forgetting the cache does not change whether fresh needs setup.
+  await $.command.run({ command: 'agent-config', args: 'forget', ...COMMAND })
+  expect(w.statuses).toHaveLength(1)
   w.ready.fresh = true
   await $.skill.prompt({ skill: 'fresh', text: 'C' })
   expect(w.statuses).toEqual(['agent-config: fresh needs setup', undefined])
@@ -578,6 +581,18 @@ test('a save reads the layer it writes, even from a CLI that answers path with e
   await ui.press({ key: 'setting:workspace.subdomain' })
   await ui.input({ key: 'value', text: 'beta' })
   expect(JSON.parse(w.writes.at(-1)!)).toEqual({ workspace: { team: 'x', subdomain: 'beta' } })
+  await ui.unmount()
+})
+
+test('a key under a parent this level blocks is not written, so the block stays', async ($, on) => {
+  const w = world(on)
+  w.layer = '{"workspace":null}'
+  const ui = await open($)
+  await ui.press({ key: 'component:demo' })
+  await ui.press({ key: 'setting:workspace.subdomain' })
+  await ui.input({ key: 'value', text: 'beta' })
+  expect(w.writes).toEqual([])
+  expect(JSON.stringify(await ui.find({}))).toContain('Not saved: workspace is blocked at this level')
   await ui.unmount()
 })
 

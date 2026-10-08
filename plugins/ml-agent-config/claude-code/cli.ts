@@ -29,6 +29,18 @@ export function firstLine(text: string): string {
  * One layer's file with one key changed, since `write` replaces the whole layer. No value removes
  * the key, so a lower level or the default shows through again; null blocks the lower levels.
  */
+/** The first parent of a dotted key that this layer blocks with null, which blocks the key too. */
+export function blockedParent(config: Record<string, unknown>, dotPath: string): string | undefined {
+  const segments = dotPath.split('.')
+  let cursor: unknown = config
+  for (const [index, segment] of segments.slice(0, -1).entries()) {
+    if (typeof cursor !== 'object' || cursor === null || Array.isArray(cursor)) return undefined
+    cursor = (cursor as Record<string, unknown>)[segment]
+    if (cursor === null) return segments.slice(0, index + 1).join('.')
+  }
+  return undefined
+}
+
 export function withValue(config: Record<string, unknown>, dotPath: string, value: Json | undefined): Record<string, unknown> {
   const segments = dotPath.split('.')
   let cursor = config

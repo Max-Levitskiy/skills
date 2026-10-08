@@ -17,7 +17,7 @@ import type { EngineInterface, Register } from 'claude-code'
 
 import { cacheKey, parseCache } from '../src/secret-cache'
 import type { Component, Json, OnePassword, Panel, Screen, Setting, Unlock } from '../types'
-import { HARNESS, OWN, firstLine, withValue, type Plan } from './cli'
+import { HARNESS, OWN, blockedParent, firstLine, withValue, type Plan } from './cli'
 import { PANE, editAt, editing, referenceAt, firstEdit, firstSetting, layerNames, readDescribe, savedAt, selected, switchLevel } from './panel'
 import { draw } from './screens'
 import { readableReference } from './screens/onepassword'
@@ -115,6 +115,10 @@ async function writeKeyNow(
       return `could not read ${file}: ${(error as Error).message}`
     }
   }
+  // A parent blocked here blocks its other keys too: writing this one under it would turn the block
+  // into an object and let those keys through again.
+  const parent = blockedParent(config, dotPath)
+  if (parent) return `${parent} is blocked at this level, which blocks this key too; remove that block in ${file} first`
   const wrote = await $.process.run([await bin($), 'write', component.name, '--layer', layer, ...from], {
     env: HARNESS,
     stdin: JSON.stringify(withValue(config, dotPath, value)),
@@ -676,9 +680,8 @@ export const register: Register = on => {
   on('command.run', { command: 'agent-config' }, async ($, e) => {
     const [first = '', second = ''] = e.args.trim().split(/\s+/)
     if (first === 'forget') {
+      // Only the cache: whether a component needs setup is not changed by forgetting its secrets.
       await forget($)
-      $.ui.status(undefined)
-      needsSetup = undefined
       return { text: 'Forgot every cached 1Password secret for this session.' }
     }
     const name = first === 'unlock' ? second : first

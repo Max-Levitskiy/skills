@@ -17,7 +17,7 @@ import {
   readJournal,
   readLayer,
   writeLayer,
-  valueAt,
+  ownValueAt,
   type ConfigObject,
   type Layer,
   type LoadedLayers,
@@ -351,7 +351,7 @@ function describe(parsed: ParsedArgs): number {
 function withLevels(key: DescribedKey, own: { layer: Layer; config: ConfigObject }[]): DescribedKey {
   const levels: DescribedKey["levels"] = {};
   for (const { layer, config } of own) {
-    const value = valueAt(config, key.path);
+    const value = ownValueAt(config, key.path);
     if (value !== undefined) levels[layer] = value;
   }
   const top = [...LAYERS].reverse().find((layer) => layer in levels);
