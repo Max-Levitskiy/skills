@@ -276,24 +276,34 @@ async function storedNames($: EngineInterface): Promise<Record<string, string>> 
 }
 
 async function openPanel($: EngineInterface): Promise<void> {
+  const mine = ++panelOpens
   const kept = (await read($, panel)).onePassword ?? NO_ONE_PASSWORD
   const names = await storedNames($)
   // The 1Password list stays for the session; everything else starts over.
   await update($, panel, () => ({ ...EMPTY_PANEL, onePassword: { ...kept, isLoading: false }, names, isLoading: true }))
   await $.ui.open({ id: PANE, title: 'agent-config', focus: true, closeOnEscape: true, rows: 40 })
   const list = await components($)
+  if (mine !== panelOpens) return
   await update($, panel, now => ({ ...now, components: list, isLoading: false }))
   await refocus($, list[0] && `component:${list[0].name}`)
 }
 
+// Count each open of the pane, a component and a 1Password item, and each 1Password listing, so a
+// late answer applies only to the request it came from, even when the same one was made again.
+let componentOpens = 0
+let itemOpens = 0
+let panelOpens = 0
+let listings = 0
+
 async function openComponent($: EngineInterface, name: string): Promise<void> {
   const component = (await read($, panel)).components.find(one => one.name === name)
   if (!component) return
+  const mine = ++componentOpens
   await update($, panel, now => ({ ...now, selected: name, settings: [], layers: [], show: 'effective', isLoading: true }))
   await go($, { kind: 'settings' }, `component:${name}`)
   const detail = await describe($, component)
-  // Back and another component while this one loaded: its answer is not that one's.
-  if ((await read($, panel)).selected !== name) return
+  // Opened again, this one or another, while it loaded: its answer is not that open's.
+  if (mine !== componentOpens || (await read($, panel)).selected !== name) return
   await update($, panel, now => ({ ...now, ...detail, isLoading: false }))
   await refocus($, firstSetting(detail.settings))
 }
@@ -413,9 +423,12 @@ async function setOnePassword($: EngineInterface, change: Partial<OnePassword>, 
 
 /** Every item of every account, once a session; ↻ lists them again. */
 async function loadOnePassword($: EngineInterface): Promise<void> {
+  const mine = ++listings
   await setOnePassword($, { isLoading: true, error: null })
   try {
     const got = (await onePassword($, ['items'])) as { accounts: { id: string; short: string }[]; items: Item[]; problems?: string[] }
+    // Listed again while this one ran: the later listing is the one to show.
+    if (mine !== listings) return
     await setOnePassword($, {
       accounts: got.accounts.map(({ id, short }) => ({ id, short })),
       items: got.items,
@@ -431,6 +444,7 @@ async function loadOnePassword($: EngineInterface): Promise<void> {
     await $.store.set(NAMES, names)
     await update($, panel, now => ({ ...now, names }))
   } catch (error) {
+    if (mine !== listings) return
     await setOnePassword($, { isLoading: false, error: (error as Error).message })
   }
 }
@@ -451,17 +465,18 @@ async function openFilter($: EngineInterface, by: 'account' | 'vault' | 'type'):
 async function openItem($: EngineInterface, id: string): Promise<void> {
   const item = (await read($, panel)).onePassword.items.find(one => one.id === id)
   if (!item) return
+  const mine = ++itemOpens
   await setOnePassword($, { item, fields: [], isLoading: true, error: null }, { ref: 0 })
   await go($, { kind: 'fields' }, `item:${id}`)
   try {
     const flags = ['--vault', item.vault.id, '--item', item.id, ...(item.account ? ['--account', item.account] : [])]
     const got = (await onePassword($, ['fields', ...flags])) as { fields: OnePassword['fields'] }
-    // Another item opened while this one loaded: its fields are not that one's.
-    if ((await read($, panel)).onePassword.item?.id !== id) return
+    // Another open, of this item or another, while it loaded: its fields are not that one's.
+    if (mine !== itemOpens || (await read($, panel)).onePassword.item?.id !== id) return
     await setOnePassword($, { fields: got.fields, isLoading: false })
     await refocus($, got.fields[0] && `ref:${got.fields[0].reference}`)
   } catch (error) {
-    if ((await read($, panel)).onePassword.item?.id !== id) return
+    if (mine !== itemOpens || (await read($, panel)).onePassword.item?.id !== id) return
     await setOnePassword($, { isLoading: false, error: (error as Error).message })
   }
 }
