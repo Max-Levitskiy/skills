@@ -16,12 +16,13 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import { cacheKey, parseCache } from '../src/secret-cache'
-import type { Component, Item, Json, OnePassword, Panel, Screen, Setting, Unlock } from '../types'
+import type { Component, Json, OnePassword, Panel, Screen, Setting, Unlock } from '../types'
 import { HARNESS, OWN, firstLine, withValue, type Plan } from './cli'
 import { PANE, editAt, editing, referenceAt, firstEdit, firstSetting, layerNames, readDescribe, savedAt, selected, switchLevel } from './panel'
 import { draw } from './screens'
 import { readableReference } from './screens/onepassword'
 import type { Actions } from './screens/context'
+import { isPlan, listedComponents, onePasswordFields, onePasswordListing, pathLayer } from './shapes'
 import { EMPTY_PANEL, NO_ONE_PASSWORD } from './state'
 import { SOURCES, isReference, parseText, targetLayer, valueAt, type Stored } from './values'
 
@@ -45,26 +46,6 @@ function own($: EngineInterface): { name: string; from: string } {
 
 // The plan, or why there is none: a CLI that cannot start, times out or prints something else is
 // read as no plan, so no caller is left waiting on a rejection.
-// Every field the module reads, down to each action and problem; a CLI of another version could
-// answer in another shape.
-function isPlan(value: unknown): value is Plan {
-  const isObject = (one: unknown): one is Record<string, unknown> => one !== null && typeof one === 'object' && !Array.isArray(one)
-  const isText = (one: unknown) => typeof one === 'string'
-  const isAction = (one: unknown) =>
-    isObject(one) && isText(one.id) && isText(one.type) && Array.isArray(one.keys) && one.keys.every(isText)
-  const isProblem = (one: unknown) => isObject(one) && isText(one.code) && isText(one.message)
-  return (
-    isObject(value) &&
-    isText(value.name) &&
-    typeof value.ready === 'boolean' &&
-    isObject(value.config) &&
-    Array.isArray(value.actions) &&
-    value.actions.every(isAction) &&
-    Array.isArray(value.problems) &&
-    value.problems.every(isProblem)
-  )
-}
-
 async function started($: EngineInterface, name: string, from?: string): Promise<{ plan?: Plan; isUndeclared: boolean }> {
   try {
     const argv = [await bin($), 'start', name, ...(from ? ['--from', from] : [])]
@@ -97,7 +78,8 @@ export function writeKey(
   dotPath: string,
   value: Json | undefined,
 ): Promise<string | undefined> {
-  const queued = writing.then(() => writeKeyNow($, component, layer, dotPath, value))
+  // An answer the module cannot read comes back as the error, like any other refusal.
+  const queued = writing.then(() => writeKeyNow($, component, layer, dotPath, value)).catch((error: Error) => error.message || 'the write failed')
   writing = queued.catch(() => undefined)
   return queued
 }
@@ -112,8 +94,9 @@ async function writeKeyNow(
   const from = component.from ? ['--from', component.from] : []
   const where = await $.process.run([await bin($), 'path', component.name, '--layer', layer, ...from], { env: HARNESS })
   if (where.exitCode !== 0) return firstLine(where.stderr) || `no ${layer} layer here`
-  const found = (JSON.parse(where.stdout) as { layers: { path: string | null; exists?: boolean }[] }).layers[0]
-  const file = found?.path
+  const found = pathLayer(JSON.parse(where.stdout))
+  if (!found) return 'agent-config path answered in another shape'
+  const file = found.path
   if (!file) return `no ${layer} layer here; it needs a repository`
   // `write` stamps the current schema, so a file behind it would lose the migration it is owed.
   // A check that could not run is no answer, so the save stops there too.
@@ -151,6 +134,13 @@ const undeclared = new Set<string>()
 
 // The component the status line says needs setup, if any.
 let needsSetup: string | undefined
+
+/** The needs-setup status goes once its component is ready, by a skill or a save; another's stays. */
+function clearSetupStatus($: EngineInterface, name: string): void {
+  if (needsSetup !== name) return
+  $.ui.status(undefined)
+  needsSetup = undefined
+}
 
 async function find($: EngineInterface, names: string[]): Promise<Plan | undefined> {
   for (const name of names) {
@@ -280,7 +270,7 @@ async function components($: EngineInterface): Promise<Component[]> {
   let installed: { name: string; plugin: string }[] = []
   try {
     const listed = await $.process.run([await bin($), 'list'], { env: HARNESS, timeoutMs: 15000 })
-    if (listed.exitCode === 0) installed = (JSON.parse(listed.stdout) as { components: typeof installed }).components
+    if (listed.exitCode === 0) installed = listedComponents(JSON.parse(listed.stdout))
   } catch {
     // Listed as nothing installed: agent-config itself still shows.
   }
@@ -356,6 +346,7 @@ async function save($: EngineInterface, layer: string, path: string, value: Json
   }
   const detail = await describe($, component)
   const ready = (await start($, component.name, component.from))?.ready ?? null
+  if (ready) clearSetupStatus($, component.name)
   await update($, panel, latest => {
     // A later save of this component started while this one refreshed: its answer is the newer one.
     if (mine !== saves.get(component.name)) return latest
@@ -464,7 +455,7 @@ async function loadOnePassword($: EngineInterface): Promise<void> {
   const mine = ++listings
   await setOnePassword($, { isLoading: true, error: null })
   try {
-    const got = (await onePassword($, ['items'])) as { accounts: { id: string; short: string }[]; items: Item[]; problems?: string[] }
+    const got = onePasswordListing(await onePassword($, ['items']))
     // Listed again while this one ran: the later listing is the one to show.
     if (mine !== listings) return
     // A filter on an account or vault the new listing lacks would hide everything, with no control
@@ -514,7 +505,7 @@ async function openItem($: EngineInterface, id: string): Promise<void> {
   await go($, { kind: 'fields' }, `item:${id}`)
   try {
     const flags = ['--vault', item.vault.id, '--item', item.id, ...(item.account ? ['--account', item.account] : [])]
-    const got = (await onePassword($, ['fields', ...flags])) as { fields: OnePassword['fields'] }
+    const got = { fields: onePasswordFields(await onePassword($, ['fields', ...flags])) }
     // Another open, of this item or another, while it loaded: its fields are not that one's.
     if (mine !== itemOpens || (await read($, panel)).onePassword.item?.id !== id) return
     await setOnePassword($, { fields: got.fields, isLoadingFields: false })
@@ -653,13 +644,11 @@ export const register: Register = on => {
     const pending = plan.ready ? onePasswordKeys(plan, parseCache(await $.env.get('AGENT_CONFIG_SECRETS'))) : []
     const wasDeclined = earlier && !earlier.isCached && pending.every(key => earlier.refs.includes(cacheKey(plan.config.credentials![key]!)))
     const unlocked = plan.ready && !wasDeclined ? await unlock($, plan) : undefined
-    // The needs-setup status goes once its component is ready; another component's stays.
     if (!plan.ready) {
       $.ui.status(`agent-config: ${plan.name} needs setup`)
       needsSetup = plan.name
-    } else if (needsSetup === plan.name) {
-      $.ui.status(undefined)
-      needsSetup = undefined
+    } else {
+      clearSetupStatus($, plan.name)
     }
     if (unlocked?.isCached && !(await read($, isBandClosed)) && (await showsBanner($))) {
       await update($, notice, () => `1Password cached for ${plan.name} for this session`)

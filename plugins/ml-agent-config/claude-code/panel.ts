@@ -3,6 +3,7 @@
 // do are in register.tsx, since the engine follows `$` only within the file that declares it.
 
 import type { Component, Edit, Json, Level, Panel, Screen, Setting } from '../types'
+import { isObject } from './shapes'
 import { ORDER, levelLabel } from './ui/levels'
 import { SOURCES, editText, isBoolean, isReference, valueAt, type Stored } from './values'
 
@@ -32,10 +33,19 @@ export function fileOf(now: Panel, layer: string): string {
 
 /** `describe` as the screens read it: paths shortened to ~ and to the repository's root. */
 export function readDescribe(stdout: string, home: string | undefined): Pick<Panel, 'settings' | 'layers'> {
-  const out = JSON.parse(stdout) as {
-    keys: (Omit<Setting, 'levels'> & { levels?: Setting['levels'] })[]
-    layers: { layer: string; path: string | null; exists?: boolean }[]
-    repo?: { checkout: string | null }
+  const answer: unknown = JSON.parse(stdout)
+  // An answer in another shape is no answer: the pane says describe failed, and stays usable.
+  if (!isObject(answer) || !Array.isArray(answer.keys) || !Array.isArray(answer.layers)) throw new Error('it answered in another shape')
+  const out = {
+    keys: answer.keys.filter(
+      (one): one is Omit<Setting, 'levels'> & { levels?: Setting['levels'] } =>
+        isObject(one) && typeof one.path === 'string' && (one.levels === undefined || isObject(one.levels)),
+    ),
+    layers: answer.layers.filter(
+      (one): one is { layer: string; path: string | null; exists?: boolean } =>
+        isObject(one) && typeof one.layer === 'string' && (one.path === null || typeof one.path === 'string'),
+    ),
+    repo: isObject(answer.repo) ? (answer.repo as { checkout: string | null }) : undefined,
   }
   const checkout = out.repo?.checkout
   const short = (path: string) =>

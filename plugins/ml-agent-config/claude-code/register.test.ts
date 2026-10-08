@@ -50,6 +50,8 @@ type World = {
   apiKeyLevels?: Record<string, object>
   /** What the status line was set to, in order. */
   statuses: (string | undefined)[]
+  /** What `list` prints, when not the one demo component. */
+  listed?: string
   /** Every plan's config, when not its own. */
   config?: object
   /** A component's readiness, when not its plan's. */
@@ -113,6 +115,7 @@ function world(on: On, loadExit = 0): World {
     if (w.broken === 'null-entry' && e.argv[1] === 'start') return ran(0, '{"name":"demo","ready":true,"actions":[null],"problems":[],"config":{}}')
     if (w.broken === 'shapeless' && e.argv[1] === 'start') return ran(0, '{"name":"demo","ready":true,"actions":[],"config":{}}')
     if (e.argv[1] === 'list') {
+      if (w.listed !== undefined) return ran(0, w.listed)
       return ran(0, JSON.stringify({ components: [{ name: 'demo', plugin: 'ml-demo@max-skills', version: '1.0.0', declaration: '/d' }] }))
     }
     if (e.argv[1] === 'describe') {
@@ -512,6 +515,31 @@ test('a level whose file is behind the schema, cannot be read, or cannot be chec
   await ui.input({ key: 'value', text: 'beta' })
   expect(w.writes).toEqual([])
   expect(JSON.stringify(await ui.find({}))).toContain("Not saved: could not check this level's schema")
+  await ui.unmount()
+})
+
+test('a list of another shape still opens the pane, with agent-config itself', async ($, on) => {
+  const w = world(on)
+  w.listed = '{}'
+  const ui = await open($)
+  expect(await ui.find({ key: 'component:agent-config' })).toBeDefined()
+  expect(JSON.stringify(await ui.find({}))).not.toContain('Loading')
+  await ui.unmount()
+})
+
+test('a save that makes its component ready clears the needs-setup status', async ($, on) => {
+  const w = world(on)
+  w.layer = '{}'
+  w.ready.demo = false
+  await $.skill.prompt({ skill: 'demo', text: 'A' })
+  expect(w.statuses).toEqual(['agent-config: demo needs setup'])
+  w.ready.demo = true
+  const ui = await open($)
+  await ui.press({ key: 'component:demo' })
+  await ui.press({ key: 'setting:workspace.subdomain' })
+  await ui.input({ key: 'value', text: 'beta' })
+  expect(w.statuses.at(-1)).toBeUndefined()
+  expect(w.statuses).toHaveLength(2)
   await ui.unmount()
 })
 
