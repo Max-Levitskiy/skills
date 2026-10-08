@@ -61,9 +61,25 @@ export async function start($: EngineInterface, name: string, from?: string): Pr
   return (await started($, name, from)).plan
 }
 
+// Saves run one at a time: each reads a layer and writes it whole, so two at once would both read
+// the same file, and the later write would drop the earlier one's key.
+let writing: Promise<unknown> = Promise.resolve()
+
 // `write` replaces the whole layer, so the current file is read and only this key changes. The CLI
 // refuses a value that looks like an inline secret, and its reason comes back as the error.
-export async function writeKey(
+export function writeKey(
+  $: EngineInterface,
+  component: { name: string; from?: string },
+  layer: string,
+  dotPath: string,
+  value: Json | undefined,
+): Promise<string | undefined> {
+  const queued = writing.then(() => writeKeyNow($, component, layer, dotPath, value))
+  writing = queued.catch(() => undefined)
+  return queued
+}
+
+async function writeKeyNow(
   $: EngineInterface,
   component: { name: string; from?: string },
   layer: string,
@@ -115,7 +131,9 @@ async function find($: EngineInterface, names: string[]): Promise<Plan | undefin
     if (undeclared.has(name)) continue
     const { plan, isUndeclared } = await started($, name)
     if (plan) return plan
-    if (isUndeclared) undeclared.add(name)
+    // Declared but failing: the next name could be another component's, which is not this skill's.
+    if (!isUndeclared) return undefined
+    undeclared.add(name)
   }
   return undefined
 }
@@ -141,7 +159,13 @@ export async function unlock($: EngineInterface, plan: Plan): Promise<Unlock | u
       timeoutMs: 120000,
     })
     .catch((error: Error) => ({ exitCode: 1, stdout: '', stderr: error.message || 'the load did not run' }))
-  const secrets = ran.exitCode === 0 ? (JSON.parse(ran.stdout) as Record<string, string>) : {}
+  // An answer that is not JSON is a declined unlock too, not a skill that fails to expand.
+  let secrets: Record<string, string> = {}
+  try {
+    if (ran.exitCode === 0) secrets = JSON.parse(ran.stdout) as Record<string, string>
+  } catch {
+    secrets = {}
+  }
   const missing = keys.filter(key => !secrets[`credentials.${key}`])
   const result: Unlock =
     missing.length === 0

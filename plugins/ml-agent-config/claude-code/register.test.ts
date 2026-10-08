@@ -48,6 +48,8 @@ type World = {
   unreadable: boolean
   /** The API key's own value at each level, when not the one reference set Everywhere. */
   apiKeyLevels?: Record<string, object>
+  /** A declared component whose start fails, as for an unreadable layer. */
+  failing?: string
   /** 1Password lists one account instead of two. */
   oneAccount: boolean
   /** What every `start` prints instead of a plan: exit 2 for a broken layer file, or not JSON at all. */
@@ -82,6 +84,7 @@ function world(on: On, loadExit = 0): World {
     if (e.argv[0] === 'sh') {
       const keys = e.argv.slice(e.argv.indexOf('--secrets') + 1)
       if (loadExit === -1) throw new Error('timed out after 120000ms')
+      if (loadExit === -2) return ran(0, '{"credentials.api')
       return loadExit === 0
         ? ran(0, JSON.stringify(Object.fromEntries(keys.map(key => [key, 's3cret']))))
         : ran(3, '', 'op failed: authorization denied. Install the 1Password CLI and run \'op signin\'.')
@@ -120,7 +123,7 @@ function world(on: On, loadExit = 0): World {
       if (e.argv[2] === 'agent-config' && banner !== undefined) w.banner = banner
       return ran(0, '{}')
     }
-    if (w.broken === 'invalid') return ran(2, '', '/home/me/global.json is not valid JSON: Unexpected token')
+    if (w.broken === 'invalid' || (w.failing && e.argv[2] === w.failing)) return ran(2, '', '/home/me/global.json is not valid JSON: Unexpected token')
     if (e.argv[2] === 'agent-config') return ran(0, JSON.stringify({ ...OWN, config: { notices: { cacheBanner: w.banner } } }))
     const listed = PLANS[e.argv[2] ?? ''] as { actions: object[]; config: object } | undefined
     const plan = listed && e.argv[2] === 'demo' ? { ...listed, config: { ...listed.config, credentials: { apiKey: w.apiKey } } } : listed
@@ -224,10 +227,27 @@ test('a reference added after a cached unlock is asked for on the next skill', a
 test('a load that times out is a declined unlock, and the skill still expands', async ($, on) => {
   const w = world(on, -1)
   const { text } = await $.skill.prompt({ skill: 'demo', text: 'A' })
+  expect(text).toStartWith('<agent-config>')
   expect(text).toEndWith('A')
   expect(w.env[SECRET_CACHE_VAR]).toBeUndefined()
   const shown = await $.command.run({ command: 'agent-config', args: 'demo', ...COMMAND })
   expect(shown.text).toContain('1Password: not cached (')
+})
+
+test('a load that answers garbage is a declined unlock, and the skill still expands', async ($, on) => {
+  const w = world(on, -2)
+  const { text } = await $.skill.prompt({ skill: 'demo', text: 'A' })
+  expect(text).toStartWith('<agent-config>')
+  expect(text).toEndWith('A')
+  expect(w.env[SECRET_CACHE_VAR]).toBeUndefined()
+})
+
+test('a declared component that fails is not swapped for another one the skill name matches', async ($, on) => {
+  const w = world(on)
+  w.failing = 'demo'
+  const { text } = await $.skill.prompt({ skill: 'demo:fresh', text: 'BODY' })
+  expect(text).toBe('BODY')
+  expect(w.runs.some(argv => argv[1] === 'start' && argv[2] === 'fresh')).toBe(false)
 })
 
 test('/agent-config unlock retries, and forget clears the cache', async ($, on) => {
