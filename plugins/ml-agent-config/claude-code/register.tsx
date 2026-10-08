@@ -413,14 +413,16 @@ async function save($: EngineInterface, layer: string, path: string, value: Json
   saves.set(component.name, mine)
   const opened = componentOpens
   const isBandSetting = component.name === OWN && path === 'notices.cacheBanner'
-  // Off closes the band for the session before the write, as Don't show again does, so a band being
+  const bandBefore = bandMoves
+  // Queued before anything else is awaited, so saves are written in the order they were made.
+  const writing = writeKey($, component, layer, path, value).catch((error: Error) => error.message || 'the write failed')
+  // Off closes the band for the session while it writes, as Don't show again does, so a band being
   // decided meanwhile finds it closed.
   if (isBandSetting && value === false) {
     await closeBandForSession($)
     await update($, notice, () => null)
   }
-  const bandBefore = bandMoves
-  const failed = await writeKey($, component, layer, path, value).catch((error: Error) => error.message || 'the write failed')
+  const failed = await writing
   // On lets it show again this session, after ×, Don't show again or an earlier off, unless the band
   // was closed again while this saved: that closing is the newer word.
   if (!failed && isBandSetting && value === true && bandBefore === bandMoves) await update($, isBandClosed, () => false)
