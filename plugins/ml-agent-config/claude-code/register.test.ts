@@ -391,6 +391,15 @@ test('Close hides the band for the session and keeps the cache', async ($, on) =
   await ui.unmount()
 })
 
+test("/agent-config unlock shows the band, as a skill's unlock does", async ($, on) => {
+  world(on)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await ui.find({ key: 'forget' })).toBeUndefined()
+  await $.command.run({ command: 'agent-config', args: 'unlock demo', ...COMMAND })
+  expect(await ui.find({ key: 'forget' })).toBeDefined()
+  await ui.unmount()
+})
+
 test('Forget on the band drops the cache and the band', async ($, on) => {
   const w = world(on)
   await $.skill.prompt({ skill: 'demo', text: 'A' })

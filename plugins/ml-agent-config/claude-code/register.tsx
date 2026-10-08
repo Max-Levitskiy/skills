@@ -217,6 +217,12 @@ async function hideBannerForGood($: EngineInterface): Promise<void> {
   if (failed) $.ui.toast(`agent-config: could not save the choice: ${failed}`)
 }
 
+/** Cached secrets are said in the band, unless it was closed this session or turned off for good. */
+async function announceCache($: EngineInterface, name: string): Promise<void> {
+  if ((await read($, isBandClosed)) || !(await showsBanner($))) return
+  await update($, notice, () => `1Password cached for ${name} for this session`)
+}
+
 async function closeBand($: EngineInterface): Promise<void> {
   await update($, isBandClosed, () => true)
   await update($, notice, () => null)
@@ -347,7 +353,8 @@ async function save($: EngineInterface, layer: string, path: string, value: Json
   }
   const detail = await describe($, component)
   const ready = (await start($, component.name, component.from))?.ready ?? null
-  if (ready) clearSetupStatus($, component.name)
+  // Only the latest save's readiness counts: an older one may have seen a value since removed.
+  if (ready && mine === saves.get(component.name)) clearSetupStatus($, component.name)
   await update($, panel, latest => {
     // A later save of this component started while this one refreshed: its answer is the newer one.
     if (mine !== saves.get(component.name)) return latest
@@ -653,9 +660,7 @@ export const register: Register = on => {
     } else {
       clearSetupStatus($, plan.name)
     }
-    if (unlocked?.isCached && !(await read($, isBandClosed)) && (await showsBanner($))) {
-      await update($, notice, () => `1Password cached for ${plan.name} for this session`)
-    }
+    if (unlocked?.isCached) await announceCache($, plan.name)
 
     const block = [
       '<agent-config>',
@@ -687,6 +692,7 @@ export const register: Register = on => {
     if (first === 'unlock') {
       if (!plan.ready) return { text: summary(plan, []) }
       const result = await unlock($, plan)
+      if (result?.isCached) await announceCache($, plan.name)
       if (!result) return { text: `${name}: nothing to unlock; its 1Password secrets are cached or it has none.` }
     }
     return { text: summary(plan, await read($, unlocks)) }
