@@ -181,6 +181,11 @@ async function toAsk($: EngineInterface, plan: Plan): Promise<string[]> {
   return keys.filter(key => !plan.config.credentials![key]!.cacheVar)
 }
 
+/** The 1Password keys the session cache is for: the ones with no cacheVar of their own. */
+function cacheableKeys(plan: Plan): string[] {
+  return onePasswordKeys(plan, {}).filter(key => !plan.config.credentials![key]!.cacheVar)
+}
+
 export function onePasswordKeys(plan: Plan, cache: Record<string, string>): string[] {
   const credentials: unknown = plan.config.credentials
   if (!credentials || typeof credentials !== 'object' || Array.isArray(credentials)) return []
@@ -229,7 +234,8 @@ export async function unlock($: EngineInterface, plan: Plan): Promise<Unlock | u
     const again = await start($, plan.name)
     const isSame = again !== undefined && keys.every((key, index) => {
       const reference = again.config.credentials?.[key]
-      return onePasswordKeys(again, {}).includes(key) && cacheKey(reference!) === refs[index]
+      // Still a reference the session cache is for: a cacheVar added meanwhile leaves it to that.
+      return cacheableKeys(again).includes(key) && cacheKey(reference!) === refs[index]
     })
     if (!isSame) return { name: plan.name, keys, refs, isCached: false, reason: 'a reference changed while 1Password was asked' }
   }
@@ -255,9 +261,11 @@ async function showsBanner($: EngineInterface): Promise<boolean> {
 }
 
 async function hideBannerForGood($: EngineInterface): Promise<void> {
+  // Queued first, so a later save of the setting is written after this one.
+  const writing = writeKey($, own($), 'global', 'notices.cacheBanner', false)
   // Closed for this session too, at once: a band being decided right now must not reopen it.
   await closeBandForSession($)
-  const failed = await writeKey($, own($), 'global', 'notices.cacheBanner', false)
+  const failed = await writing
   await update($, notice, () => null)
   if (failed) $.ui.toast(`agent-config: could not save the choice: ${failed}`)
 }
@@ -698,7 +706,7 @@ export function summary(plan: Plan, cached: readonly Unlock[], pending: readonly
     lines.push(`1Password: not cached (${why}). Retry: /agent-config unlock ${plan.name}`)
   } else {
     // Cached means the plan's 1Password references today, every one in the cache: none, nothing to say.
-    const held = plan.ready ? onePasswordKeys(plan, {}) : []
+    const held = plan.ready ? cacheableKeys(plan) : []
     if (held.length > 0) lines.push(`1Password: cached for this session (${held.join(', ')}).`)
   }
   return lines.join('\n')
