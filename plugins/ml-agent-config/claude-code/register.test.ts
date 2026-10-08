@@ -85,6 +85,7 @@ function world(on: On, loadExit = 0): World {
       const keys = e.argv.slice(e.argv.indexOf('--secrets') + 1)
       if (loadExit === -1) throw new Error('timed out after 120000ms')
       if (loadExit === -2) return ran(0, '{"credentials.api')
+      if (loadExit === -3) return ran(0, 'null')
       return loadExit === 0
         ? ran(0, JSON.stringify(Object.fromEntries(keys.map(key => [key, 's3cret']))))
         : ran(3, '', 'op failed: authorization denied. Install the 1Password CLI and run \'op signin\'.')
@@ -239,6 +240,13 @@ test('a load that answers garbage is a declined unlock, and the skill still expa
   const { text } = await $.skill.prompt({ skill: 'demo', text: 'A' })
   expect(text).toStartWith('<agent-config>')
   expect(text).toEndWith('A')
+  expect(w.env[SECRET_CACHE_VAR]).toBeUndefined()
+})
+
+test('a load that answers JSON of the wrong shape is a declined unlock', async ($, on) => {
+  const w = world(on, -3)
+  const { text } = await $.skill.prompt({ skill: 'demo', text: 'A' })
+  expect(text).toStartWith('<agent-config>')
   expect(w.env[SECRET_CACHE_VAR]).toBeUndefined()
 })
 
