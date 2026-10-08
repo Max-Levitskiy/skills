@@ -626,8 +626,10 @@ export function summary(plan: Plan, cached: readonly Unlock[], pending: readonly
     const wasDeclined = one && !one.isCached && refs.every(ref => one.refs.includes(ref))
     const why = wasDeclined ? one.reason : `not asked yet for ${pending.join(', ')}`
     lines.push(`1Password: not cached (${why}). Retry: /agent-config unlock ${plan.name}`)
-  } else if (one?.isCached) {
-    lines.push(`1Password: cached for this session (${one.keys.join(', ')}).`)
+  } else {
+    // Cached means the plan's 1Password references today, every one in the cache: none, nothing to say.
+    const held = plan.ready ? onePasswordKeys(plan, {}) : []
+    if (held.length > 0) lines.push(`1Password: cached for this session (${held.join(', ')}).`)
   }
   return lines.join('\n')
 }

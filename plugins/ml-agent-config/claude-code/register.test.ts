@@ -342,6 +342,11 @@ test('/agent-config <name> reads the cache against the references now, not the l
   w.apiKey = { source: '1password', ref: 'op://Private/Other/key' }
   const { text } = await $.command.run({ command: 'agent-config', args: 'demo', ...COMMAND })
   expect(text).toContain('1Password: not cached (not asked yet for apiKey)')
+
+  // No 1Password reference left: nothing is said to be cached.
+  w.apiKey = { source: 'env', var: 'DEMO_KEY' }
+  const none = await $.command.run({ command: 'agent-config', args: 'demo', ...COMMAND })
+  expect(none.text).not.toContain('1Password')
 })
 
 test('a path answer for another component is not read', async ($, on) => {
@@ -795,6 +800,19 @@ test('a describe key with only a path still draws', async ($, on) => {
   const ui = await open($)
   await ui.press({ key: 'component:demo' })
   expect(await ui.find({ key: 'setting:x' })).toBeDefined()
+  await ui.unmount()
+})
+
+test('a describe layer the pane does not know is left out, so the edit stays usable', async ($, on) => {
+  const w = world(on)
+  w.described = JSON.stringify({
+    keys: [{ path: 'x', description: 'X', value: 'a', source: 'workspace', levels: { workspace: 'a', global: 'b' } }],
+    layers: [{ layer: 'workspace', path: '/w.json' }, { layer: 'global', path: '/home/me/global.json' }],
+  })
+  const ui = await open($)
+  await ui.press({ key: 'component:demo' })
+  await ui.press({ key: 'setting:x' })
+  expect(await ui.find({ key: 'value' })).toBeDefined()
   await ui.unmount()
 })
 

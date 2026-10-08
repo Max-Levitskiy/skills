@@ -41,9 +41,10 @@ export function readDescribe(stdout: string, home: string | undefined): Pick<Pan
       (one): one is Omit<Setting, 'levels'> & { levels?: Setting['levels'] } =>
         isObject(one) && typeof one.path === 'string' && (one.levels === undefined || isObject(one.levels)),
     ),
+    // Only the four layers the pane knows: another name has no label, no order and no file to write.
     layers: answer.layers.filter(
       (one): one is { layer: string; path: string | null; exists?: boolean } =>
-        isObject(one) && typeof one.layer === 'string' && (one.path === null || typeof one.path === 'string'),
+        isObject(one) && ORDER.includes(one.layer as string) && (one.path === null || typeof one.path === 'string'),
     ),
     repo: isObject(answer.repo) ? (answer.repo as { checkout: string | null }) : undefined,
   }
@@ -65,7 +66,7 @@ export function readDescribe(stdout: string, home: string | undefined): Pick<Pan
       source: typeof source === 'string' ? source : null,
       credential: credential === true,
       required: required === true,
-      levels: levels ?? {},
+      levels: Object.fromEntries(Object.entries(levels ?? {}).filter(([layer]) => ORDER.includes(layer))),
     })),
     layers: out.layers.filter(one => one.path).map(one => ({ layer: one.layer, path: short(one.path!), exists: one.exists ?? false }) satisfies Level),
   }
