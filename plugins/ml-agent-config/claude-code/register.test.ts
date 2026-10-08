@@ -46,6 +46,8 @@ type World = {
   behind: string[]
   /** The layer file is there but cannot be read. */
   unreadable: boolean
+  /** The API key's own value at each level, when not the one reference set Everywhere. */
+  apiKeyLevels?: Record<string, object>
   /** 1Password lists one account instead of two. */
   oneAccount: boolean
   /** What every `start` prints instead of a plan: exit 2 for a broken layer file, or not JSON at all. */
@@ -106,7 +108,7 @@ function world(on: On, loadExit = 0): World {
         e.argv[2] === 'agent-config'
           ? [{ ...SETTING, path: 'notices.cacheBanner', description: 'Show the band', default: true, value: w.banner, source: 'default' }]
           : [
-              { ...SETTING, path: 'credentials.apiKey', description: 'API key', credential: true, value: w.apiKey, source: 'global', levels: { global: w.apiKey } },
+              { ...SETTING, path: 'credentials.apiKey', description: 'API key', credential: true, value: w.apiKey, source: w.apiKeyLevels ? 'local' : 'global', levels: w.apiKeyLevels ?? { global: w.apiKey } },
               { ...SETTING, path: 'workspace.subdomain', description: 'Subdomain', layer: 'repo', value: w.subdomain.value, source: w.subdomain.source, levels: w.subdomain.levels },
             ]
       return ran(0, JSON.stringify({ keys, layers: w.layers.map(layer => ({ layer, path: `/home/me/${layer}.json`, exists: true })), repo: { checkout: null } }))
@@ -629,6 +631,19 @@ test('a credential is edited as a source and its fields, never as JSON', async (
   expect(JSON.stringify(await ui.find({}))).toContain('Not saved: fill in Variable')
   await ui.input({ key: 'field:var', text: 'DEMO_KEY' })
   expect(JSON.parse(w.writes.at(-1)!).credentials.apiKey).toEqual({ source: 'dotenv', path: '~/.env', var: 'DEMO_KEY' })
+  await ui.unmount()
+})
+
+test('a credential a level only partly overrides is edited as the merged reference', async ($, on) => {
+  const w = world(on)
+  w.layer = '{}'
+  w.apiKey = { source: 'dotenv', path: './.env', var: 'DEMO_KEY' }
+  w.apiKeyLevels = { global: { source: 'dotenv', path: '~/.env', var: 'DEMO_KEY' }, local: { path: './.env' } }
+  const ui = await open($)
+  await ui.press({ key: 'component:demo' })
+  await ui.press({ key: 'setting:credentials.apiKey' })
+  await ui.press({ key: 'save' })
+  expect(JSON.parse(w.writes.at(-1)!).credentials.apiKey).toEqual({ source: 'dotenv', path: './.env', var: 'DEMO_KEY' })
   await ui.unmount()
 })
 

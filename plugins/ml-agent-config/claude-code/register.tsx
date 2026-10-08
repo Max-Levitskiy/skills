@@ -18,7 +18,7 @@ import type { EngineInterface, Register } from 'claude-code'
 import { cacheKey, parseCache } from '../src/secret-cache'
 import type { Component, Item, Json, OnePassword, Panel, Screen, Setting, Unlock } from '../types'
 import { HARNESS, OWN, firstLine, withValue, type Plan } from './cli'
-import { PANE, editAt, editing, firstEdit, firstSetting, layerNames, readDescribe, savedAt, selected, switchLevel } from './panel'
+import { PANE, editAt, editing, referenceAt, firstEdit, firstSetting, layerNames, readDescribe, savedAt, selected, switchLevel } from './panel'
 import { draw } from './screens'
 import { readableReference } from './screens/onepassword'
 import type { Actions } from './screens/context'
@@ -285,7 +285,11 @@ async function save($: EngineInterface, layer: string, path: string, value: Json
 }
 
 /** An on/off key flips in place: at the level shown, or where it lives now. */
+// Counts the edit screens opened, so a save that finishes late closes only the one it came from.
+let editsOpened = 0
+
 async function openEdit($: EngineInterface, setting: Setting, canType: boolean): Promise<void> {
+  editsOpened += 1
   const now = await read($, panel)
   const layers = layerNames(now)
   const layer = layers.includes(now.show) ? now.show : targetLayer(setting, layers)
@@ -318,12 +322,16 @@ async function saveHere($: EngineInterface, value: Json | undefined, layer?: str
   const now = await read($, panel)
   const edit = now.edit
   if (!edit) return
+  const opened = editsOpened
   const at = layer ?? edit.layer
   if (await save($, at, edit.path, value)) return
   // The person went elsewhere, or edited on, while it saved: the screen is not this save's to close.
   const later = await read($, panel)
   const isSameScreen =
-    later.selected === now.selected && JSON.stringify(later.edit) === JSON.stringify(edit) && later.stack.length === now.stack.length
+    opened === editsOpened &&
+    later.selected === now.selected &&
+    JSON.stringify(later.edit) === JSON.stringify(edit) &&
+    later.stack.length === now.stack.length
   if (isSameScreen) await back($, close, { message: savedAt(edit.path, at, value) })
 }
 
@@ -349,8 +357,8 @@ async function saveEdit($: EngineInterface, layer?: string, close = 1): Promise<
   const fields = SOURCES[edit.source]?.fields ?? []
   const missing = fields.filter(field => !edit.draft[field.name]?.trim())
   if (missing.length > 0) return refuse(`fill in ${missing.map(field => field.label).join(' and ')}`)
-  const before = setting.levels[at] ?? setting.value
-  const base = isReference(before) && before.source === edit.source ? before : { source: edit.source }
+  const before = referenceAt(setting, at)
+  const base = before && before.source === edit.source ? before : { source: edit.source }
   const value: Stored = { ...base, source: edit.source }
   for (const field of fields) value[field.name] = edit.draft[field.name]!.trim()
   // A 1Password account is the draft's, as editAt read it: a picked reference sets or drops it.

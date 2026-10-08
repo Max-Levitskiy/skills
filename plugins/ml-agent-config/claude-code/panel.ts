@@ -3,8 +3,8 @@
 // do are in register.tsx, since the engine follows `$` only within the file that declares it.
 
 import type { Component, Edit, Json, Level, Panel, Screen, Setting } from '../types'
-import { levelLabel } from './ui/levels'
-import { SOURCES, editText, isBoolean, isReference, valueAt } from './values'
+import { ORDER, levelLabel } from './ui/levels'
+import { SOURCES, editText, isBoolean, isReference, valueAt, type Stored } from './values'
 
 export const PANE = 'agent-config'
 
@@ -66,11 +66,28 @@ export function firstSetting(settings: readonly Setting[]): string {
   return first ? `setting:${first.path}` : 'files'
 }
 
+/**
+ * A credential as an edit at this level sees it. The loader merges a reference key by key, so a
+ * level may hold only the fields it overrides: the levels up to this one are merged, and the
+ * reference in effect stands in when they hold none.
+ */
+export function referenceAt(setting: Setting, layer: string): Stored | undefined {
+  let merged: Json | undefined
+  for (const one of ORDER.slice(0, ORDER.indexOf(layer) + 1)) {
+    const here = setting.levels[one]
+    if (here === undefined) continue
+    const isObject = (value: Json | undefined) => value !== null && typeof value === 'object' && !Array.isArray(value)
+    merged = isObject(here) ? { ...(isObject(merged) ? (merged as Record<string, Json>) : {}), ...(here as Record<string, Json>) } : here
+  }
+  if (isReference(merged)) return merged
+  return isReference(setting.value) ? setting.value : undefined
+}
+
 /** An edit at one level starts from what that level sets, else from the value in effect. */
 export function editAt(setting: Setting, layer: string): Edit {
   const from = valueAt(setting, layer)
   // Only a credential holds a reference: a plain object with a `source` is a value like any other.
-  const reference = setting.credential && isReference(from) ? from : undefined
+  const reference = setting.credential ? referenceAt(setting, layer) : undefined
   return {
     path: setting.path,
     layer,
