@@ -298,10 +298,14 @@ async function openComponent($: EngineInterface, name: string): Promise<void> {
   await refocus($, firstSetting(detail.settings))
 }
 
+// Counts the saves started, so a refresh that returns after a later save's is dropped.
+let saves = 0
+
 // Write one key at one level and read the component again. The error, if any, comes back.
 async function save($: EngineInterface, layer: string, path: string, value: Json | undefined): Promise<string | undefined> {
   const component = selected(await read($, panel))
   if (!component) return 'no component selected'
+  const mine = ++saves
   const failed = await writeKey($, component, layer, path, value).catch((error: Error) => error.message || 'the write failed')
   if (!failed && component.name === OWN && path === 'notices.cacheBanner' && value === false) {
     await update($, notice, () => null)
@@ -309,6 +313,8 @@ async function save($: EngineInterface, layer: string, path: string, value: Json
   const detail = await describe($, component)
   const ready = (await start($, component.name, component.from))?.ready ?? null
   await update($, panel, latest => {
+    // A later save started while this one refreshed: its snapshot and message are the newer ones.
+    if (mine !== saves) return latest
     const components = latest.components.map(one => (one.name === component.name ? { ...one, ready } : one))
     // Another component opened while this one saved: its settings are not this one's.
     if (latest.selected !== component.name) return { ...latest, components }
