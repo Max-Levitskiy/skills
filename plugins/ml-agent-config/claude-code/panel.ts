@@ -97,6 +97,24 @@ export function referenceAt(setting: Setting, layer: string): Stored | undefined
   return isReference(setting.value) ? setting.value : undefined
 }
 
+/**
+ * The fields the levels under this one give a credential, merged key by key as the loader does, a
+ * null dropping one. A reference saved here keeps any of them it does not set, unless it nulls them.
+ */
+export function inheritedFields(setting: Setting, layer: string): string[] {
+  const fields = new Map<string, boolean>()
+  for (const one of ORDER.slice(0, ORDER.indexOf(layer))) {
+    const here = setting.levels[one]
+    if (here === undefined) continue
+    if (here === null || typeof here !== 'object' || Array.isArray(here)) {
+      fields.clear()
+      continue
+    }
+    for (const [field, value] of Object.entries(here)) fields.set(field, value !== null)
+  }
+  return [...fields].filter(([, isSet]) => isSet).map(([field]) => field)
+}
+
 /** An edit at one level starts from what that level sets, else from the value in effect. */
 export function editAt(setting: Setting, layer: string): Edit {
   const from = valueAt(setting, layer)

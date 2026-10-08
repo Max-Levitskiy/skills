@@ -18,7 +18,7 @@ import type { EngineInterface, Register } from 'claude-code'
 import { cacheKey, parseCache } from '../src/secret-cache'
 import type { Component, Json, OnePassword, Panel, Screen, Setting, Unlock } from '../types'
 import { HARNESS, OWN, blockedParent, firstLine, withValue, type Plan } from './cli'
-import { PANE, editAt, editing, referenceAt, firstEdit, firstSetting, layerNames, readDescribe, savedAt, selected, switchLevel } from './panel'
+import { PANE, editAt, editing, inheritedFields, referenceAt, firstEdit, firstSetting, layerNames, readDescribe, savedAt, selected, switchLevel } from './panel'
 import { draw } from './screens'
 import { readableReference } from './screens/onepassword'
 import type { Actions } from './screens/context'
@@ -526,6 +526,9 @@ async function saveEdit($: EngineInterface, layer?: string, close = 1): Promise<
     delete value.account
     if (edit.draft.account) value.account = edit.draft.account
   }
+  // The loader merges a reference key by key, so a field a lower level gives it and this one does not
+  // set would still apply: a cacheVar or account of another source. Null drops it.
+  for (const field of inheritedFields(setting, at)) if (value[field] === undefined) value[field] = null
   return saveHere($, value, at, close)
 }
 

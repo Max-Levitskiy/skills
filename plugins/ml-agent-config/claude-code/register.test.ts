@@ -1021,6 +1021,23 @@ test('a credential a level only partly overrides is edited as the merged referen
   await ui.unmount()
 })
 
+test('a credential saved over a lower level of another source drops the fields that level gives it', async ($, on) => {
+  const w = world(on)
+  w.layer = '{}'
+  w.apiKey = { ...REF, cacheVar: 'DEMO_TOKEN' }
+  w.apiKeyLevels = { global: { ...REF, cacheVar: 'DEMO_TOKEN', account: 'A1' } }
+  const ui = await open($)
+  await ui.press({ key: 'component:demo' })
+  await ui.press({ key: 'setting:credentials.apiKey' })
+  await ui.press({ key: 'level' })
+  await ui.press({ key: 'level:local' })
+  await ui.press({ key: 'source' })
+  await ui.press({ key: 'source:env' })
+  await ui.input({ key: 'field:var', text: 'DEMO_KEY' })
+  expect(JSON.parse(w.writes.at(-1)!).credentials.apiKey).toEqual({ source: 'env', var: 'DEMO_KEY', ref: null, cacheVar: null, account: null })
+  await ui.unmount()
+})
+
 test('Pick from 1Password lists every item once, filters and searches it, and fills in the reference', async ($, on) => {
   const w = world(on)
   w.layer = '{}'
