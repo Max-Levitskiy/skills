@@ -199,21 +199,24 @@ export async function unlock($: EngineInterface, plan: Plan): Promise<Unlock | u
   } catch {
     secrets = {}
   }
-  // Forget pressed while 1Password was asked: what came back is dropped, as everything cached was.
-  if (epoch !== forgets) return { name: plan.name, keys, refs, isCached: false, reason: 'forgotten while 1Password was asked' }
   const missing = keys.filter(key => !secrets[`credentials.${key}`])
   const result: Unlock =
     missing.length === 0
       ? { name: plan.name, keys, refs, isCached: true }
       : { name: plan.name, keys, refs, isCached: false, reason: ran.stderr.trim().split('\n')[0] || `no value for ${missing.join(', ')}` }
-  if (result.isCached) {
-    // Into the cache as it is now: another unlock may have added to it while this one asked.
-    const latest = parseCache(await $.env.get('AGENT_CONFIG_SECRETS'))
-    for (const key of keys) latest[cacheKey(plan.config.credentials![key]!)] = secrets[`credentials.${key}`]!
-    await $.env.set('AGENT_CONFIG_SECRETS', JSON.stringify(latest))
-  }
-  await update($, unlocks, list => [...list.filter(one => one.name !== plan.name), result])
-  return result
+  const isKept = await onCache(async () => {
+    // Forget pressed while 1Password was asked: what came back is dropped, as everything cached was.
+    if (epoch !== forgets) return false
+    if (result.isCached) {
+      // Into the cache as it is now: another unlock may have added to it while this one asked.
+      const latest = parseCache(await $.env.get('AGENT_CONFIG_SECRETS'))
+      for (const key of keys) latest[cacheKey(plan.config.credentials![key]!)] = secrets[`credentials.${key}`]!
+      await $.env.set('AGENT_CONFIG_SECRETS', JSON.stringify(latest))
+    }
+    await update($, unlocks, list => [...list.filter(one => one.name !== plan.name), result])
+    return true
+  })
+  return isKept ? result : { name: plan.name, keys, refs, isCached: false, reason: 'forgotten while 1Password was asked' }
 }
 
 async function showsBanner($: EngineInterface): Promise<boolean> {
@@ -243,11 +246,22 @@ async function closeBand($: EngineInterface): Promise<void> {
 // Counts the times the cache was forgotten, so an unlock that was asking at the time keeps nothing.
 let forgets = 0
 
+// Every change to the cache runs one at a time: an unlock's merge and Forget each read and write the
+// whole variable, so two at once would drop a secret or bring one back.
+let caching: Promise<unknown> = Promise.resolve()
+function onCache<T>(work: () => Promise<T>): Promise<T> {
+  const queued = caching.then(work)
+  caching = queued.catch(() => undefined)
+  return queued
+}
+
 async function forget($: EngineInterface): Promise<void> {
-  forgets += 1
-  await $.env.set('AGENT_CONFIG_SECRETS', undefined)
-  await update($, unlocks, () => [])
-  await update($, notice, () => null)
+  await onCache(async () => {
+    forgets += 1
+    await $.env.set('AGENT_CONFIG_SECRETS', undefined)
+    await update($, unlocks, () => [])
+    await update($, notice, () => null)
+  })
 }
 
 // The pane. Each press updates the state and the drawing follows; a drawing cannot write state.
