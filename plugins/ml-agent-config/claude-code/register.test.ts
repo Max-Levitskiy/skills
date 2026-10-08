@@ -40,7 +40,7 @@ type World = {
   writes: string[]
   layers: string[]
   apiKey: object
-  subdomain: { value: string | boolean; source: string; levels: Record<string, string | boolean | number[] | null> }
+  subdomain: { value: string | boolean | object; source: string; levels: Record<string, string | boolean | number[] | object | null> }
   store: Record<string, unknown>
   /** Layers whose file is behind the declaration's schema, so `start` plans their migration. */
   behind: string[]
@@ -551,6 +551,19 @@ test('a level is typed as its own value, not as the one that overrides it', asyn
   await ui.press({ key: 'setting:workspace.subdomain' })
   await ui.input({ key: 'value', text: '[1]' })
   expect(JSON.parse(w.writes.at(-1)!).workspace.subdomain).toEqual([1])
+  await ui.unmount()
+})
+
+test('a plain object with a source key is edited as JSON, not as a credential', async ($, on) => {
+  const w = world(on)
+  w.layer = '{}'
+  w.subdomain = { value: { source: 'replica', host: 'db' }, source: 'repo', levels: { repo: { source: 'replica', host: 'db' } } }
+  const ui = await open($)
+  await ui.press({ key: 'component:demo' })
+  await ui.press({ key: 'setting:workspace.subdomain' })
+  // Opened and saved as it is: the object, not a blank that removes it.
+  await ui.press({ key: 'save' })
+  expect(JSON.parse(w.writes.at(-1)!).workspace.subdomain).toEqual({ source: 'replica', host: 'db' })
   await ui.unmount()
 })
 

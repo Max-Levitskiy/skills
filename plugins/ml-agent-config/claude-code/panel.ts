@@ -69,7 +69,8 @@ export function firstSetting(settings: readonly Setting[]): string {
 /** An edit at one level starts from what that level sets, else from the value in effect. */
 export function editAt(setting: Setting, layer: string): Edit {
   const from = valueAt(setting, layer)
-  const reference = isReference(from) ? from : undefined
+  // Only a credential holds a reference: a plain object with a `source` is a value like any other.
+  const reference = setting.credential && isReference(from) ? from : undefined
   return {
     path: setting.path,
     layer,

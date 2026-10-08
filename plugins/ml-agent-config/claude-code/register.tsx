@@ -320,9 +320,10 @@ async function saveHere($: EngineInterface, value: Json | undefined, layer?: str
   if (!edit) return
   const at = layer ?? edit.layer
   if (await save($, at, edit.path, value)) return
-  // The person went elsewhere while it saved: the screen open now is not this save's to close.
+  // The person went elsewhere, or edited on, while it saved: the screen is not this save's to close.
   const later = await read($, panel)
-  const isSameScreen = later.selected === now.selected && later.edit?.path === edit.path && later.stack.length === now.stack.length
+  const isSameScreen =
+    later.selected === now.selected && JSON.stringify(later.edit) === JSON.stringify(edit) && later.stack.length === now.stack.length
   if (isSameScreen) await back($, close, { message: savedAt(edit.path, at, value) })
 }
 
