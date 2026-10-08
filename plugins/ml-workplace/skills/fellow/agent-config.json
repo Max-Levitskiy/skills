@@ -1,0 +1,38 @@
+{
+  "$schema": "../../../ml-agent-config/agent-config.schema.json",
+  "version": 2,
+  "name": "fellow",
+  "schema": {
+    "version": 1,
+    "keys": {
+      "workspace.subdomain": {
+        "description": "Your Fellow workspace subdomain: the `acme` in https://acme.fellow.app",
+        "layer": "global"
+      },
+      "credentials.apiKey": {
+        "description": "Where your Fellow API key lives (User Settings → Developer API). A reference, never the key",
+        "layer": "global"
+      },
+      "storage.recaps.path": {
+        "description": "Where recaps and note exports are written; relative paths resolve from the repo root",
+        "layer": "repo",
+        "default": ".agents/fellow/export"
+      },
+      "storage.transcripts.path": {
+        "description": "Where transcript exports are written. Transcripts are verbatim and often sensitive, so an absolute path outside the repo is safest",
+        "layer": "global",
+        "default": ".agents/fellow/export"
+      },
+      "projects": {
+        "description": "Named project scopes that filter meetings by title and attendees; see references/project-scoping.md",
+        "layer": "repo",
+        "default": {}
+      },
+      "defaultProject": {
+        "description": "The project scope applied when --project is not given; empty means no filtering",
+        "layer": "repo",
+        "default": ""
+      }
+    }
+  }
+}

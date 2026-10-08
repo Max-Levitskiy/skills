@@ -17,24 +17,19 @@ bun "$F" help
 
 ## Start here every time
 
-Run this before anything else. It tells you in one call whether you can proceed or need to onboard:
+Run this first, before anything else:
 
 ```bash
-bun "$F" config check
+AC=$(command -v agent-config || ls -d "$HOME"/.claude/plugins/cache/*/ml-agent-config/*/bin/agent-config \
+     "${CODEX_HOME:-$HOME/.codex}"/plugins/cache/*/ml-agent-config/*/bin/agent-config 2>/dev/null | tail -1)
+"$AC" start fellow
 ```
 
-- **Succeeds** → you're authenticated; go to [Workflows](#workflows).
-- **Reports missing config** → **read `references/onboarding.md`** and follow it. Missing config is the expected first-run state, not a failure — don't report it to the user as an error.
-- **Credential fails to resolve** → the config is fine but the secret isn't reachable (`op` not signed in, env var unset). Tell the user exactly which reference failed and what to run; don't rewrite their config.
+Prints JSON. `ready: true` → proceed. `ready: false` → read the file at `guide` and follow it to work the `actions` list, then re-run. An empty `$AC` or `command not found` means agent-config isn't installed; tell the user and offer to install it from https://github.com/Max-Levitskiy/skills/tree/main/plugins/ml-agent-config.
 
-If the credential resolves through 1Password, Keychain, or a command, `config show` prints both the reference and the variable it is cached in. Seed that variable **once per shell session** and every later command skips the prompt entirely — a `1password` reference otherwise costs ~5s and a Touch ID tap on *every* invocation:
+Missing config is the expected first run, not a failure: the `onboard` action asks the four questions and writes the answers. After any change to the config, run `bun "$F" config check`: it resolves the key and makes a real `/me` call. A config still at the old `~/.agents/skill-config/fellow/` path is picked up by the `agent-config:adopt` action, which copies it into `.agents/config/` before onboarding asks anything.
 
-```bash
-bun "$F" config show                     # prints the op:// ref and the cache variable
-export FELLOW_API_KEY="$(op read 'op://Vault/Fellow API key/credential')"
-```
-
-If `cacheVar` isn't in the config yet, add it to `credentials.apiKey` (see `config.example.json`). Never echo the resolved key back to the user or into the transcript — the `export` above is the only place it belongs.
+On Claude Code, a 1Password key is asked for once per session and kept in memory. Elsewhere, a reference with `"cacheVar": "FELLOW_API_KEY"` reads the key from that variable when it holds a value, so the user can seed it once per shell: `export FELLOW_API_KEY="$(op read '<their ref>')"`. Print that line for them; never run it yourself and never echo the key.
 
 ## Project scoping
 

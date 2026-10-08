@@ -1,6 +1,7 @@
 // Reading and validating a component's declaration.
 //
-// D2: `agent-config.json` at the plugin root, one per ACS `<name>`, required for `start`. It holds
+// D2: `agent-config.json` at the plugin root, or at `skills/<skill>/` for a plugin that holds
+// several tools, one per ACS `<name>`, required for `start`. It holds
 // the author's questions; config holds the user's answers, and the difference between them is the
 // list of what is not yet set up. Absence meaning "nothing is required" was rejected, because it
 // makes a typo'd name indistinguishable from a legitimately empty declaration.
@@ -9,7 +10,7 @@
 // is an ambiguity error, never a guess.
 
 import { join, dirname } from "path";
-import { existsSync, readFileSync } from "fs";
+import { existsSync, readFileSync, readdirSync } from "fs";
 import { ConfigError, type ConfigValue, type Layer } from "./layers";
 import { pluginInstalls, type DependencyKind, type Harness } from "./harness";
 
@@ -172,26 +173,53 @@ function findUpwards(from: string): string | null {
 }
 
 /**
- * Every installed plugin that ships a declaration, the newest version of each. A file that is not
- * JSON or names nothing is skipped: listing must not fail on another component's broken file.
+ * Where a plugin's declarations sit: its root, for a plugin that is one tool, and each
+ * `skills/<skill>/`, for a plugin that holds several (`ml-workplace` holds fellow and atlassian).
+ * Actions sit beside each one, so two tools in one plugin never share an `actions/`.
+ */
+export function declarationFiles(installPath: string): string[] {
+  const found = [join(installPath, DECLARATION_FILE)].filter((path) => existsSync(path));
+  let skills: string[] = [];
+  try {
+    skills = readdirSync(join(installPath, "skills")).sort();
+  } catch {
+    return found;
+  }
+  for (const skill of skills) {
+    const candidate = join(installPath, "skills", skill, DECLARATION_FILE);
+    if (existsSync(candidate)) found.push(candidate);
+  }
+  return found;
+}
+
+/** The name a declaration file claims, or null when it is not JSON or names nothing. */
+function declaredName(path: string): string | null {
+  try {
+    const declared = JSON.parse(readFileSync(path, "utf8")) as { name?: unknown };
+    return typeof declared.name === "string" && declared.name ? declared.name : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Every installed plugin that ships a declaration, one entry per name, from the newest version of
+ * each plugin. A file that is not JSON or names nothing is skipped: listing must not fail on
+ * another component's broken file.
  */
 export function listDeclarations(harness: Harness): { name: string; plugin: string; version: string; declaration: string }[] {
-  const byPlugin = new Map<string, { name: string; plugin: string; version: string; declaration: string }>();
+  const byName = new Map<string, { name: string; plugin: string; version: string; declaration: string }>();
   for (const install of pluginInstalls(harness)) {
-    const candidate = join(install.installPath, DECLARATION_FILE);
-    if (!existsSync(candidate)) continue;
-    let declared: { name?: unknown };
-    try {
-      declared = JSON.parse(readFileSync(candidate, "utf8")) as { name?: unknown };
-    } catch {
-      continue;
+    for (const candidate of declarationFiles(install.installPath)) {
+      const name = declaredName(candidate);
+      if (!name) continue;
+      const slot = `${install.key}\u0000${name}`;
+      const held = byName.get(slot);
+      if (held && held.version.localeCompare(install.version, undefined, { numeric: true }) >= 0) continue;
+      byName.set(slot, { name, plugin: install.key, version: install.version, declaration: candidate });
     }
-    if (typeof declared.name !== "string" || !declared.name) continue;
-    const held = byPlugin.get(install.key);
-    if (held && held.version.localeCompare(install.version, undefined, { numeric: true }) >= 0) continue;
-    byPlugin.set(install.key, { name: declared.name, plugin: install.key, version: install.version, declaration: candidate });
   }
-  return [...byPlugin.values()].sort((a, b) => a.name.localeCompare(b.name));
+  return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 
 /**
@@ -207,20 +235,14 @@ export function findDeclaration(name: string, harness: Harness, from?: string): 
     return read(path, name);
   }
 
-  const byPlugin = new Map<string, { version: string; path: string }>();
+  const byPlugin = new Map<string, { version: string; paths: string[] }>();
   for (const install of pluginInstalls(harness)) {
-    const candidate = join(install.installPath, DECLARATION_FILE);
-    if (!existsSync(candidate)) continue;
-    let declared: { name?: unknown };
-    try {
-      declared = JSON.parse(readFileSync(candidate, "utf8")) as { name?: unknown };
-    } catch {
-      continue; // A broken declaration belonging to another component is not this call's problem.
-    }
-    if (declared.name !== name) continue;
+    // A broken declaration belonging to another component is not this call's problem.
+    const paths = declarationFiles(install.installPath).filter((candidate) => declaredName(candidate) === name);
+    if (paths.length === 0) continue;
     const held = byPlugin.get(install.key);
     if (!held || held.version.localeCompare(install.version, undefined, { numeric: true }) < 0) {
-      byPlugin.set(install.key, { version: install.version, path: candidate });
+      byPlugin.set(install.key, { version: install.version, paths });
     }
   }
 
@@ -228,13 +250,17 @@ export function findDeclaration(name: string, harness: Harness, from?: string): 
   if (matches.length === 0) {
     throw new ConfigError(
       `No installed plugin declares the agent-config name "${name}". ` +
-        `Every component needs an ${DECLARATION_FILE} at its plugin root. ` +
+        `Every component needs an ${DECLARATION_FILE} at its plugin root or in its skill's folder. ` +
         `For a git checkout that is in no plugin registry, pass --from <dir>.`,
     );
   }
   if (matches.length > 1) {
-    const where = matches.map(([key, match]) => `${key} (${match.path})`).join(", ");
+    const where = matches.map(([key, match]) => `${key} (${match.paths.join(", ")})`).join(", ");
     throw new ConfigError(`The name "${name}" is declared by more than one installed plugin: ${where}`);
   }
-  return read(matches[0][1].path, name);
+  const [key, match] = matches[0];
+  if (match.paths.length > 1) {
+    throw new ConfigError(`The name "${name}" is declared more than once inside ${key}: ${match.paths.join(", ")}`);
+  }
+  return read(match.paths[0], name);
 }

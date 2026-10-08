@@ -12,13 +12,15 @@ import {
   ConfigError,
   LAYERS,
   layerFiles,
-  legacyConfigPaths,
+  legacyFiles,
+  adoptLegacy,
   loadLayers,
   readJournal,
   readLayer,
   writeLayer,
   ownValueAt,
   type ConfigObject,
+  type ConfigValue,
   type Layer,
   type LoadedLayers,
 } from "./layers";
@@ -66,6 +68,8 @@ function report(text: string): void {
 const USAGE = `agent-config <command>
 
   start <name> [--from <dir>] [--require-ready]   what this component still needs, as JSON
+  adopt <name> [--from <dir>]                     copy v1 .agents/skill-config/ files into the
+                                                  v2 layers that have no file yet
   load <name> [--secrets <key>...] [--with-references] [--from <dir>]
                                                   config on stdout, secrets on fd 3; with
                                                   --with-references, each secret beside the
@@ -156,18 +160,21 @@ function repoReport(repo: RepoContext): RepoReport {
 }
 
 /**
- * v2 reads only `.agents/config/`. A file still at the pre-rename path is reported rather than
- * silently ignored — five live configs sit there on the reference machine (D6), and moving them is
- * a one-off action D5 owns.
+ * v2 reads only `.agents/config/`. A v1 file whose layer has no v2 file yet is adopted by the
+ * `agent-config:adopt` action; one whose layer already has a v2 file is reported here, because the
+ * two are never merged and which answers the person meant is theirs to say.
  */
 function legacyProblems(name: string, repo: RepoContext): Problem[] {
-  return legacyConfigPaths(name, repo).map((path) => ({
-    code: "legacy-config-path" as const,
-    message:
-      `${path} is a v1 config at the pre-rename path. agent-config v2 reads only .agents/config/, ` +
-      `so nothing in this file is in effect. Move it to the matching .agents/config/ path.`,
-    path,
-  }));
+  return legacyFiles(name, repo)
+    .filter((file) => !file.adoptable)
+    .map((file) => ({
+      code: "legacy-config-path" as const,
+      layer: file.layer,
+      message:
+        `${file.path} is a v1 config at the pre-rename path, and ${file.current} already holds this layer. ` +
+        `Only the second is read. Compare them, keep what you meant in ${file.current}, and delete the first.`,
+      path: file.path,
+    }));
 }
 
 interface Resolved {
@@ -195,6 +202,8 @@ function start(parsed: ParsedArgs): number {
     effective,
     layers: loaded.files,
     userRepoLayer: readLayer(name, "user-repo", repo),
+    legacy: legacyFiles(name, repo),
+    from: parsed.from,
   });
 
   const output: StartOutput = {
@@ -252,7 +261,11 @@ function load(parsed: ParsedArgs): number {
 
   const unmet = unmetKeys(effective);
   if (unmet.length > 0) {
-    report(`${name} is not configured. Missing or malformed: ${unmet.join(", ")}. Run: agent-config start ${name}\n`);
+    const adoptable = legacyFiles(name, repo).some((file) => file.adoptable);
+    report(
+      `${name} is not configured. Missing or malformed: ${unmet.join(", ")}. Run: agent-config start ${name}\n` +
+        (adoptable ? `A v1 config at .agents/skill-config/${name}/ may hold them: agent-config adopt ${name}\n` : ""),
+    );
     return EXIT.config;
   }
 
@@ -297,6 +310,37 @@ function load(parsed: ParsedArgs): number {
     return EXIT.internal;
   }
   return EXIT.ok;
+}
+
+/**
+ * Copy every adoptable v1 file into its v2 layer. A layer that already has a v2 file is left alone
+ * and listed, so running it twice does nothing the second time. One failing file (an inline secret,
+ * a file that is not an object) does not stop the others; the exit code says one failed.
+ */
+function adopt(parsed: ParsedArgs): number {
+  const name = requireName(parsed);
+  const repo = repoContext();
+  const found = findDeclaration(name, detectHarness(), parsed.from);
+  const schema = { version: found.schemaVersion, declared: found.declaration.schema ?? {} };
+
+  const adopted: Record<string, ConfigValue>[] = [];
+  const kept: Record<string, ConfigValue>[] = [];
+  const failed: Record<string, ConfigValue>[] = [];
+  for (const file of legacyFiles(name, repo)) {
+    if (!file.adoptable) {
+      kept.push({ layer: file.layer, from: file.path, current: file.current });
+      continue;
+    }
+    try {
+      const result = adoptLegacy(name, file, schema, repo);
+      adopted.push({ layer: file.layer, from: file.path, path: result.path, schemaVersion: result.schemaVersion });
+    } catch (error) {
+      failed.push({ layer: file.layer, from: file.path, error: (error as Error).message });
+    }
+  }
+  out(`${JSON.stringify({ acs: ACS_VERSION, name, adopted, kept, failed }, null, 2)}\n`);
+  for (const one of failed) report(`${one.from}: ${one.error}\n`);
+  return failed.length > 0 ? EXIT.config : EXIT.ok;
 }
 
 function write(parsed: ParsedArgs): number {
@@ -444,6 +488,8 @@ export function main(argv: string[]): number {
         return load(parsed);
       case "write":
         return write(parsed);
+      case "adopt":
+        return adopt(parsed);
       case "describe":
         return describe(parsed);
       case "path":

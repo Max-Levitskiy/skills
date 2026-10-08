@@ -1,6 +1,6 @@
 # ml-agent-config
 
-The Agent Config Standard (ACS v1) — layered settings, secret-free credential references, and a re-runnable onboarding flow — packaged as a skill plus a zero-dependency TypeScript loader. `fellow` and `orchestrate` both vendor it instead of maintaining their own copy; see [`standards/agent-config.md`](../../standards/agent-config.md) for the full spec this implements.
+The Agent Config Standard (ACS v1) — layered settings, secret-free credential references, and a re-runnable onboarding flow — packaged as a skill plus a zero-dependency TypeScript loader. `orchestrate` and `herdr` vendor the v1 library instead of maintaining their own copy, and `fellow` reads its config through the v2 `agent-config` CLI; see [`standards/agent-config.md`](../../standards/agent-config.md) for the full spec this implements.
 
 ```bash
 /plugin install ml-agent-config@max-skills
@@ -33,6 +33,8 @@ A config file never contains a secret, only a reference to where one lives — t
 | `command` | any shell command — the escape hatch for Bitwarden, `pass`, Vault, and the rest |
 
 Any reference can also carry `"cacheVar": "MY_API_KEY"`. When that environment variable holds a non-empty value the resolver uses it and never touches the source — one Touch ID prompt per shell session instead of one per command, since every CLI invocation is a fresh process. Nothing is cached to disk: the variable dies with the shell, which is what makes it safe.
+
+A config left at the v1 path, `.agents/skill-config/<name>/`, is not lost. When its layer has no `.agents/config/` file yet, `agent-config start` plans an `agent-config:adopt` step ahead of onboarding, and `agent-config adopt <name>` copies the file over through `write`, which checks it for inline secrets, stamps it and journals it. The old file stays where it is. When both files exist, only the new one is read, and `start` reports the old one rather than merge them.
 
 ## On Claude Code
 
@@ -75,7 +77,7 @@ ml-agent-config/
 │   ├── lib/
 │   │   ├── config.ts            layer paths, deep merge, gitignore handling, credential validation
 │   │   └── credentials.ts       lazy resolution for all five sources, plus the cacheVar session cache; never logs a resolved secret or writes one to disk
-│   └── scripts/vendor.sh        sync/check the copies vendored into fellow and orchestrate
+│   └── scripts/vendor.sh        sync/check the copies vendored into herdr and orchestrate
 └── LICENSE
 ```
 

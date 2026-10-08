@@ -97,7 +97,7 @@ Matching runs cheapest-first, so the expensive check almost never runs:
 | 2 | attendee emails or domains | free |
 | 3 | read the summary and judge | one model call, **once per series** |
 
-Tier 3 results are written back into Tier 0, so each judgement is paid for once and is free for every future occurrence — and for teammates, since verdicts live in the committed repo config. A meeting that matches *another* configured project is excluded without reaching Tier 3 at all.
+Tier 3 results are written back into Tier 0, so each judgement is paid for once and is free for every future occurrence — and for teammates, since verdicts live in the committed repo config, written through `agent-config write`. A meeting that matches *another* configured project is excluded without reaching Tier 3 at all.
 
 ```bash
 bun $F project undecided --since 30      # series the free tiers can't settle
@@ -111,20 +111,23 @@ Keying is on a derived series id, not `event_guid` — the raw value is per-occu
 - [`bun`](https://bun.sh)
 - A Fellow API key — User Settings → Developer API. Requires a paid workspace, and an admin must enable the API under Workspace Security Settings.
 - Whatever CLI holds your secret, if you use one (`op` for 1Password, etc.)
+- [`ml-agent-config`](../ml-agent-config) 0.8.0 or later. Fellow reads its config through the `agent-config` CLI, and the plugin declares it as a dependency.
 
 ### Setup
 
-Just ask Claude to set up Fellow access. It will ask where your key lives, which workspace to use, and what to store where, then write the config and verify it with a real API call.
+Just ask Claude to set up Fellow access. It will ask where your key lives and which workspace to use, then write the config and verify it with a real API call. On Claude Code, `/agent-config` opens a settings pane where you can change any answer.
 
-Configuration follows the [Agent Config Standard](../../standards/agent-config.md): three layers (global `~/.agents/`, repo, and a gitignored local layer), and **the API key is never written to a config file** — only a reference to where it lives (1Password, an env var, a `.env` file, Keychain, or any shell command).
+Configuration follows the [Agent Config Standard](../../standards/agent-config.md), v2. Fellow declares its keys in [`skills/fellow/agent-config.json`](skills/fellow/agent-config.json), and its config lives in four layers: global `~/.agents/config/fellow/`, the repo, a per-user repo layer, and a gitignored local one. **The API key is never written to a config file**, only a reference to where it lives (1Password, an env var, a `.env` file, Keychain, or any shell command). The key reaches the CLI on a separate file descriptor, never on stdout, argv or disk.
 
-If that reference is 1Password, Keychain, or a command, add `"cacheVar": "FELLOW_API_KEY"` to it and seed the variable once per shell session:
+On Claude Code, a 1Password key is approved once per session. Elsewhere, add `"cacheVar": "FELLOW_API_KEY"` to the reference and seed the variable once per shell session:
 
 ```bash
 export FELLOW_API_KEY="$(op read 'op://Vault/Fellow API key/credential')"
 ```
 
-Every command in that session then uses the variable and never re-resolves the secret — one Touch ID prompt instead of one per command, and about 5s off each call. The secret is never cached to disk; it dies with the shell.
+The secret is never cached to disk; it dies with the shell.
+
+**Upgrading from 0.3.x:** a config at the old `~/.agents/skill-config/fellow/` path is copied to `~/.agents/config/fellow/config.json` the first time the skill runs, by agent-config's adopt step, before anything asks you a question. The old file is left in place for you to delete.
 
 See [`skills/fellow/config.example.json`](skills/fellow/config.example.json) for the full shape.
 
@@ -142,7 +145,7 @@ bun $F recap <note-id|recording-id> [--transcript]
 bun $F recordings get <id> --transcript-only
 bun $F action-items --open --scope assigned_to_me
 bun $F export --since 30 --out ./meetings
-bun $F config show|check|path|gitignore
+bun $F config show|check|path
 ```
 
 Add `--json` to any command for structured output.

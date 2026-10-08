@@ -119,7 +119,7 @@ A `problem` is reported, not worked. Each carries a `code` and a `message` writt
 | `credential-malformed` | A reference is present but unusable — a `1password` source with no `ref`. There is *also* an action for it, because "your reference is broken" and "you have nothing configured" are different conversations. |
 | `schema-rolled-back` | A config file is stamped ahead of the installed component: the plugin was downgraded. Proceeding is deliberate — a rollback has no repair path, and refusing would brick the install. |
 | `dependency-ambiguous` | A declared dependency uses a bare name that several installed plugins also carry. The component's author must qualify it as `<plugin>:<skill>`; nothing you install will fix it. |
-| `legacy-config-path` | A pre-rename `.agents/skill-config/` file exists and is **not** being read. Tell the user, and offer to move it. |
+| `legacy-config-path` | A pre-rename `.agents/skill-config/` file exists, and the same layer already has a `.agents/config/` file, which is the one read. The two are never merged: tell the user, and let them say which answers they meant. A v1 file whose layer has no v2 file is not a problem: `start` emits `agent-config:adopt` for it instead, ahead of onboarding. |
 | `dirty-checkout` | A registry write would land in a repository with uncommitted changes. |
 
 ## Changing an answer that is already set
@@ -211,6 +211,17 @@ bunx github:Max-Levitskiy/skills#<commit-sha> agent-config start <name>
 ```
 
 This re-downloads on every fresh `$TMPDIR`, so it is an escape hatch and never the install path.
+
+## Where the declaration lives
+
+`agent-config.json` sits at the plugin root when the plugin is one tool. A plugin that holds several
+tools gives each its own, in `skills/<skill>/agent-config.json`: `ml-workplace` declares `fellow`
+there, and `atlassian` can declare its own name beside it later. Each declaration's `actions/`
+folder sits beside it, so two tools never share one. One name declared twice inside a plugin is an
+error, the same as one name declared by two plugins.
+
+A consumer script passes `--from <its skill folder>` to every call. It finds the declaration from a
+git checkout as well as from an install, so the script runs the same in both.
 
 ## What a consumer's SKILL.md says
 

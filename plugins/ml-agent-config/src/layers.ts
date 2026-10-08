@@ -12,7 +12,7 @@
 import { homedir } from "os";
 import { join, dirname } from "path";
 import { spawnSync } from "child_process";
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { CONFIG_DIR, type RepoContext } from "./repo";
 
 export type Layer = "global" | "repo" | "user-repo" | "local";
@@ -271,7 +271,8 @@ export function readJournal(name: string, layer: Layer, repo: RepoContext): Jour
 export interface WriteResult {
   layer: Layer;
   path: string;
-  snapshot: string;
+  /** Null when the schema the answers were written against is unknown, as for an adopted v1 file. */
+  snapshot: string | null;
   schemaVersion: number;
   gitignore?: GitignoreResult;
   journal?: { path: string; depth: number };
@@ -287,7 +288,7 @@ export function writeLayer(
   name: string,
   layer: Layer,
   config: ConfigObject,
-  schema: { version: number; declared: unknown },
+  schema: { version: number; declared?: unknown },
   repo: RepoContext,
 ): WriteResult {
   assertNoInlineSecrets(config);
@@ -305,8 +306,15 @@ export function writeLayer(
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, `${JSON.stringify(stamped, null, 2)}\n`);
 
-  const snapshot = snapshotPath(path);
-  writeFileSync(snapshot, `${JSON.stringify({ version: schema.version, schema: schema.declared }, null, 2)}\n`);
+  // No snapshot is better than a wrong one: a migration with none interviews the user (D6), while
+  // one with the wrong schema would reinterpret the answers against a shape they never had.
+  let snapshot: string | null = snapshotPath(path);
+  if (schema.declared === undefined) {
+    rmSync(snapshot, { force: true });
+    snapshot = null;
+  } else {
+    writeFileSync(snapshot, `${JSON.stringify({ version: schema.version, schema: schema.declared }, null, 2)}\n`);
+  }
 
   const result: WriteResult = { layer, path, snapshot, schemaVersion: schema.version };
   if (layer === "local") result.gitignore = ensureGitignored(repo.checkout);
@@ -324,14 +332,64 @@ export function writeLayer(
   return result;
 }
 
-/** A v1 config still sitting at the pre-rename path. v2 does not read it; the user must be told. */
-export function legacyConfigPaths(name: string, repo: RepoContext): string[] {
-  const candidates = [join(homedir(), ".agents", "skill-config", name, "config.json")];
+/** A v1 config still sitting at the pre-rename path, and the v2 file of the same layer. */
+export interface LegacyFile {
+  layer: Layer;
+  /** The `.agents/skill-config/` file. */
+  path: string;
+  /** The `.agents/config/` file of the same layer. */
+  current: string;
+  /** True when the current file does not exist, so the old answers can be copied over unchanged. */
+  adoptable: boolean;
+}
+
+/**
+ * SCS v1 configs at `.agents/skill-config/<name>/`. v2 does not read them, so each one is either
+ * adopted (no v2 file yet for its layer) or reported (a v2 file already wins, and the two are never
+ * merged: which answers the person meant is theirs to say).
+ */
+export function legacyFiles(name: string, repo: RepoContext): LegacyFile[] {
+  const candidates: { layer: Layer; path: string }[] = [
+    { layer: "global", path: join(homedir(), ".agents", "skill-config", name, "config.json") },
+  ];
   if (repo.checkout) {
     candidates.push(
-      join(repo.checkout, ".agents", "skill-config", name, "config.json"),
-      join(repo.checkout, ".agents", "skill-config", name, "config.local.json"),
+      { layer: "repo", path: join(repo.checkout, ".agents", "skill-config", name, "config.json") },
+      { layer: "local", path: join(repo.checkout, ".agents", "skill-config", name, "config.local.json") },
     );
   }
-  return candidates.filter(existsSync);
+  return candidates
+    .filter(({ path }) => existsSync(path))
+    .map(({ layer, path }) => {
+      const current = layerPath(name, layer, repo)!;
+      return { layer, path, current, adoptable: !existsSync(current) };
+    });
+}
+
+/** The schema version every adopted file is stamped with: v1 configs predate versioned schemas. */
+export const LEGACY_SCHEMA_VERSION = 1;
+
+/**
+ * Copy one v1 file into its v2 layer, through `writeLayer`, so it is checked for inline secrets,
+ * stamped, journalled and (for the local layer) gitignored like any other write. The v1 file is
+ * left where it is. Its answers are stamped as schema version 1 with no snapshot: when the
+ * component's schema has moved past 1, the next `start` emits a migration for this layer, and with
+ * no snapshot that migration asks the user rather than guessing.
+ */
+export function adoptLegacy(name: string, file: LegacyFile, schema: { version: number; declared: unknown }, repo: RepoContext): WriteResult {
+  const parsed = readConfigFile(file.path);
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new ConfigError(`${file.path} does not hold a JSON object, so there is nothing to adopt`);
+  }
+  // SCS v1 stamped its own format version here; it means nothing to v2.
+  const { version, ...answers } = parsed;
+  void version;
+  const known = schema.version === LEGACY_SCHEMA_VERSION;
+  return writeLayer(
+    name,
+    file.layer,
+    answers,
+    known ? schema : { version: LEGACY_SCHEMA_VERSION },
+    repo,
+  );
 }

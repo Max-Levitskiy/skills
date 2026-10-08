@@ -13,7 +13,7 @@ bun "$F" notes list --since 60 --all --all-meetings
 
 Recurring titles cluster a workspace fast — the handful of titles that repeat weekly usually *are* the projects. Suggest a starting config from what's actually there: a couple of literal title keywords per stream, plus an attendee domain when an external organisation is involved. Concrete beats clever; a plain client or product name matches more reliably than a carefully engineered regex, and the user can see at a glance whether it's right.
 
-Write it into the config's `projects` block (see `../config.example.json`) and set `defaultProject`.
+Write it into the repo layer's `projects` block (see `../config.example.json`) and set `defaultProject`, with `agent-config write fellow --layer repo`. `write` replaces the whole layer, so read it first with `agent-config describe fellow` and write the merged whole. On Claude Code, the `/agent-config` pane edits the same keys.
 
 ## Classifying what the rules can't decide
 
