@@ -45,11 +45,24 @@ function own($: EngineInterface): { name: string; from: string } {
 
 // The plan, or why there is none: a CLI that cannot start, times out or prints something else is
 // read as no plan, so no caller is left waiting on a rejection.
-// The fields the module reads; a CLI of another version could answer in another shape.
+// Every field the module reads, down to each action and problem; a CLI of another version could
+// answer in another shape.
 function isPlan(value: unknown): value is Plan {
-  const plan = value as Partial<Plan> | null
-  const isObject = (one: unknown) => one !== null && typeof one === 'object' && !Array.isArray(one)
-  return isObject(plan) && typeof plan!.name === 'string' && typeof plan!.ready === 'boolean' && Array.isArray(plan!.actions) && Array.isArray(plan!.problems) && isObject(plan!.config)
+  const isObject = (one: unknown): one is Record<string, unknown> => one !== null && typeof one === 'object' && !Array.isArray(one)
+  const isText = (one: unknown) => typeof one === 'string'
+  const isAction = (one: unknown) =>
+    isObject(one) && isText(one.id) && isText(one.type) && Array.isArray(one.keys) && one.keys.every(isText)
+  const isProblem = (one: unknown) => isObject(one) && isText(one.code) && isText(one.message)
+  return (
+    isObject(value) &&
+    isText(value.name) &&
+    typeof value.ready === 'boolean' &&
+    isObject(value.config) &&
+    Array.isArray(value.actions) &&
+    value.actions.every(isAction) &&
+    Array.isArray(value.problems) &&
+    value.problems.every(isProblem)
+  )
 }
 
 async function started($: EngineInterface, name: string, from?: string): Promise<{ plan?: Plan; isUndeclared: boolean }> {

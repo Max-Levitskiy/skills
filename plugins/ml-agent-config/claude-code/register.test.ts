@@ -59,7 +59,7 @@ type World = {
   /** 1Password lists one account instead of two. */
   oneAccount: boolean
   /** What every `start` prints instead of a plan: exit 2 for a broken layer file, or not JSON at all. */
-  broken: 'invalid' | 'garbled' | 'shapeless' | null
+  broken: 'invalid' | 'garbled' | 'shapeless' | 'null-entry' | null
 }
 
 const SETTING = { layer: 'global', default: null, credential: false, group: null, required: true, problems: [] }
@@ -110,6 +110,7 @@ function world(on: On, loadExit = 0): World {
       return ran(0, JSON.stringify({ fields: [{ id: 'credential', label: 'credential', section: null, type: 'CONCEALED', reference: 'op://V2/IG/credential' }] }))
     }
     if (w.broken === 'garbled') return ran(0, 'Segmentation fault')
+    if (w.broken === 'null-entry' && e.argv[1] === 'start') return ran(0, '{"name":"demo","ready":true,"actions":[null],"problems":[],"config":{}}')
     if (w.broken === 'shapeless' && e.argv[1] === 'start') return ran(0, '{"name":"demo","ready":true,"actions":[],"config":{}}')
     if (e.argv[1] === 'list') {
       return ran(0, JSON.stringify({ components: [{ name: 'demo', plugin: 'ml-demo@max-skills', version: '1.0.0', declaration: '/d' }] }))
@@ -280,6 +281,11 @@ test('a start that answers JSON of the wrong shape leaves the skill as it is', a
   expect(w.statuses).toEqual([])
   const shown = await $.command.run({ command: 'agent-config', args: 'demo', ...COMMAND })
   expect(shown.text).toBe('demo: no agent-config declaration found.')
+
+  // An action or a problem that is not one is no plan either.
+  w.broken = 'null-entry'
+  const again = await $.command.run({ command: 'agent-config', args: 'demo', ...COMMAND })
+  expect(again.text).toBe('demo: no agent-config declaration found.')
 })
 
 test('a component that needs setup gets its plan even when its credentials are malformed', async ($, on) => {
