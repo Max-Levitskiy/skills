@@ -39,8 +39,9 @@ export function pathLayer(value: unknown, name: string, layer: string): { path: 
   if (!isObject(value) || value.name !== name) return undefined
   const layers = Array.isArray(value.layers) ? value.layers : []
   const found = layers.find(one => isObject(one) && one.layer === layer)
-  if (!isObject(found) || !(found.path === null || isText(found.path))) return undefined
-  return { path: found.path, exists: found.exists === true }
+  // `exists` decides whether the file is read before `write` replaces it whole: unsaid, nothing is.
+  if (!isObject(found) || !(found.path === null || isText(found.path)) || typeof found.exists !== 'boolean') return undefined
+  return { path: found.path, exists: found.exists }
 }
 
 /** `1password items`: accounts and items with the fields the picker shows. */

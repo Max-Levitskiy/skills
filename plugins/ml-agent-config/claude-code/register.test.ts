@@ -52,6 +52,8 @@ type World = {
   statuses: (string | undefined)[]
   /** 1Password refuses an item's fields. */
   fieldsFail?: boolean
+  /** `path` leaves out whether the file exists. */
+  pathSaysNoExists?: boolean
   /** The component `path` answers for, when not the one asked about. */
   pathName?: string
   /** A file's own content, by path, where it is not the one layer file. */
@@ -143,7 +145,7 @@ function world(on: On, loadExit = 0): World {
     }
     if (e.argv[1] === 'path') {
       const layer = e.argv[e.argv.indexOf('--layer') + 1]
-      const entry = (one: string) => ({ layer: one, path: `/home/me/${one}.json`, exists: w.layer !== undefined || w.unreadable })
+      const entry = (one: string) => ({ layer: one, path: `/home/me/${one}.json`, ...(w.pathSaysNoExists ? {} : { exists: w.layer !== undefined || w.unreadable }) })
       // An older CLI that ignores --layer answers with every layer, global first.
       return ran(0, JSON.stringify({ name: w.pathName ?? e.argv[2], layers: w.allLayers ? ['global', 'repo', 'user-repo', 'local'].map(entry) : [entry(layer!)] }))
     }
@@ -347,6 +349,18 @@ test('/agent-config <name> reads the cache against the references now, not the l
   w.apiKey = { source: 'env', var: 'DEMO_KEY' }
   const none = await $.command.run({ command: 'agent-config', args: 'demo', ...COMMAND })
   expect(none.text).not.toContain('1Password')
+})
+
+test('a path answer that does not say whether the file exists is not written over', async ($, on) => {
+  const w = world(on)
+  w.layer = '{"workspace":{"team":"x"}}'
+  w.pathSaysNoExists = true
+  const ui = await open($)
+  await ui.press({ key: 'component:demo' })
+  await ui.press({ key: 'setting:workspace.subdomain' })
+  await ui.input({ key: 'value', text: 'beta' })
+  expect(w.writes).toEqual([])
+  await ui.unmount()
 })
 
 test('a path answer for another component is not read', async ($, on) => {
