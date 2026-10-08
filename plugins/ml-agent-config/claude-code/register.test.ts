@@ -629,6 +629,23 @@ test('a level is typed as its own value, not as the one that overrides it', asyn
   await ui.unmount()
 })
 
+test('an untouched edit at a level that blocks is not saved over the block', async ($, on) => {
+  const w = world(on)
+  w.layer = '{"workspace":{"subdomain":null}}'
+  w.subdomain = { value: 'acme', source: 'global', levels: { global: 'acme', repo: null } }
+  const ui = await open($)
+  await ui.press({ key: 'component:demo' })
+  await ui.press({ key: 'show' })
+  await ui.press({ key: 'show:repo' })
+  await ui.press({ key: 'setting:workspace.subdomain' })
+  await ui.press({ key: 'save' })
+  expect(w.writes).toEqual([])
+  expect(JSON.stringify(await ui.find({}))).toContain('Not saved: this level blocks the ones under it')
+  await ui.input({ key: 'value', text: 'beta' })
+  expect(JSON.parse(w.writes.at(-1)!).workspace.subdomain).toBe('beta')
+  await ui.unmount()
+})
+
 test('a plain object with a source key is edited as JSON, not as a credential', async ($, on) => {
   const w = world(on)
   w.layer = '{}'

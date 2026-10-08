@@ -423,6 +423,10 @@ async function saveEdit($: EngineInterface, layer?: string, close = 1): Promise<
     if (close > 1) return back($, close - 1, { message: `Not saved: ${why}` })
     await update($, panel, latest => ({ ...latest, message: `Not saved: ${why}` }))
   }
+  // A block stays until something is typed or picked: the value shown is only the one under it.
+  if (!edit.isDirty && at === edit.layer && setting.levels[at] === null) {
+    return refuse('this level blocks the ones under it; type or pick a value to replace the block, or Remove here')
+  }
   if (!setting.credential) {
     // Typed as the value the edit showed: this level's own, else the one in effect.
     const parsed = parseText(edit.text, valueAt(setting, edit.layer))
