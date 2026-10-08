@@ -120,7 +120,7 @@ async function writeKeyNow(
   // into an object and let those keys through again. Remove here removes the block itself, which is
   // what the key shows as blocked here.
   const parent = blockedParent(config, dotPath)
-  if (parent && value !== undefined) return `${parent} is blocked at this level, which blocks this key too; use Remove here to lift it first`
+  if (parent && value !== undefined) return `${parent} is blocked at this level (it holds no keys), which blocks this key too; use Remove here to lift it first`
   const wrote = await $.process.run([await bin($), 'write', component.name, '--layer', layer, ...from], {
     env: HARNESS,
     stdin: JSON.stringify(parent ? withValue(config, parent, undefined) : withValue(config, dotPath, value)),
@@ -401,8 +401,9 @@ async function save($: EngineInterface, layer: string, path: string, value: Json
     await update($, notice, () => null)
   }
   const failed = await writeKey($, component, layer, path, value).catch((error: Error) => error.message || 'the write failed')
-  // On lets it show again this session, after ×, Don't show again or an earlier off.
-  if (!failed && isBandSetting && value === true) await update($, isBandClosed, () => false)
+  // On lets it show again this session, after ×, Don't show again or an earlier off, unless a later
+  // save of this component has started since: it may be an off, whose closing must stand.
+  if (!failed && isBandSetting && value === true && mine === saves.get(component.name)) await update($, isBandClosed, () => false)
   const detail = await describe($, component)
   const ready = (await start($, component.name, component.from))?.ready ?? null
   // Only the latest save's readiness counts: an older one may have seen a value since removed.
