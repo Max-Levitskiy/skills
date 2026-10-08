@@ -119,6 +119,21 @@ export function valueAt(config: ConfigObject, dotPath: string): ConfigValue | un
   return cursor;
 }
 
+/**
+ * One layer's own value for a key, as the merge sees it. A parent that is null or a plain value
+ * replaces the inherited object, so it hides the key as surely as a null on the key itself: it reads
+ * as null, blocked, not as unset.
+ */
+export function ownValueAt(config: ConfigObject, dotPath: string): ConfigValue | undefined {
+  let cursor: ConfigValue | undefined = config;
+  for (const segment of dotPath.split(".")) {
+    if (cursor === undefined) return undefined;
+    if (!isPlainObject(cursor)) return null;
+    cursor = cursor[segment];
+  }
+  return cursor;
+}
+
 export function setValueAt(config: ConfigObject, dotPath: string, value: ConfigValue): void {
   const segments = dotPath.split(".");
   let cursor = config;

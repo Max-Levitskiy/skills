@@ -17,17 +17,22 @@ import {
   readJournal,
   readLayer,
   writeLayer,
+  ownValueAt,
   type ConfigObject,
   type Layer,
   type LoadedLayers,
 } from "./layers";
-import { findDeclaration, type FoundDeclaration } from "./declaration";
+import { findDeclaration, listDeclarations, type FoundDeclaration } from "./declaration";
 import { effectiveConfig, unmetKeys, type Effective } from "./effective";
 import { buildPlan, guidePath } from "./actions";
 import { CredentialError, resolveCredential, type CredentialRef } from "./credentials";
+import { cacheKey } from "./secret-cache";
+import * as onePassword from "./onepassword";
 import {
   ACS_VERSION,
+  type DescribedKey,
   type DescribeOutput,
+  type ListOutput,
   type LoadOutput,
   type PathOutput,
   type Problem,
@@ -61,10 +66,18 @@ function report(text: string): void {
 const USAGE = `agent-config <command>
 
   start <name> [--from <dir>] [--require-ready]   what this component still needs, as JSON
-  load <name> [--secrets <key>...] [--from <dir>] config on stdout, secrets on fd 3
+  load <name> [--secrets <key>...] [--with-references] [--from <dir>]
+                                                  config on stdout, secrets on fd 3; with
+                                                  --with-references, each secret beside the
+                                                  reference it was resolved from
   write <name> --layer <layer> [--from <dir>]     replace one layer from JSON on stdin
   describe <name> [--from <dir>]                  the full questionnaire, with current answers
   path <name> [--layer <layer>] [--from <dir>]    where the layers live
+  list                                            every installed component that declares a name
+  1password accounts | vaults | items | fields    browse for a reference: --account, --vault, --item;
+                                                  names and op:// addresses only, never a value;
+                                                  items with no --vault lists every vault, and with
+                                                  no --account every account
   repos register [--alias <alias>]                add this repository to the repo registry
 
 Layers: ${LAYERS.join(", ")}. Output is JSON only — rendering for a human is the agent's job.`;
@@ -75,12 +88,16 @@ interface ParsedArgs {
   from?: string;
   layer?: string;
   alias?: string;
+  account?: string;
+  vault?: string;
+  item?: string;
   secrets: string[];
   requireReady: boolean;
+  withReferences: boolean;
 }
 
 function parseArgs(argv: string[]): ParsedArgs {
-  const parsed: ParsedArgs = { command: argv[0] ?? "", positionals: [], secrets: [], requireReady: false };
+  const parsed: ParsedArgs = { command: argv[0] ?? "", positionals: [], secrets: [], requireReady: false, withReferences: false };
   let collecting: "secrets" | null = null;
 
   for (let index = 1; index < argv.length; index += 1) {
@@ -88,7 +105,10 @@ function parseArgs(argv: string[]): ParsedArgs {
     if (argument === "--require-ready") {
       collecting = null;
       parsed.requireReady = true;
-    } else if (argument === "--from" || argument === "--layer" || argument === "--alias") {
+    } else if (argument === "--with-references") {
+      collecting = null;
+      parsed.withReferences = true;
+    } else if (["--from", "--layer", "--alias", "--account", "--vault", "--item"].includes(argument)) {
       collecting = null;
       const value = argv[index + 1];
       if (!value || value.startsWith("--")) throw new ConfigError(`${argument} needs a value`);
@@ -96,6 +116,9 @@ function parseArgs(argv: string[]): ParsedArgs {
       if (argument === "--from") parsed.from = value;
       if (argument === "--layer") parsed.layer = value;
       if (argument === "--alias") parsed.alias = value;
+      if (argument === "--account") parsed.account = value;
+      if (argument === "--vault") parsed.vault = value;
+      if (argument === "--item") parsed.item = value;
     } else if (argument === "--secrets") {
       // Several keys in one call, so a script needing two secrets does not trigger two prompts.
       collecting = "secrets";
@@ -245,6 +268,9 @@ function load(parsed: ParsedArgs): number {
   if (parsed.secrets.length === 0) return EXIT.ok;
 
   const secrets: Record<string, string> = {};
+  // Which reference each secret came from, as the session cache keys it; null when a cacheVar may
+  // have answered instead, so the caller does not keep that value as the reference's own.
+  const references: Record<string, string | null> = {};
   for (const key of parsed.secrets) {
     const logical = key.startsWith("credentials.") ? key.slice("credentials.".length) : key;
     const reference = effective.config.credentials;
@@ -256,13 +282,15 @@ function load(parsed: ParsedArgs): number {
       report(`credentials.${logical} is not configured, so it cannot be resolved.\n`);
       return EXIT.config;
     }
-    secrets[key] = resolveCredential(entry as unknown as CredentialRef, logical, repo.checkout);
+    const credential = entry as unknown as CredentialRef;
+    secrets[key] = resolveCredential(credential, logical, repo.checkout);
+    references[key] = credential.cacheVar ? null : cacheKey(credential);
   }
 
   // fd 3, never stdout: a script opens the third descriptor deliberately, while a naive
   // `bash -c "agent-config load … --secrets …"` run by an agent gets nothing on it.
   try {
-    writeSync(3, `${JSON.stringify(secrets)}\n`);
+    writeSync(3, `${JSON.stringify(parsed.withReferences ? { secrets, references } : secrets)}\n`);
   } catch {
     report(`--secrets writes to file descriptor 3, which is not open. Open it in the caller, e.g.\n` +
       `  secrets=$(agent-config load ${name} --secrets ${parsed.secrets.join(" ")} 3>&1 1>/dev/null)\n`);
@@ -310,6 +338,9 @@ function describe(parsed: ParsedArgs): number {
   const name = requireName(parsed);
   const harness = detectHarness();
   const { found, repo, loaded, effective } = resolve(name, parsed.from);
+  const own = loaded.files
+    .filter((file) => file.exists)
+    .map((file) => ({ layer: file.layer, config: readLayer(name, file.layer, repo) ?? {} }));
 
   const output: DescribeOutput = {
     acs: ACS_VERSION,
@@ -317,12 +348,29 @@ function describe(parsed: ParsedArgs): number {
     harness,
     schemaVersion: found.schemaVersion,
     repo: repoReport(repo),
-    keys: effective.keys,
+    keys: effective.keys.map((key) => withLevels(key, own)),
     layers: loaded.files.map((file) => ({ ...file, journal: readJournal(name, file.layer, repo) })),
     problems: [...effective.problems, ...legacyProblems(name, repo)],
   };
   out(`${JSON.stringify(output, null, 2)}\n`);
   return EXIT.ok;
+}
+
+/**
+ * Each layer's own value for one key, so an editor can show what every level sets and which one
+ * wins. The source is the top layer that sets it: provenance is kept per leaf, so for a key whose
+ * value is an object it can be missing, or stale, a lower layer's scalar that a higher object
+ * replaced. A top layer that blocks it leaves the default, if any, in effect.
+ */
+export function withLevels(key: DescribedKey, own: { layer: Layer; config: ConfigObject }[]): DescribedKey {
+  const levels: DescribedKey["levels"] = {};
+  for (const { layer, config } of own) {
+    const value = ownValueAt(config, key.path);
+    if (value !== undefined) levels[layer] = value;
+  }
+  const top = [...LAYERS].reverse().find((layer) => layer in levels);
+  const source = top === undefined ? (key.source ?? null) : levels[top] !== null ? top : key.source === "default" ? "default" : null;
+  return { ...key, levels, source };
 }
 
 function path(parsed: ParsedArgs): number {
@@ -340,6 +388,30 @@ function path(parsed: ParsedArgs): number {
     layers: wanted ? files.filter((file) => file.layer === wanted) : files,
   };
   out(`${JSON.stringify(output, null, 2)}\n`);
+  return EXIT.ok;
+}
+
+function list(): number {
+  const output: ListOutput = { acs: ACS_VERSION, components: listDeclarations(detectHarness()) };
+  out(`${JSON.stringify(output, null, 2)}\n`);
+  return EXIT.ok;
+}
+
+function browseOnePassword(parsed: ParsedArgs): number {
+  const what = parsed.positionals[0];
+  const need = (value: string | undefined, flag: string): string => {
+    if (!value) throw new ConfigError(`1password ${what} needs ${flag}`);
+    return value;
+  };
+  let found: object;
+  if (what === "accounts") found = { accounts: onePassword.accounts() };
+  else if (what === "vaults") found = { vaults: onePassword.vaults(parsed.account) };
+  else if (what === "items" && !parsed.vault) found = onePassword.everything(parsed.account);
+  else if (what === "items") found = onePassword.vaultItems(parsed.vault, parsed.account);
+  else if (what === "fields") {
+    found = { fields: onePassword.fields(need(parsed.vault, "--vault"), need(parsed.item, "--item"), parsed.account) };
+  } else throw new ConfigError(`Unknown 1password subcommand ${JSON.stringify(what ?? "")}: accounts, vaults, items, fields`);
+  out(`${JSON.stringify({ acs: ACS_VERSION, ...found }, null, 2)}\n`);
   return EXIT.ok;
 }
 
@@ -376,6 +448,10 @@ export function main(argv: string[]): number {
         return describe(parsed);
       case "path":
         return path(parsed);
+      case "list":
+        return list();
+      case "1password":
+        return browseOnePassword(parsed);
       case "repos":
         return repos(parsed);
       case "":

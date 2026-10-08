@@ -1,0 +1,14 @@
+{
+  "$schema": "../agent-config.schema.json",
+  "version": 2,
+  "name": "agent-config",
+  "schema": {
+    "keys": {
+      "notices.cacheBanner": {
+        "description": "Show the band above the prompt when 1Password secrets are cached for the session (Claude Code only)",
+        "layer": "global",
+        "default": true
+      }
+    }
+  }
+}

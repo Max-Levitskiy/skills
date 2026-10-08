@@ -13,3 +13,7 @@
 .agents/config/*/config.local.json
 # pre-rename location, still read at lower precedence
 .agents/skill-config/*/config.local.json
+
+# Written by Claude Code on each load of a hooks module, for the build that loaded it
+plugins/*/.claude-plugin/types/
+plugins/ml-agent-config/tsconfig.json

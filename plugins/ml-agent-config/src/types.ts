@@ -82,6 +82,11 @@ export interface DescribedKey {
   required: boolean;
   value: ConfigValue | null;
   source: Layer | "default" | null;
+  /**
+   * What each layer itself sets for this key, before the merge: a layer that does not set it is
+   * absent, and a null is a layer blocking what the layers under it set.
+   */
+  levels: Partial<Record<Layer, ConfigValue>>;
   problems: string[];
 }
 
@@ -102,6 +107,12 @@ export interface DescribeOutput {
     journal: { at: string; config: ConfigObject }[];
   }[];
   problems: Problem[];
+}
+
+export interface ListOutput {
+  acs: typeof ACS_VERSION;
+  /** One entry per installed plugin with a declaration, the newest version of each, by name. */
+  components: { name: string; plugin: string; version: string; declaration: string }[];
 }
 
 export interface PathOutput {

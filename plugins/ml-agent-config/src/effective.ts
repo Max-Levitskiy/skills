@@ -101,6 +101,7 @@ export function effectiveConfig(
       required,
       value: value === undefined ? null : value,
       source: provenance[path] ?? null,
+      levels: {},
       problems: keyProblems,
     });
 
