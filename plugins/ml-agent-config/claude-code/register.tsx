@@ -180,6 +180,7 @@ export async function unlock($: EngineInterface, plan: Plan): Promise<Unlock | u
   const keys = onePasswordKeys(plan, cache)
   if (keys.length === 0) return undefined
   const refs = keys.map(key => cacheKey(plan.config.credentials![key]!))
+  const epoch = forgets
 
   // A run that times out or cannot start is a declined unlock, not a skill that fails to expand.
   const ran = await $.process
@@ -198,14 +199,18 @@ export async function unlock($: EngineInterface, plan: Plan): Promise<Unlock | u
   } catch {
     secrets = {}
   }
+  // Forget pressed while 1Password was asked: what came back is dropped, as everything cached was.
+  if (epoch !== forgets) return { name: plan.name, keys, refs, isCached: false, reason: 'forgotten while 1Password was asked' }
   const missing = keys.filter(key => !secrets[`credentials.${key}`])
   const result: Unlock =
     missing.length === 0
       ? { name: plan.name, keys, refs, isCached: true }
       : { name: plan.name, keys, refs, isCached: false, reason: ran.stderr.trim().split('\n')[0] || `no value for ${missing.join(', ')}` }
   if (result.isCached) {
-    for (const key of keys) cache[cacheKey(plan.config.credentials![key]!)] = secrets[`credentials.${key}`]!
-    await $.env.set('AGENT_CONFIG_SECRETS', JSON.stringify(cache))
+    // Into the cache as it is now: another unlock may have added to it while this one asked.
+    const latest = parseCache(await $.env.get('AGENT_CONFIG_SECRETS'))
+    for (const key of keys) latest[cacheKey(plan.config.credentials![key]!)] = secrets[`credentials.${key}`]!
+    await $.env.set('AGENT_CONFIG_SECRETS', JSON.stringify(latest))
   }
   await update($, unlocks, list => [...list.filter(one => one.name !== plan.name), result])
   return result
@@ -235,7 +240,11 @@ async function closeBand($: EngineInterface): Promise<void> {
 }
 
 // Drops every cached secret and the band; the next skill of a ready component asks 1Password again.
+// Counts the times the cache was forgotten, so an unlock that was asking at the time keeps nothing.
+let forgets = 0
+
 async function forget($: EngineInterface): Promise<void> {
+  forgets += 1
   await $.env.set('AGENT_CONFIG_SECRETS', undefined)
   await update($, unlocks, () => [])
   await update($, notice, () => null)
