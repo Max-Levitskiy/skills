@@ -259,6 +259,14 @@ test('one approved 1Password read is cached for the session and not asked again'
   expect(parseCache(w.env[SECRET_CACHE_VAR])[cacheKey(REF)]).toBe('s3cret')
 })
 
+test('a reference with a cacheVar is left to it, not unlocked into the session cache', async ($, on) => {
+  const w = world(on)
+  w.apiKey = { ...REF, cacheVar: 'DEMO_TOKEN' }
+  await $.skill.prompt({ skill: 'demo', text: 'A' })
+  expect(loads(w)).toHaveLength(0)
+  expect(w.env[SECRET_CACHE_VAR]).toBeUndefined()
+})
+
 test('a declined read caches nothing and is not asked again on the next skill', async ($, on) => {
   const w = world(on, 3)
   await $.skill.prompt({ skill: 'demo', text: 'A' })

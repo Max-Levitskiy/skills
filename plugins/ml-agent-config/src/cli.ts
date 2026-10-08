@@ -345,17 +345,18 @@ function describe(parsed: ParsedArgs): number {
 
 /**
  * Each layer's own value for one key, so an editor can show what every level sets and which one
- * wins. Provenance is kept per leaf, so a key whose value is an object (a credential reference) has
- * none: its source is the top layer that sets it, unless that layer blocks it with null.
+ * wins. The source is the top layer that sets it: provenance is kept per leaf, so for a key whose
+ * value is an object it can be missing, or stale, a lower layer's scalar that a higher object
+ * replaced. A top layer that blocks it leaves the default, if any, in effect.
  */
-function withLevels(key: DescribedKey, own: { layer: Layer; config: ConfigObject }[]): DescribedKey {
+export function withLevels(key: DescribedKey, own: { layer: Layer; config: ConfigObject }[]): DescribedKey {
   const levels: DescribedKey["levels"] = {};
   for (const { layer, config } of own) {
     const value = ownValueAt(config, key.path);
     if (value !== undefined) levels[layer] = value;
   }
   const top = [...LAYERS].reverse().find((layer) => layer in levels);
-  const source = key.source ?? (top && levels[top] !== null && key.value !== null ? top : null);
+  const source = top === undefined ? (key.source ?? null) : levels[top] !== null ? top : key.source === "default" ? "default" : null;
   return { ...key, levels, source };
 }
 

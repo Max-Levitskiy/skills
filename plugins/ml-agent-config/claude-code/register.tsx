@@ -169,6 +169,18 @@ async function find($: EngineInterface, names: string[]): Promise<Plan | undefin
 }
 
 // Only well-formed references count: a component that needs setup may hold anything here yet.
+/**
+ * The 1Password keys an unlock would ask for: uncached, and with no cacheVar. A reference with one
+ * keeps its own cache in that variable, and load answers it from there when it holds a value, which
+ * is not a 1Password secret to keep under the op:// reference. The variable's value cannot be read
+ * here, so such a reference is left to it.
+ */
+async function toAsk($: EngineInterface, plan: Plan): Promise<string[]> {
+  if (!plan.ready) return []
+  const keys = onePasswordKeys(plan, parseCache(await $.env.get('AGENT_CONFIG_SECRETS')))
+  return keys.filter(key => !plan.config.credentials![key]!.cacheVar)
+}
+
 export function onePasswordKeys(plan: Plan, cache: Record<string, string>): string[] {
   const credentials: unknown = plan.config.credentials
   if (!credentials || typeof credentials !== 'object' || Array.isArray(credentials)) return []
@@ -184,8 +196,7 @@ export function onePasswordKeys(plan: Plan, cache: Record<string, string>): stri
 // One `load` for every uncached 1Password key, so the person approves once. Secrets come back on
 // fd 3, redirected to the stdout this module reads; they never reach the model.
 export async function unlock($: EngineInterface, plan: Plan): Promise<Unlock | undefined> {
-  const cache = parseCache(await $.env.get('AGENT_CONFIG_SECRETS'))
-  const keys = onePasswordKeys(plan, cache)
+  const keys = await toAsk($, plan)
   if (keys.length === 0) return undefined
   const refs = keys.map(key => cacheKey(plan.config.credentials![key]!))
   const epoch = forgets
@@ -666,7 +677,7 @@ function actions($: EngineInterface, canType: boolean): Actions {
 
 /** The 1Password references a ready plan holds that the session cache does not, by key. */
 async function uncached($: EngineInterface, plan: Plan): Promise<string[]> {
-  return plan.ready ? onePasswordKeys(plan, parseCache(await $.env.get('AGENT_CONFIG_SECRETS'))) : []
+  return toAsk($, plan)
 }
 
 // What is cached is read from the cache against the plan's references now, not from the last unlock:
@@ -728,7 +739,7 @@ export const register: Register = on => {
     // A person who declined Touch ID once this session is not asked again on every skill, unless a
     // reference changed since. Anything cached is not asked for at all.
     const earlier = (await read($, unlocks)).find(one => one.name === plan.name)
-    const pending = plan.ready ? onePasswordKeys(plan, parseCache(await $.env.get('AGENT_CONFIG_SECRETS'))) : []
+    const pending = await toAsk($, plan)
     const wasDeclined = earlier && !earlier.isCached && pending.every(key => earlier.refs.includes(cacheKey(plan.config.credentials![key]!)))
     const unlocked = plan.ready && !wasDeclined ? await unlock($, plan) : undefined
     if (!plan.ready) {

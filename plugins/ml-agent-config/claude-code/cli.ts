@@ -3,7 +3,7 @@
 
 import type { Json } from '../types'
 
-export type Reference = { source: string; ref?: string }
+export type Reference = { source: string; ref?: string; cacheVar?: string }
 
 export type Plan = {
   name: string
