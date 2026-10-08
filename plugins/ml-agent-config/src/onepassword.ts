@@ -7,16 +7,19 @@
 import { spawnSync } from "child_process";
 import { CredentialError } from "./credentials";
 
+const MAX_OUTPUT = 256 * 1024 * 1024;
+
 const HINT = "Install the 1Password CLI and turn on its app integration, or run 'op signin'.";
 
 function op(args: string[], account?: string): unknown {
   const full = [...args, "--format", "json", ...(account ? ["--account", account] : [])];
   // The environment is passed explicitly: older Bun looks `op` up on the PATH it started with, not
-  // the one the process has now.
-  const result = spawnSync("op", full, { encoding: "utf8", env: process.env });
-  if (result.error && (result.error as NodeJS.ErrnoException).code === "ENOENT") {
-    throw new CredentialError(`op is not installed or not on PATH. ${HINT}`);
-  }
+  // the one the process has now. Every item of an account can run to megabytes, past the default
+  // 1 MB of output, so the buffer is far larger.
+  const result = spawnSync("op", full, { encoding: "utf8", env: process.env, maxBuffer: MAX_OUTPUT });
+  const code = (result.error as NodeJS.ErrnoException | undefined)?.code;
+  if (code === "ENOENT") throw new CredentialError(`op is not installed or not on PATH. ${HINT}`);
+  if (code === "ENOBUFS") throw new CredentialError(`op ${args[0]} ${args[1]} printed more than ${MAX_OUTPUT / 1024 / 1024} MB.`);
   if (result.status !== 0) {
     throw new CredentialError(`op ${args[0]} ${args[1]} failed: ${(result.stderr || "").trim() || `exit ${result.status}`}. ${HINT}`);
   }

@@ -18,11 +18,15 @@ const FAKE_OP = `#!/usr/bin/env bun
 const args = process.argv.slice(2);
 const at = (flag) => args[args.indexOf(flag) + 1];
 const account = args.includes("--account") ? at("--account") : null;
-const say = (value) => { process.stdout.write(JSON.stringify(value)); process.exit(0); };
+// Written synchronously: process.exit would cut an asynchronous write to a pipe short.
+const say = (value) => { require("fs").writeSync(1, JSON.stringify(value)); process.exit(0); };
 if (args[0] === "account") say([
   { account_uuid: "A1", email: "me@example.com", url: "https://work.1password.com" },
   { account_uuid: "A2", email: "me@example.com", url: "https://my.1password.com" },
 ]);
+if (args[0] === "item" && args[1] === "list" && account === "BIG") {
+  say(Array.from({ length: 6000 }, (_, n) => ({ id: "I" + n, title: "Item " + n + " " + "x".repeat(200), category: "LOGIN", vault: { id: "V1", name: "Private" } })));
+}
 if (args[0] === "item" && args[1] === "list") {
   if (account === "A2") { process.stderr.write("locked"); process.exit(1); }
   say([
@@ -62,6 +66,10 @@ describe("1Password listing", () => {
     expect(found.items[0]).toEqual({ id: "I1", title: "Alpha", category: "API_CREDENTIAL", vault: { id: "V1", name: "Private" }, account: "A1" });
     expect(found.problems).toHaveLength(1);
     expect(found.problems[0]).toContain("locked");
+  });
+
+  test("a listing past the default 1 MB of output still reads", () => {
+    expect(onePassword.everything("BIG").items).toHaveLength(6000);
   });
 
   test("one account that refuses is an error", () => {
