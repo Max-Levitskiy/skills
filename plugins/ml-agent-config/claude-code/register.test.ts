@@ -50,6 +50,8 @@ type World = {
   apiKeyLevels?: Record<string, object>
   /** What the status line was set to, in order. */
   statuses: (string | undefined)[]
+  /** What `describe` prints, when not the demo keys. */
+  described?: string
   /** What `list` prints, when not the one demo component. */
   listed?: string
   /** Every plan's config, when not its own. */
@@ -119,6 +121,7 @@ function world(on: On, loadExit = 0): World {
       return ran(0, JSON.stringify({ components: [{ name: 'demo', plugin: 'ml-demo@max-skills', version: '1.0.0', declaration: '/d' }] }))
     }
     if (e.argv[1] === 'describe') {
+      if (w.described !== undefined) return ran(0, w.described)
       const keys =
         e.argv[2] === 'agent-config'
           ? [{ ...SETTING, path: 'notices.cacheBanner', description: 'Show the band', default: true, value: w.banner, source: 'default' }]
@@ -684,6 +687,32 @@ test('a plain object with a source key is edited as JSON, not as a credential', 
   // Opened and saved as it is: the object, not a blank that removes it.
   await ui.press({ key: 'save' })
   expect(JSON.parse(w.writes.at(-1)!).workspace.subdomain).toEqual({ source: 'replica', host: 'db' })
+  await ui.unmount()
+})
+
+test('what was typed keeps its type when the edit moves to a level holding another type', async ($, on) => {
+  const w = world(on)
+  w.layer = '{}'
+  w.subdomain = { value: 'beta', source: 'local', levels: { repo: [1], local: 'beta' } }
+  const ui = await open($)
+  await ui.press({ key: 'component:demo' })
+  await ui.press({ key: 'show' })
+  await ui.press({ key: 'show:repo' })
+  await ui.press({ key: 'setting:workspace.subdomain' })
+  await ui.input({ key: 'value', text: '[2]', kind: 'change' })
+  await ui.press({ key: 'level' })
+  await ui.press({ key: 'level:local' })
+  await ui.press({ key: 'save' })
+  expect(JSON.parse(w.writes.at(-1)!).workspace.subdomain).toEqual([2])
+  await ui.unmount()
+})
+
+test('a describe key with only a path still draws', async ($, on) => {
+  const w = world(on)
+  w.described = JSON.stringify({ keys: [{ path: 'x' }], layers: [{ layer: 'global', path: '/home/me/global.json' }] })
+  const ui = await open($)
+  await ui.press({ key: 'component:demo' })
+  expect(await ui.find({ key: 'setting:x' })).toBeDefined()
   await ui.unmount()
 })
 

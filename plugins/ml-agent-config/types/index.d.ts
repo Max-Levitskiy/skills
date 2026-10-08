@@ -46,6 +46,8 @@ export type Edit = {
   draft: Record<string, string>
   /** Something was typed or picked: switching the level keeps it instead of loading that level's value. */
   isDirty: boolean
+  /** What the text is read as: the value the edit started from, kept while what was typed moves levels. */
+  like: Json
 }
 
 /** A 1Password item as listed: names only, never a value. */

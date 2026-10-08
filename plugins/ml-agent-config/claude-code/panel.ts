@@ -5,7 +5,7 @@
 import type { Component, Edit, Json, Level, Panel, Screen, Setting } from '../types'
 import { isObject } from './shapes'
 import { ORDER, levelLabel } from './ui/levels'
-import { SOURCES, editText, isBoolean, isReference, valueAt, type Stored } from './values'
+import { SOURCES, editText, isReference, valueAt, type Stored } from './values'
 
 export const PANE = 'agent-config'
 
@@ -55,15 +55,16 @@ export function readDescribe(stdout: string, home: string | undefined): Pick<Pan
         ? `~${path.slice(home.length)}`
         : path
   return {
+    // Each field as the screens read it, whatever an out-of-sync CLI left out.
     settings: out.keys.map(({ path, description, layer, default: fallback, value, source, credential, required, levels }) => ({
       path,
-      description,
-      layer,
-      default: fallback,
-      value,
-      source,
-      credential,
-      required,
+      description: typeof description === 'string' ? description : '',
+      layer: typeof layer === 'string' ? layer : null,
+      default: fallback ?? null,
+      value: value ?? null,
+      source: typeof source === 'string' ? source : null,
+      credential: credential === true,
+      required: required === true,
       levels: levels ?? {},
     })),
     layers: out.layers.filter(one => one.path).map(one => ({ layer: one.layer, path: short(one.path!), exists: one.exists ?? false }) satisfies Level),
@@ -105,6 +106,7 @@ export function editAt(setting: Setting, layer: string): Edit {
     source: reference && SOURCES[reference.source] ? reference.source : '1password',
     draft: Object.fromEntries(Object.entries(reference ?? {}).filter((entry): entry is [string, string] => typeof entry[1] === 'string')),
     isDirty: false,
+    like: from,
   }
 }
 
@@ -118,7 +120,7 @@ export function switchLevel(edit: Edit, setting: Setting, layer: string): Edit {
 
 /** The edit screen's first element: the field to type in, or the first choice. */
 export function firstEdit(setting: Setting, edit: Edit, canType: boolean, levels = 2): string {
-  if (isBoolean(setting, edit.layer)) return `value:${edit.text === 'off' ? 'off' : 'on'}`
+  if (typeof edit.like === 'boolean') return `value:${edit.text === 'off' ? 'off' : 'on'}`
   if (!canType) return levels > 1 ? 'level' : 'save'
   if (!setting.credential) return 'value'
   if (edit.source === '1password') return 'pick'

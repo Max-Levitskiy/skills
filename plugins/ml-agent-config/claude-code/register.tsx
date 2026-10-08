@@ -24,7 +24,7 @@ import { readableReference } from './screens/onepassword'
 import type { Actions } from './screens/context'
 import { isPlan, listedComponents, onePasswordFields, onePasswordListing, pathLayer } from './shapes'
 import { EMPTY_PANEL, NO_ONE_PASSWORD } from './state'
-import { SOURCES, isReference, parseText, targetLayer, valueAt, type Stored } from './values'
+import { SOURCES, isReference, parseText, targetLayer, type Stored } from './values'
 
 export type { Plan } from './cli'
 export { editText, parseText, showValue } from './values'
@@ -340,6 +340,7 @@ async function save($: EngineInterface, layer: string, path: string, value: Json
   if (!component) return 'no component selected'
   const mine = (saves.get(component.name) ?? 0) + 1
   saves.set(component.name, mine)
+  const opened = componentOpens
   const failed = await writeKey($, component, layer, path, value).catch((error: Error) => error.message || 'the write failed')
   if (!failed && component.name === OWN && path === 'notices.cacheBanner' && value === false) {
     await update($, notice, () => null)
@@ -351,6 +352,8 @@ async function save($: EngineInterface, layer: string, path: string, value: Json
     // A later save of this component started while this one refreshed: its answer is the newer one.
     if (mine !== saves.get(component.name)) return latest
     const components = latest.components.map(one => (one.name === component.name ? { ...one, ready } : one))
+    // The component was opened again since: that open's settings are the newer ones.
+    if (opened !== componentOpens) return { ...latest, components }
     // Another component opened while this one saved: its settings are not this one's.
     if (latest.selected !== component.name) return { ...latest, components }
     return { ...latest, ...detail, components, message: failed ? `Not saved: ${failed}` : detail.message }
@@ -419,8 +422,8 @@ async function saveEdit($: EngineInterface, layer?: string, close = 1): Promise<
     return refuse('this level blocks the ones under it; type or pick a value to replace the block, or Remove here')
   }
   if (!setting.credential) {
-    // Typed as the value the edit showed: this level's own, else the one in effect.
-    const parsed = parseText(edit.text, valueAt(setting, edit.layer))
+    // Typed as the value the edit started from, which stays with what was typed when it moves levels.
+    const parsed = parseText(edit.text, edit.like)
     if (parsed.error) return refuse(parsed.error)
     return saveHere($, parsed.value, at, close)
   }
