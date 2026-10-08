@@ -49,7 +49,7 @@ function own($: EngineInterface): { name: string; from: string } {
 function isPlan(value: unknown): value is Plan {
   const plan = value as Partial<Plan> | null
   const isObject = (one: unknown) => one !== null && typeof one === 'object' && !Array.isArray(one)
-  return isObject(plan) && typeof plan!.name === 'string' && typeof plan!.ready === 'boolean' && Array.isArray(plan!.actions) && isObject(plan!.config)
+  return isObject(plan) && typeof plan!.name === 'string' && typeof plan!.ready === 'boolean' && Array.isArray(plan!.actions) && Array.isArray(plan!.problems) && isObject(plan!.config)
 }
 
 async function started($: EngineInterface, name: string, from?: string): Promise<{ plan?: Plan; isUndeclared: boolean }> {
@@ -321,14 +321,15 @@ async function openComponent($: EngineInterface, name: string): Promise<void> {
   await refocus($, firstSetting(detail.settings))
 }
 
-// Counts the saves started, so a refresh that returns after a later save's is dropped.
-let saves = 0
+// Counts each component's saves, so a refresh that returns after a later save's is dropped.
+const saves = new Map<string, number>()
 
 // Write one key at one level and read the component again. The error, if any, comes back.
 async function save($: EngineInterface, layer: string, path: string, value: Json | undefined): Promise<string | undefined> {
   const component = selected(await read($, panel))
   if (!component) return 'no component selected'
-  const mine = ++saves
+  const mine = (saves.get(component.name) ?? 0) + 1
+  saves.set(component.name, mine)
   const failed = await writeKey($, component, layer, path, value).catch((error: Error) => error.message || 'the write failed')
   if (!failed && component.name === OWN && path === 'notices.cacheBanner' && value === false) {
     await update($, notice, () => null)
@@ -336,8 +337,8 @@ async function save($: EngineInterface, layer: string, path: string, value: Json
   const detail = await describe($, component)
   const ready = (await start($, component.name, component.from))?.ready ?? null
   await update($, panel, latest => {
-    // A later save started while this one refreshed: its snapshot and message are the newer ones.
-    if (mine !== saves) return latest
+    // A later save of this component started while this one refreshed: its answer is the newer one.
+    if (mine !== saves.get(component.name)) return latest
     const components = latest.components.map(one => (one.name === component.name ? { ...one, ready } : one))
     // Another component opened while this one saved: its settings are not this one's.
     if (latest.selected !== component.name) return { ...latest, components }

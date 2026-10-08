@@ -108,7 +108,7 @@ function world(on: On, loadExit = 0): World {
       return ran(0, JSON.stringify({ fields: [{ id: 'credential', label: 'credential', section: null, type: 'CONCEALED', reference: 'op://V2/IG/credential' }] }))
     }
     if (w.broken === 'garbled') return ran(0, 'Segmentation fault')
-    if (w.broken === 'shapeless' && e.argv[1] === 'start') return ran(0, '{}')
+    if (w.broken === 'shapeless' && e.argv[1] === 'start') return ran(0, '{"name":"demo","ready":true,"actions":[],"config":{}}')
     if (e.argv[1] === 'list') {
       return ran(0, JSON.stringify({ components: [{ name: 'demo', plugin: 'ml-demo@max-skills', version: '1.0.0', declaration: '/d' }] }))
     }
