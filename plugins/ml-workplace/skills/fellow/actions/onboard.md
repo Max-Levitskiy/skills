@@ -9,6 +9,11 @@ pick rather than type, then write the answers with `agent-config write fellow --
 Describe the keys first with `agent-config describe fellow`: it has each key's description and
 recommended layer, and the answers already set.
 
+Pass `--from <fellow-skill-dir>` to every `agent-config` call here: the folder holding
+`agent-config.json`, which is the parent of this `actions/` folder. It finds the same declaration
+that produced this plan, from an install or from a git checkout that is in no plugin registry,
+and never another installed version's.
+
 1. **`credentials.apiKey`**: where the Fellow API key lives. They generate one in Fellow under User
    Settings → Developer API (paid workspaces only; an admin must have enabled the API in Workspace
    Security Settings). Never accept the key itself as text and never write it into a config file:
@@ -22,8 +27,8 @@ recommended layer, and the answers already set.
    somewhere else. Transcripts are bulky and often sensitive: an absolute path outside the repo is
    the safe choice.
 
-`write` replaces the whole layer, so read it first (`agent-config describe fellow` lists what each
-layer sets) and write the merged whole.
+`write` replaces the whole layer, so read it first (`describe` lists what each layer sets) and
+write the merged whole.
 
 Then run the `verify` action. Configured means the `/me` call succeeded, not that a file exists.
 If verify fails on the credential, the config is fine but the secret is not reachable (`op` not

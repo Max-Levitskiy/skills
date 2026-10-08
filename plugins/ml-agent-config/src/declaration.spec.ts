@@ -7,7 +7,7 @@ import { join } from "path";
 
 const BIN = join(import.meta.dir, "..", "bin", "agent-config");
 
-function declare(dir: string, name: string): void {
+function writeDeclaration(dir: string, name: string): void {
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, "agent-config.json"), JSON.stringify({ version: 2, name }));
 }
@@ -38,11 +38,11 @@ function run(home: string, ...args: string[]): { code: number; stdout: string; s
 describe("a declaration in a skill's folder", () => {
   const home = claudeHome({
     "ml-workplace@max-skills": (root) => {
-      declare(join(root, "skills", "fellow"), "fellow");
-      declare(join(root, "skills", "atlassian"), "atlassian");
+      writeDeclaration(join(root, "skills", "fellow"), "fellow");
+      writeDeclaration(join(root, "skills", "atlassian"), "atlassian");
       mkdirSync(join(root, "skills", "plain"), { recursive: true });
     },
-    "ml-solo@max-skills": (root) => declare(root, "solo"),
+    "ml-solo@max-skills": (root) => writeDeclaration(root, "solo"),
   });
 
   test("list names every tool of a plugin, and a root declaration still counts", () => {
@@ -65,8 +65,8 @@ describe("a declaration in a skill's folder", () => {
   test("one name declared twice inside a plugin is an error, never a guess", () => {
     const twice = claudeHome({
       "ml-twice@max-skills": (root) => {
-        declare(root, "dup");
-        declare(join(root, "skills", "dup"), "dup");
+        writeDeclaration(root, "dup");
+        writeDeclaration(join(root, "skills", "dup"), "dup");
       },
     });
     const found = run(twice, "path", "dup");
