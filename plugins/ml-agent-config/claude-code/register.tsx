@@ -33,6 +33,14 @@ const unlocks = atom({ plugin: 'ml-agent-config', key: 'unlocks' } as const, [] 
 const notice = atom({ plugin: 'ml-agent-config', key: 'notice' } as const, null as string | null)
 // × closes the band for the session: a later unlock does not open it again.
 const isBandClosed = atom({ plugin: 'ml-agent-config', key: 'isBandClosed' } as const, false)
+
+// Counts the times the band was closed for the session, so an on saved meanwhile does not reopen it.
+let bandMoves = 0
+
+async function closeBandForSession($: EngineInterface): Promise<void> {
+  bandMoves += 1
+  await update($, isBandClosed, () => true)
+}
 const panel = atom({ plugin: 'ml-agent-config', key: 'panel' } as const, EMPTY_PANEL)
 
 async function bin($: EngineInterface): Promise<string> {
@@ -237,7 +245,7 @@ async function showsBanner($: EngineInterface): Promise<boolean> {
 
 async function hideBannerForGood($: EngineInterface): Promise<void> {
   // Closed for this session too, at once: a band being decided right now must not reopen it.
-  await update($, isBandClosed, () => true)
+  await closeBandForSession($)
   const failed = await writeKey($, own($), 'global', 'notices.cacheBanner', false)
   await update($, notice, () => null)
   if (failed) $.ui.toast(`agent-config: could not save the choice: ${failed}`)
@@ -255,7 +263,7 @@ async function announceCache($: EngineInterface, name: string): Promise<void> {
 }
 
 async function closeBand($: EngineInterface): Promise<void> {
-  await update($, isBandClosed, () => true)
+  await closeBandForSession($)
   await update($, notice, () => null)
 }
 
@@ -397,13 +405,14 @@ async function save($: EngineInterface, layer: string, path: string, value: Json
   // Off closes the band for the session before the write, as Don't show again does, so a band being
   // decided meanwhile finds it closed.
   if (isBandSetting && value === false) {
-    await update($, isBandClosed, () => true)
+    await closeBandForSession($)
     await update($, notice, () => null)
   }
+  const bandBefore = bandMoves
   const failed = await writeKey($, component, layer, path, value).catch((error: Error) => error.message || 'the write failed')
-  // On lets it show again this session, after ×, Don't show again or an earlier off, unless a later
-  // save of this component has started since: it may be an off, whose closing must stand.
-  if (!failed && isBandSetting && value === true && mine === saves.get(component.name)) await update($, isBandClosed, () => false)
+  // On lets it show again this session, after ×, Don't show again or an earlier off, unless the band
+  // was closed again while this saved: that closing is the newer word.
+  if (!failed && isBandSetting && value === true && bandBefore === bandMoves) await update($, isBandClosed, () => false)
   const detail = await describe($, component)
   const ready = (await start($, component.name, component.from))?.ready ?? null
   // Only the latest save's readiness counts: an older one may have seen a value since removed.
