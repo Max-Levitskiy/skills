@@ -52,6 +52,8 @@ type World = {
   statuses: (string | undefined)[]
   /** The API key's reference becomes this the moment load runs. */
   changeOnLoad?: object
+  /** And goes back to what it was before load returns. */
+  changeBackAfterLoad?: boolean
   /** 1Password refuses an item's fields. */
   fieldsFail?: boolean
   /** `path` leaves out whether the file exists. */
@@ -106,14 +108,20 @@ function world(on: On, loadExit = 0): World {
     if (e.init?.env?.CLAUDECODE !== '1') return ran(2, '', 'no CLAUDECODE')
     // As the CLI does: fd 3 holds one entry per requested key, spelled as requested.
     if (e.argv[0] === 'sh') {
-      // The config edited while load runs: load reads it, and so does every later start.
+      // The config edited while load runs: load reads it, and so does every later start, unless it
+      // is changed back before load returns.
+      const before = w.apiKey
       if (w.changeOnLoad) w.apiKey = w.changeOnLoad
       const keys = e.argv.slice(e.argv.indexOf('--secrets') + 1)
       if (loadExit === -1) throw new Error('timed out after 120000ms')
-      if (loadExit === -2) return ran(0, '{"credentials.api')
+      if (loadExit === -2) return ran(0, '{"secrets":{"credentials.api')
       if (loadExit === -3) return ran(0, 'null')
+      // With --with-references, beside each secret the reference it was resolved from, as the CLI does.
+      const reference = (w.apiKey as { cacheVar?: string }).cacheVar ? null : cacheKey(w.apiKey as typeof REF)
+      const secrets = Object.fromEntries(keys.map(key => [key, 's3cret']))
+      if (w.changeBackAfterLoad) w.apiKey = before
       return loadExit === 0
-        ? ran(0, JSON.stringify(Object.fromEntries(keys.map(key => [key, 's3cret']))))
+        ? ran(0, JSON.stringify({ secrets, references: Object.fromEntries(keys.map(key => [key, reference])) }))
         : ran(3, '', 'op failed: authorization denied. Install the 1Password CLI and run \'op signin\'.')
     }
     if (e.argv[1] === '1password') {
@@ -244,8 +252,7 @@ test('a component whose layer file is broken is looked up again, so a fix takes 
   w.broken = null
   const { text } = await $.skill.prompt({ skill: 'demo', text: 'B' })
   expect(text).toContain('B')
-  // Two lookups, and one more after the unlock to check its references did not change.
-  expect(w.runs.filter(argv => argv[1] === 'start' && argv[2] === 'demo')).toHaveLength(3)
+  expect(w.runs.filter(argv => argv[1] === 'start' && argv[2] === 'demo')).toHaveLength(2)
   expect(loads(w)).toHaveLength(1)
 })
 
@@ -254,7 +261,7 @@ test('one approved 1Password read is cached for the session and not asked again'
   await $.skill.prompt({ skill: 'demo', text: 'A' })
   await $.skill.prompt({ skill: 'demo', text: 'B' })
   expect(loads(w)).toEqual([
-    ['sh', '-c', 'exec "$0" load "$@" 3>&1 1>/dev/null', '/ac/bin/agent-config', 'demo', '--secrets', 'credentials.apiKey'],
+    ['sh', '-c', 'exec "$0" load "$@" 3>&1 1>/dev/null', '/ac/bin/agent-config', 'demo', '--with-references', '--secrets', 'credentials.apiKey'],
   ])
   expect(parseCache(w.env[SECRET_CACHE_VAR])[cacheKey(REF)]).toBe('s3cret')
 })
@@ -267,6 +274,15 @@ test('a reference with a cacheVar is left to it, not unlocked into the session c
   expect(w.env[SECRET_CACHE_VAR]).toBeUndefined()
   const { text } = await $.command.run({ command: 'agent-config', args: 'demo', ...COMMAND })
   expect(text).not.toContain('1Password: cached')
+})
+
+test('a reference changed and changed back while 1Password is asked is not cached under the first', async ($, on) => {
+  const w = world(on)
+  w.changeOnLoad = { source: '1password', ref: 'op://Private/Other/key' }
+  w.changeBackAfterLoad = true
+  await $.skill.prompt({ skill: 'demo', text: 'A' })
+  expect(w.apiKey).toEqual(REF)
+  expect(w.env[SECRET_CACHE_VAR]).toBeUndefined()
 })
 
 test('a cacheVar added while 1Password is asked leaves the reference to it', async ($, on) => {

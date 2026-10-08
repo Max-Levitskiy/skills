@@ -26,6 +26,7 @@ import { findDeclaration, listDeclarations, type FoundDeclaration } from "./decl
 import { effectiveConfig, unmetKeys, type Effective } from "./effective";
 import { buildPlan, guidePath } from "./actions";
 import { CredentialError, resolveCredential, type CredentialRef } from "./credentials";
+import { cacheKey } from "./secret-cache";
 import * as onePassword from "./onepassword";
 import {
   ACS_VERSION,
@@ -65,7 +66,10 @@ function report(text: string): void {
 const USAGE = `agent-config <command>
 
   start <name> [--from <dir>] [--require-ready]   what this component still needs, as JSON
-  load <name> [--secrets <key>...] [--from <dir>] config on stdout, secrets on fd 3
+  load <name> [--secrets <key>...] [--with-references] [--from <dir>]
+                                                  config on stdout, secrets on fd 3; with
+                                                  --with-references, each secret beside the
+                                                  reference it was resolved from
   write <name> --layer <layer> [--from <dir>]     replace one layer from JSON on stdin
   describe <name> [--from <dir>]                  the full questionnaire, with current answers
   path <name> [--layer <layer>] [--from <dir>]    where the layers live
@@ -89,10 +93,11 @@ interface ParsedArgs {
   item?: string;
   secrets: string[];
   requireReady: boolean;
+  withReferences: boolean;
 }
 
 function parseArgs(argv: string[]): ParsedArgs {
-  const parsed: ParsedArgs = { command: argv[0] ?? "", positionals: [], secrets: [], requireReady: false };
+  const parsed: ParsedArgs = { command: argv[0] ?? "", positionals: [], secrets: [], requireReady: false, withReferences: false };
   let collecting: "secrets" | null = null;
 
   for (let index = 1; index < argv.length; index += 1) {
@@ -100,6 +105,9 @@ function parseArgs(argv: string[]): ParsedArgs {
     if (argument === "--require-ready") {
       collecting = null;
       parsed.requireReady = true;
+    } else if (argument === "--with-references") {
+      collecting = null;
+      parsed.withReferences = true;
     } else if (["--from", "--layer", "--alias", "--account", "--vault", "--item"].includes(argument)) {
       collecting = null;
       const value = argv[index + 1];
@@ -260,6 +268,9 @@ function load(parsed: ParsedArgs): number {
   if (parsed.secrets.length === 0) return EXIT.ok;
 
   const secrets: Record<string, string> = {};
+  // Which reference each secret came from, as the session cache keys it; null when a cacheVar may
+  // have answered instead, so the caller does not keep that value as the reference's own.
+  const references: Record<string, string | null> = {};
   for (const key of parsed.secrets) {
     const logical = key.startsWith("credentials.") ? key.slice("credentials.".length) : key;
     const reference = effective.config.credentials;
@@ -271,13 +282,15 @@ function load(parsed: ParsedArgs): number {
       report(`credentials.${logical} is not configured, so it cannot be resolved.\n`);
       return EXIT.config;
     }
-    secrets[key] = resolveCredential(entry as unknown as CredentialRef, logical, repo.checkout);
+    const credential = entry as unknown as CredentialRef;
+    secrets[key] = resolveCredential(credential, logical, repo.checkout);
+    references[key] = credential.cacheVar ? null : cacheKey(credential);
   }
 
   // fd 3, never stdout: a script opens the third descriptor deliberately, while a naive
   // `bash -c "agent-config load … --secrets …"` run by an agent gets nothing on it.
   try {
-    writeSync(3, `${JSON.stringify(secrets)}\n`);
+    writeSync(3, `${JSON.stringify(parsed.withReferences ? { secrets, references } : secrets)}\n`);
   } catch {
     report(`--secrets writes to file descriptor 3, which is not open. Open it in the caller, e.g.\n` +
       `  secrets=$(agent-config load ${name} --secrets ${parsed.secrets.join(" ")} 3>&1 1>/dev/null)\n`);

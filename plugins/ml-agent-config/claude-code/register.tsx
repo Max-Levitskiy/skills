@@ -22,7 +22,7 @@ import { PANE, editAt, editing, referenceAt, firstEdit, firstSetting, layerNames
 import { draw } from './screens'
 import { readableReference } from './screens/onepassword'
 import type { Actions } from './screens/context'
-import { isPlan, listedComponents, onePasswordFields, onePasswordListing, pathLayer } from './shapes'
+import { isObject, isPlan, listedComponents, onePasswordFields, onePasswordListing, pathLayer } from './shapes'
 import { EMPTY_PANEL, NO_ONE_PASSWORD } from './state'
 import { SOURCES, isReference, parseText, targetLayer, type Stored } from './values'
 
@@ -208,37 +208,34 @@ export async function unlock($: EngineInterface, plan: Plan): Promise<Unlock | u
 
   // A run that times out or cannot start is a declined unlock, not a skill that fails to expand.
   const ran = await $.process
-    .run(['sh', '-c', 'exec "$0" load "$@" 3>&1 1>/dev/null', await bin($), plan.name, '--secrets', ...keys.map(key => `credentials.${key}`)], {
+    .run(['sh', '-c', 'exec "$0" load "$@" 3>&1 1>/dev/null', await bin($), plan.name, '--with-references', '--secrets', ...keys.map(key => `credentials.${key}`)], {
       env: HARNESS,
       timeoutMs: 120000,
     })
     .catch((error: Error) => ({ exitCode: 1, stdout: '', stderr: error.message || 'the load did not run' }))
   // An answer that is not JSON is a declined unlock too, not a skill that fails to expand.
   let secrets: Record<string, string> = {}
+  let resolved: Record<string, unknown> = {}
   try {
     const answer: unknown = ran.exitCode === 0 ? JSON.parse(ran.stdout) : null
-    if (answer && typeof answer === 'object' && !Array.isArray(answer)) {
-      secrets = Object.fromEntries(Object.entries(answer).filter((entry): entry is [string, string] => typeof entry[1] === 'string'))
+    if (isObject(answer) && isObject(answer.secrets) && isObject(answer.references)) {
+      secrets = Object.fromEntries(Object.entries(answer.secrets).filter((entry): entry is [string, string] => typeof entry[1] === 'string'))
+      resolved = answer.references
     }
   } catch {
     secrets = {}
+  }
+  // Each secret is kept only under the reference load says it resolved, and only when that is the
+  // reference asked for: one changed meanwhile, even and back again, or answered by a cacheVar, is not.
+  const changed = keys.filter((key, index) => resolved[`credentials.${key}`] !== refs[index])
+  if (Object.keys(secrets).length > 0 && changed.length > 0) {
+    return { name: plan.name, keys, refs, isCached: false, reason: 'a reference changed while 1Password was asked' }
   }
   const missing = keys.filter(key => !secrets[`credentials.${key}`])
   const result: Unlock =
     missing.length === 0
       ? { name: plan.name, keys, refs, isCached: true }
       : { name: plan.name, keys, refs, isCached: false, reason: ran.stderr.trim().split('\n')[0] || `no value for ${missing.join(', ')}` }
-  // The references read again after the load: one changed meanwhile may be what load resolved, and
-  // its secret must not be kept under the reference the plan named.
-  if (result.isCached) {
-    const again = await start($, plan.name)
-    const isSame = again !== undefined && keys.every((key, index) => {
-      const reference = again.config.credentials?.[key]
-      // Still a reference the session cache is for: a cacheVar added meanwhile leaves it to that.
-      return cacheableKeys(again).includes(key) && cacheKey(reference!) === refs[index]
-    })
-    if (!isSame) return { name: plan.name, keys, refs, isCached: false, reason: 'a reference changed while 1Password was asked' }
-  }
   const isKept = await onCache(async () => {
     // Forget pressed while 1Password was asked: what came back is dropped, as everything cached was.
     if (epoch !== forgets) return false
