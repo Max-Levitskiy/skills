@@ -393,12 +393,16 @@ async function save($: EngineInterface, layer: string, path: string, value: Json
   const mine = (saves.get(component.name) ?? 0) + 1
   saves.set(component.name, mine)
   const opened = componentOpens
-  const failed = await writeKey($, component, layer, path, value).catch((error: Error) => error.message || 'the write failed')
-  if (!failed && component.name === OWN && path === 'notices.cacheBanner') {
-    // Off hides the band now; on lets it show again this session, after × or Don't show again.
-    if (value === false) await update($, notice, () => null)
-    if (value === true) await update($, isBandClosed, () => false)
+  const isBandSetting = component.name === OWN && path === 'notices.cacheBanner'
+  // Off closes the band for the session before the write, as Don't show again does, so a band being
+  // decided meanwhile finds it closed.
+  if (isBandSetting && value === false) {
+    await update($, isBandClosed, () => true)
+    await update($, notice, () => null)
   }
+  const failed = await writeKey($, component, layer, path, value).catch((error: Error) => error.message || 'the write failed')
+  // On lets it show again this session, after ×, Don't show again or an earlier off.
+  if (!failed && isBandSetting && value === true) await update($, isBandClosed, () => false)
   const detail = await describe($, component)
   const ready = (await start($, component.name, component.from))?.ready ?? null
   // Only the latest save's readiness counts: an older one may have seen a value since removed.
