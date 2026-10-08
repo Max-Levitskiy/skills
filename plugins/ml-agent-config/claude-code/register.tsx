@@ -52,7 +52,8 @@ async function started($: EngineInterface, name: string, from?: string): Promise
     const ran = await $.process.run(argv, { env: HARNESS, timeoutMs: 15000 })
     if (ran.exitCode === 0) {
       const plan: unknown = JSON.parse(ran.stdout)
-      return { plan: isPlan(plan) ? plan : undefined, isUndeclared: false }
+      // Another component's plan, from a CLI that is not this one, is no answer for this name.
+      return { plan: isPlan(plan) && plan.name === name ? plan : undefined, isUndeclared: false }
     }
     // Exit 2 also covers a layer file that is not JSON, which a fix makes declared again.
     return { isUndeclared: ran.exitCode === 2 && ran.stderr.startsWith('No installed plugin declares') }
@@ -313,7 +314,7 @@ async function openPanel($: EngineInterface): Promise<void> {
   const kept = (await read($, panel)).onePassword ?? NO_ONE_PASSWORD
   const names = await storedNames($)
   // The 1Password list stays for the session; everything else starts over.
-  await update($, panel, () => ({ ...EMPTY_PANEL, onePassword: { ...kept, isLoading: false, isLoadingFields: false }, names, isLoading: true }))
+  await update($, panel, () => ({ ...EMPTY_PANEL, onePassword: { ...kept, isLoading: false, isLoadingFields: false, fieldsError: null }, names, isLoading: true }))
   await $.ui.open({ id: PANE, title: 'agent-config', focus: true, closeOnEscape: true, rows: 40 })
   const list = await components($)
   if (mine !== panelOpens) return
@@ -515,7 +516,7 @@ async function openItem($: EngineInterface, id: string): Promise<void> {
   const item = (await read($, panel)).onePassword.items.find(one => one.id === id)
   if (!item) return
   const mine = ++itemOpens
-  await setOnePassword($, { item, fields: [], isLoadingFields: true, error: null }, { ref: 0 })
+  await setOnePassword($, { item, fields: [], isLoadingFields: true, fieldsError: null }, { ref: 0 })
   await go($, { kind: 'fields' }, `item:${id}`)
   try {
     const flags = ['--vault', item.vault.id, '--item', item.id, ...(item.account ? ['--account', item.account] : [])]
@@ -526,7 +527,7 @@ async function openItem($: EngineInterface, id: string): Promise<void> {
     await refocus($, got.fields[0] && `ref:${got.fields[0].reference}`)
   } catch (error) {
     if (mine !== itemOpens || (await read($, panel)).onePassword.item?.id !== id) return
-    await setOnePassword($, { isLoadingFields: false, error: (error as Error).message })
+    await setOnePassword($, { isLoadingFields: false, fieldsError: (error as Error).message })
   }
 }
 

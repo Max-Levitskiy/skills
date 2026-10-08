@@ -50,6 +50,8 @@ type World = {
   apiKeyLevels?: Record<string, object>
   /** What the status line was set to, in order. */
   statuses: (string | undefined)[]
+  /** 1Password refuses an item's fields. */
+  fieldsFail?: boolean
   /** The component `path` answers for, when not the one asked about. */
   pathName?: string
   /** A file's own content, by path, where it is not the one layer file. */
@@ -69,7 +71,7 @@ type World = {
   /** 1Password lists one account instead of two. */
   oneAccount: boolean
   /** What every `start` prints instead of a plan: exit 2 for a broken layer file, or not JSON at all. */
-  broken: 'invalid' | 'garbled' | 'shapeless' | 'null-entry' | null
+  broken: 'invalid' | 'garbled' | 'shapeless' | 'null-entry' | 'other-name' | null
 }
 
 const SETTING = { layer: 'global', default: null, credential: false, group: null, required: true, problems: [] }
@@ -117,9 +119,11 @@ function world(on: On, loadExit = 0): World {
         if (w.oneAccount) return ran(0, JSON.stringify({ accounts: accounts.slice(0, 1), items, problems: [] }))
         return ran(0, JSON.stringify({ accounts, items: [...items, ...github], problems: [] }))
       }
+      if (w.fieldsFail) return ran(1, '', 'op item get failed: the item is locked')
       return ran(0, JSON.stringify({ fields: [{ id: 'credential', label: 'credential', section: null, type: 'CONCEALED', reference: 'op://V2/IG/credential' }] }))
     }
     if (w.broken === 'garbled') return ran(0, 'Segmentation fault')
+    if (w.broken === 'other-name' && e.argv[1] === 'start') return ran(0, '{"name":"other","ready":true,"actions":[],"problems":[],"config":{}}')
     if (w.broken === 'null-entry' && e.argv[1] === 'start') return ran(0, '{"name":"demo","ready":true,"actions":[null],"problems":[],"config":{}}')
     if (w.broken === 'shapeless' && e.argv[1] === 'start') return ran(0, '{"name":"demo","ready":true,"actions":[],"config":{}}')
     if (e.argv[1] === 'list') {
@@ -305,6 +309,11 @@ test('a start that answers JSON of the wrong shape leaves the skill as it is', a
   expect(w.statuses).toEqual([])
   const shown = await $.command.run({ command: 'agent-config', args: 'demo', ...COMMAND })
   expect(shown.text).toBe('demo: no agent-config declaration found.')
+
+  // Another component's plan is no plan for this one.
+  w.broken = 'other-name'
+  const other = await $.skill.prompt({ skill: 'demo', text: 'BODY' })
+  expect(other.text).toBe('BODY')
 
   // An action or a problem that is not one is no plan either.
   w.broken = 'null-entry'
@@ -920,6 +929,22 @@ test('an account filter the new listing lacks is cleared, so the items show agai
   w.oneAccount = true
   await ui.press({ key: 'reload' })
   expect(await ui.find({ key: 'item:I0' })).toBeDefined()
+  await ui.unmount()
+})
+
+test("an item's field error stays on its fields screen, not on the item list", async ($, on) => {
+  const w = world(on)
+  w.layer = '{}'
+  w.fieldsFail = true
+  const ui = await open($)
+  await ui.press({ key: 'component:demo' })
+  await ui.press({ key: 'setting:credentials.apiKey' })
+  await ui.press({ key: 'pick' })
+  await ui.press({ key: 'item:I0' })
+  expect(JSON.stringify(await ui.find({}))).toContain('the item is locked')
+  await ui.press({ key: 'back' })
+  expect(await ui.find({ key: 'item:I0' })).toBeDefined()
+  expect(JSON.stringify(await ui.find({}))).not.toContain('the item is locked')
   await ui.unmount()
 })
 
