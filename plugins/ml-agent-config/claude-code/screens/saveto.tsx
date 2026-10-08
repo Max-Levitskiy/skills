@@ -9,8 +9,8 @@ import { note, row, screen } from '../ui/screen'
 import { lastPart, showValue, type Names } from '../values'
 import type { Ctx } from './context'
 
-function holds(value: Json | undefined, names: Names): string {
-  return value === undefined ? 'not set there now' : value === null ? 'blocked there now' : `replaces ${showValue(value, names)}`
+function holds(value: Json | undefined, names: Names, isCredential: boolean): string {
+  return value === undefined ? 'not set there now' : value === null ? 'blocked there now' : `replaces ${showValue(value, names, isCredential)}`
 }
 
 export function saveTo({ now, ui, act }: Ctx): RenderElement {
@@ -26,7 +26,7 @@ export function saveTo({ now, ui, act }: Ctx): RenderElement {
         row(ui, {
           key: `saveto:${level.layer}`,
           label: `› ${LEVELS[level.layer]!.offer}`,
-          detail: `${fileOf(now, level.layer)} · ${holds(level.value, now.names)}`,
+          detail: `${fileOf(now, level.layer)} · ${holds(level.value, now.names, setting.credential)}`,
           onPress: () => act.saveTo(level.layer),
         }),
       ),

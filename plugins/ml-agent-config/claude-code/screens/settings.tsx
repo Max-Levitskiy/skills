@@ -14,12 +14,12 @@ import type { Ctx } from './context'
 export function valueLine(setting: Setting, show: string, layers: readonly string[], names: Names = {}): string {
   if (show !== 'effective') {
     const here = setting.levels[show]
-    return here === undefined ? 'not set here' : here === null ? 'blocked here' : showValue(here, names)
+    return here === undefined ? 'not set here' : here === null ? 'blocked here' : showValue(here, names, setting.credential)
   }
   if (setting.value === null) return setting.required ? 'missing' : 'not set'
   const below = setting.source && setting.source !== 'default' ? under(setting, setting.source, layers) : undefined
-  const overrides = below && showValue(below.value, names) !== showValue(setting.value, names) ? `, overrides ${showValue(below.value, names)}` : ''
-  return `${showValue(setting.value, names)} · ${levelLabel(setting.source)}${overrides}`
+  const overrides = below && showValue(below.value, names, setting.credential) !== showValue(setting.value, names, setting.credential) ? `, overrides ${showValue(below.value, names, setting.credential)}` : ''
+  return `${showValue(setting.value, names, setting.credential)} · ${levelLabel(setting.source)}${overrides}`
 }
 
 export function settings({ now, ui, Input, act }: Ctx): RenderElement {

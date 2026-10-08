@@ -103,7 +103,7 @@ export function edit({ now, ui, Input, act }: Ctx): RenderElement {
     here !== undefined &&
       row(ui, {
         key: 'remove',
-        label: below ? `› Remove here (back to ${showValue(below.value, now.names)})` : '› Remove here',
+        label: below ? `› Remove here (back to ${showValue(below.value, now.names, setting.credential)})` : '› Remove here',
         onPress: () => act.removeHere(),
       }),
     here !== null &&

@@ -41,12 +41,13 @@ export function namedReference(reference: string, names: Names): string {
   return parts.map((part, index) => (index === 2 || index === 3 ? (names[part] ?? part) : part)).join('/')
 }
 
-export function showValue(value: Json, names: Names = {}): string {
+/** A value as one line. Only a credential's value reads as a reference: another object may have a `source` too. */
+export function showValue(value: Json, names: Names = {}, isCredential = false): string {
   if (value === null) return 'not set'
   if (typeof value === 'boolean') return value ? 'on' : 'off'
   if (typeof value === 'string' || typeof value === 'number') return String(value)
   if (Array.isArray(value)) return value.map(one => showValue(one, names)).join(', ')
-  if (isReference(value)) {
+  if (isCredential && isReference(value)) {
     const kind = SOURCES[value.source]
     const where = (kind?.fields ?? []).map(field => value[field.name]).filter((part): part is string => typeof part === 'string' && part !== '')
     const shown = value.source === '1password' ? where.map(part => namedReference(part, names)) : where

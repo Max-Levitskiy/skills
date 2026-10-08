@@ -60,7 +60,7 @@ export function over(setting: Setting, layer: string, layers: readonly string[])
  * when it would only repeat the level: the value in effect here, over nothing different.
  */
 export function effect(setting: Setting, layer: string, layers: readonly string[], names: Names = {}): string {
-  const show = (value: Json) => showValue(value, names)
+  const show = (value: Json) => showValue(value, names, setting.credential)
   const here = setting.levels[layer]
   const audience = LEVELS[layer]?.audience ?? ''
   const above = over(setting, layer, layers)

@@ -902,7 +902,9 @@ test('with one 1Password account, a picked reference drops the account the old o
 })
 
 test('values read and write as plain text, typed by the current value', () => {
-  expect(showValue({ source: 'keychain', service: 'app', account: 'me' })).toBe('Keychain: app / me')
+  expect(showValue({ source: 'keychain', service: 'app', account: 'me' }, {}, true)).toBe('Keychain: app / me')
+  // Not a credential: an object with a source is shown as its fields.
+  expect(showValue({ source: 'replica', host: 'db' })).toBe('source: replica, host: db')
   expect(showValue(['a', 'b'])).toBe('a, b')
   expect(showValue(false)).toBe('off')
   expect(showValue({ subdomain: 'acme', port: 8080 })).toBe('subdomain: acme, port: 8080')
