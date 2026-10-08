@@ -111,6 +111,17 @@ export function everything(account?: string): {
   return { accounts: known, items: listed, problems };
 }
 
+/**
+ * One vault's items. With an account, that account's vault; without one, the vault, by id or name,
+ * in every account, as `everything` lists them: a vault in an account other than the default is
+ * found too.
+ */
+export function vaultItems(vault: string, account?: string): { items: (OnePasswordItem | OnePasswordListed)[]; problems?: string[] } {
+  if (account) return { items: items(vault, account) };
+  const found = everything();
+  return { items: found.items.filter((item) => item.vault.id === vault || item.vault.name === vault), problems: found.problems };
+}
+
 export function fields(vault: string, item: string, account?: string): OnePasswordField[] {
   const got = op(["item", "get", item, "--vault", vault], account) as {
     fields?: { id: string; label?: string; type: string; reference?: string; section?: { label?: string } }[];

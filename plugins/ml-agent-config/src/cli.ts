@@ -407,7 +407,7 @@ function browseOnePassword(parsed: ParsedArgs): number {
   if (what === "accounts") found = { accounts: onePassword.accounts() };
   else if (what === "vaults") found = { vaults: onePassword.vaults(parsed.account) };
   else if (what === "items" && !parsed.vault) found = onePassword.everything(parsed.account);
-  else if (what === "items") found = { items: onePassword.items(parsed.vault, parsed.account) };
+  else if (what === "items") found = onePassword.vaultItems(parsed.vault, parsed.account);
   else if (what === "fields") {
     found = { fields: onePassword.fields(need(parsed.vault, "--vault"), need(parsed.item, "--item"), parsed.account) };
   } else throw new ConfigError(`Unknown 1password subcommand ${JSON.stringify(what ?? "")}: accounts, vaults, items, fields`);

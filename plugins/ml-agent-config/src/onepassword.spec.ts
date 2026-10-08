@@ -72,6 +72,14 @@ describe("1Password listing", () => {
     expect(onePassword.everything("BIG").items).toHaveLength(6000);
   });
 
+  test("one vault with no account is looked for in every account, by id or name", () => {
+    const byName = onePassword.vaultItems("Private");
+    expect(byName.items.map((item) => item.title)).toEqual(["Alpha", "Zed"]);
+    expect(byName.problems).toHaveLength(1);
+    expect(onePassword.vaultItems("V1").items).toHaveLength(2);
+    expect(onePassword.vaultItems("Elsewhere").items).toEqual([]);
+  });
+
   test("one account that refuses is an error", () => {
     expect(() => onePassword.everything("A2")).toThrow("locked");
   });
