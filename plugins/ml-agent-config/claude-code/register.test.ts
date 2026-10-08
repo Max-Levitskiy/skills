@@ -60,6 +60,8 @@ type World = {
   files?: Record<string, string>
   /** `path` answers with every layer, as a CLI that ignores --layer would. */
   allLayers?: boolean
+  /** The component `describe` answers for, when not the one asked about. */
+  describedName?: string
   /** What `describe` prints, when not the demo keys. */
   described?: string
   /** What `list` prints, when not the one demo component. */
@@ -141,7 +143,7 @@ function world(on: On, loadExit = 0): World {
               { ...SETTING, path: 'credentials.apiKey', description: 'API key', credential: true, value: w.apiKey, source: w.apiKeyLevels ? 'local' : 'global', levels: w.apiKeyLevels ?? { global: w.apiKey } },
               { ...SETTING, path: 'workspace.subdomain', description: 'Subdomain', layer: 'repo', value: w.subdomain.value, source: w.subdomain.source, levels: w.subdomain.levels },
             ]
-      return ran(0, JSON.stringify({ keys, layers: w.layers.map(layer => ({ layer, path: `/home/me/${layer}.json`, exists: true })), repo: { checkout: null } }))
+      return ran(0, JSON.stringify({ name: w.describedName ?? e.argv[2], keys, layers: w.layers.map(layer => ({ layer, path: `/home/me/${layer}.json`, exists: true })), repo: { checkout: null } }))
     }
     if (e.argv[1] === 'path') {
       const layer = e.argv[e.argv.indexOf('--layer') + 1]
@@ -808,9 +810,27 @@ test('what was typed keeps its type when the edit moves to a level holding anoth
   await ui.unmount()
 })
 
+test('a describe answer for another component is not shown under this one', async ($, on) => {
+  const w = world(on)
+  w.describedName = 'other'
+  const ui = await open($)
+  await ui.press({ key: 'component:demo' })
+  expect(await ui.find({ key: 'setting:workspace.subdomain' })).toBeUndefined()
+  expect(JSON.stringify(await ui.find({}))).toContain('it answered for other, not demo')
+  await ui.unmount()
+})
+
+test('/agent-config <name> clears the needs-setup status once it sees the component ready', async ($, on) => {
+  const w = world(on)
+  await $.skill.prompt({ skill: 'fresh', text: 'A' })
+  w.ready.fresh = true
+  await $.command.run({ command: 'agent-config', args: 'fresh', ...COMMAND })
+  expect(w.statuses).toEqual(['agent-config: fresh needs setup', undefined])
+})
+
 test('a describe key with only a path still draws', async ($, on) => {
   const w = world(on)
-  w.described = JSON.stringify({ keys: [{ path: 'x' }], layers: [{ layer: 'global', path: '/home/me/global.json' }] })
+  w.described = JSON.stringify({ name: 'demo', keys: [{ path: 'x' }], layers: [{ layer: 'global', path: '/home/me/global.json' }] })
   const ui = await open($)
   await ui.press({ key: 'component:demo' })
   expect(await ui.find({ key: 'setting:x' })).toBeDefined()
@@ -820,6 +840,7 @@ test('a describe key with only a path still draws', async ($, on) => {
 test('a describe layer the pane does not know is left out, so the edit stays usable', async ($, on) => {
   const w = world(on)
   w.described = JSON.stringify({
+    name: 'demo',
     keys: [{ path: 'x', description: 'X', value: 'a', source: 'workspace', levels: { workspace: 'a', global: 'b' } }],
     layers: [{ layer: 'workspace', path: '/w.json' }, { layer: 'global', path: '/home/me/global.json' }],
   })

@@ -294,7 +294,7 @@ async function describe($: EngineInterface, component: Component): Promise<Pick<
   try {
     const ran = await $.process.run([await bin($), 'describe', component.name, ...from], { env: HARNESS, timeoutMs: 15000 })
     if (ran.exitCode !== 0) return { settings: [], layers: [], message: firstLine(ran.stderr) || 'describe failed' }
-    return { ...readDescribe(ran.stdout, await $.env.get('HOME')), message: null }
+    return { ...readDescribe(ran.stdout, await $.env.get('HOME'), component.name), message: null }
   } catch (error) {
     return { settings: [], layers: [], message: `describe failed: ${(error as Error).message}` }
   }
@@ -708,6 +708,7 @@ export const register: Register = on => {
     if (!name) return { text: 'Usage: /agent-config [<name> | unlock <name> | forget]' }
     const plan = await start($, name)
     if (!plan) return { text: `${name}: no agent-config declaration found.` }
+    if (plan.ready) clearSetupStatus($, plan.name)
     if (first === 'unlock') {
       if (!plan.ready) return { text: summary(plan, []) }
       const result = await unlock($, plan)

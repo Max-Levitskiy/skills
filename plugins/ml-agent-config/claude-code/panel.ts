@@ -32,10 +32,12 @@ export function fileOf(now: Panel, layer: string): string {
 }
 
 /** `describe` as the screens read it: paths shortened to ~ and to the repository's root. */
-export function readDescribe(stdout: string, home: string | undefined): Pick<Panel, 'settings' | 'layers'> {
+export function readDescribe(stdout: string, home: string | undefined, name: string): Pick<Panel, 'settings' | 'layers'> {
   const answer: unknown = JSON.parse(stdout)
   // An answer in another shape is no answer: the pane says describe failed, and stays usable.
   if (!isObject(answer) || !Array.isArray(answer.keys) || !Array.isArray(answer.layers)) throw new Error('it answered in another shape')
+  // Another component's keys, saved under this one, would write its values here.
+  if (answer.name !== name) throw new Error(`it answered for ${String(answer.name)}, not ${name}`)
   const out = {
     keys: answer.keys.filter(
       (one): one is Omit<Setting, 'levels'> & { levels?: Setting['levels'] } =>
