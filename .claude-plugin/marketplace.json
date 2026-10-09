@@ -1,5 +1,6 @@
 {
   "name": "max-skills",
+  "description": "Max Levitskiy's Claude Code plugins: AI-slop scoring, PR shipping gates, subagent orchestration, workplace tools, and layered agent config with secret-free credentials.",
   "owner": {
     "name": "Max Levitskiy",
     "email": "max.dstu@gmail.com"
@@ -96,7 +97,7 @@
     {
       "name": "ml-agent-config",
       "source": "./plugins/ml-agent-config",
-      "description": "The Agent Config Standard (ACS v1) as a reusable skill: layered global/repo/local settings, credential references that keep secrets out of git, and a re-runnable onboarding flow. Other skills and subagents invoke it instead of restating the rules, and vendor its zero-dependency loader instead of copying their own.",
+      "description": "The Agent Config Standard (ACS v1) as a reusable skill: layered global/repo/local settings, credential references that keep secrets out of git, and a re-runnable onboarding flow. Other skills and subagents invoke it instead of restating the rules, and vendor its zero-dependency loader instead of copying their own. On Claude Code, /agent-config opens a settings pane, and 1Password is approved once per session.",
       "version": "0.8.0",
       "license": "MIT",
       "author": {
