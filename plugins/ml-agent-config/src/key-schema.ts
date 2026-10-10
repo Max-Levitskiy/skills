@@ -8,7 +8,7 @@
 // declaration's own `schema.$defs` only (`#/$defs/<name>`). Any other keyword is an annotation,
 // read by neither.
 
-// The same shape as ConfigValue in layers.ts, which this file cannot import: that one needs Node.
+// A config value. Defined here rather than in layers.ts, which needs Node; layers.ts re-exports it.
 export type ConfigValue = string | number | boolean | null | ConfigValue[] | { [key: string]: ConfigValue };
 
 export type JsonType = "string" | "number" | "integer" | "boolean" | "object" | "array" | "null";
@@ -48,12 +48,17 @@ export function keySchema(entry: ValueSchema & { layer?: string }): ValueSchema 
   return schema;
 }
 
+/** A `$ref`'s name in `$defs`, and the schema it names there; no name when it is not `#/$defs/<name>`. */
+function refTarget(ref: string, defs: Defs): { name?: string; target?: ValueSchema } {
+  const name = REF.exec(ref)?.[1];
+  return name === undefined ? {} : { name, target: defs[decodeURIComponent(name)] };
+}
+
 /** The schema a `$ref` points at, followed until it points at none. */
 export function resolveRef(schema: ValueSchema, defs: Defs): ValueSchema {
   let current = schema;
   for (let hops = 0; current.$ref !== undefined; hops++) {
-    const name = REF.exec(current.$ref)?.[1];
-    const target = name === undefined ? undefined : defs[decodeURIComponent(name)];
+    const { target } = refTarget(current.$ref, defs);
     if (!target || hops > 32) return {};
     // Keywords beside the $ref still apply; the target's fill in the rest.
     const { $ref: _ref, ...beside } = current;
@@ -79,7 +84,7 @@ function fits(value: ConfigValue, type: JsonType): boolean {
   return actual === type || (type === "number" && actual === "integer");
 }
 
-const same = (a: ConfigValue, b: ConfigValue) => JSON.stringify(a) === JSON.stringify(b);
+export const same = (a: ConfigValue, b: ConfigValue) => JSON.stringify(a) === JSON.stringify(b);
 
 /**
  * Where a value breaks its schema, one line each, `at` naming the part. A layer may leave out what
@@ -89,7 +94,8 @@ const same = (a: ConfigValue, b: ConfigValue) => JSON.stringify(a) === JSON.stri
 export function check(value: ConfigValue, schema: ValueSchema, defs: Defs, at: string, partial = false): string[] {
   const s = resolveRef(schema, defs);
   if (value === null && partial) return [];
-  const wanted = types(s) ?? (s.properties || s.additionalProperties !== undefined ? ["object"] : s.items ? ["array"] : null);
+  const shape = inferred(s);
+  const wanted = types(s) ?? (shape ? [shape] : null);
   if (wanted && !wanted.some((type) => fits(value, type))) return [`${at} should be ${wanted.map(article).join(" or ")}, not ${article(typeOf(value))}`];
   if (s.enum && !s.enum.some((one) => same(one, value))) return [`${at} should be one of ${s.enum.map((one) => JSON.stringify(one)).join(", ")}`];
   if (s.const !== undefined && !same(s.const, value)) return [`${at} should be ${JSON.stringify(s.const)}`];
@@ -130,10 +136,10 @@ export function schemaProblems(schema: ValueSchema, defs: Defs, at: string, seen
   seen.add(schema);
   const problems: string[] = [];
   if (schema.$ref !== undefined) {
-    const name = REF.exec(schema.$ref)?.[1];
+    const { name, target } = refTarget(schema.$ref, defs);
     if (name === undefined) problems.push(`${at}: $ref "${schema.$ref}" should be #/$defs/<name>`);
-    else if (!defs[decodeURIComponent(name)]) problems.push(`${at}: $ref "${schema.$ref}" names no entry in schema.$defs`);
-    else problems.push(...schemaProblems(defs[decodeURIComponent(name)]!, defs, `$defs.${name}`, seen));
+    else if (!target) problems.push(`${at}: $ref "${schema.$ref}" names no entry in schema.$defs`);
+    else problems.push(...schemaProblems(target, defs, `$defs.${name}`, seen));
   }
   for (const type of types(schema) ?? []) if (!TYPES.includes(type)) problems.push(`${at}: unknown type "${type}"`);
   if (schema.pattern !== undefined) {
@@ -202,4 +208,9 @@ export function emptyOf(schema: ValueSchema | null, defs: Defs): ConfigValue {
   if (kind === "boolean") return false;
   if (kind === "enum") return s.enum![0] ?? null;
   return kind === "json" ? null : "";
+}
+
+/** The values a part may take, when its schema names them. */
+export function enumOf(schema: ValueSchema | null, defs: Defs): ConfigValue[] {
+  return (schema ? resolveRef(schema, defs).enum : undefined) ?? [];
 }

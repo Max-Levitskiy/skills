@@ -2,15 +2,17 @@
 
 import type { RenderElement } from 'claude-code'
 
-import type { Json } from '../../types'
+import type { Json, Setting } from '../../types'
+import type { Defs } from '../../src/key-schema'
+import { display } from '../tree'
 import { editing, fileOf, layerNames, selected } from '../panel'
 import { LEVELS, levelStack } from '../ui/levels'
 import { note, row, screen } from '../ui/screen'
-import { lastPart, showValue, type Names } from '../values'
+import { lastPart, type Names } from '../values'
 import type { Ctx } from './context'
 
-function holds(value: Json | undefined, names: Names, isCredential: boolean): string {
-  return value === undefined ? 'not set there now' : value === null ? 'blocked there now' : `replaces ${showValue(value, names, isCredential)}`
+function holds(setting: Setting, value: Json | undefined, names: Names, defs: Defs): string {
+  return value === undefined ? 'not set there now' : value === null ? 'blocked there now' : `replaces ${display(setting, value, names, defs)}`
 }
 
 export function saveTo({ now, ui, act }: Ctx): RenderElement {
@@ -26,7 +28,7 @@ export function saveTo({ now, ui, act }: Ctx): RenderElement {
         row(ui, {
           key: `saveto:${level.layer}`,
           label: `› ${LEVELS[level.layer]!.offer}`,
-          detail: `${fileOf(now, level.layer)} · ${holds(level.value, now.names, setting.credential)}`,
+          detail: `${fileOf(now, level.layer)} · ${holds(setting, level.value, now.names, now.defs)}`,
           onPress: () => act.saveTo(level.layer),
         }),
       ),

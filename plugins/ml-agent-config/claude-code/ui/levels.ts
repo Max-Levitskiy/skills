@@ -2,7 +2,9 @@
 // in that order: a higher level overrides a lower one key by key, and the default sits under all.
 
 import type { Json, Setting } from '../../types'
-import { showValue, type Names } from '../values'
+import type { Names } from '../values'
+import type { Defs } from '../../src/key-schema'
+import { display } from '../tree'
 
 /** Each level's name, its chip, a hint, who a value there reaches, and how an override there is offered. */
 export const LEVELS: Record<string, { label: string; short: string; hint: string; audience: string; offer: string }> = {
@@ -59,8 +61,8 @@ export function over(setting: Setting, layer: string, layers: readonly string[])
  * What a value at this level does, in one sentence: who it reaches and what it overrides. Empty
  * when it would only repeat the level: the value in effect here, over nothing different.
  */
-export function effect(setting: Setting, layer: string, layers: readonly string[], names: Names = {}): string {
-  const show = (value: Json) => showValue(value, names, setting.credential)
+export function effect(setting: Setting, layer: string, layers: readonly string[], names: Names, defs: Defs): string {
+  const show = (value: Json) => display(setting, value, names, defs)
   const here = setting.levels[layer]
   const audience = LEVELS[layer]?.audience ?? ''
   const above = over(setting, layer, layers)

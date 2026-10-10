@@ -129,13 +129,13 @@ function validate(declaration: Declaration, expectedName: string, path: string):
   }
 
   const topLevel = declaration.schema?.keys ?? {};
+  const defs = declaration.schema?.$defs ?? {};
   for (const { path: keyPath, entry } of declaredKeys(declaration)) {
     if (!entry || typeof entry.description !== "string" || !entry.description) {
       fail(`key "${keyPath}" needs a description — onboarding has nothing to ask without one`);
     }
     const schema = keySchema(entry);
     if (!schema) continue;
-    const defs = declaration.schema?.$defs ?? {};
     const problems = schemaProblems(schema, defs, keyPath);
     if (problems.length > 0) fail(`key "${keyPath}" has a schema it cannot read: ${problems.join("; ")}`);
     // A default is a value like any other: one its own schema refuses would be refused at every write.

@@ -5,18 +5,16 @@ import type { RenderElement } from 'claude-code'
 
 import type { Json, Setting } from '../../types'
 import type { Defs } from '../../src/key-schema'
-import { isStructured, summary } from '../tree'
+import { display } from '../tree'
 import { layerNames, selected } from '../panel'
 import { LEVELS, levelLabel, under } from '../ui/levels'
 import { note, row, screen } from '../ui/screen'
-import { showValue, type Names } from '../values'
+import type { Names } from '../values'
 import type { Ctx } from './context'
 
 /** The value line: in effect and from where, or what one level sets. */
-export function valueLine(setting: Setting, show: string, layers: readonly string[], names: Names = {}, defs: Defs = {}): string {
-  // A map reads as its entries' names, a list of entries as its count: their fields are on their screens.
-  const shown = (value: Json) =>
-    !setting.credential && isStructured(setting.schema, defs) ? summary(value, setting.schema, defs) : showValue(value, names, setting.credential)
+export function valueLine(setting: Setting, show: string, layers: readonly string[], names: Names, defs: Defs): string {
+  const shown = (value: Json) => display(setting, value, names, defs)
   if (show !== 'effective') {
     const here = setting.levels[show]
     return here === undefined ? 'not set here' : here === null ? 'blocked here' : shown(here)

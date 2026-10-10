@@ -121,11 +121,6 @@ export function valueAt(setting: Setting, layer: string): Json {
   return here !== undefined && here !== null ? here : (setting.value ?? setting.default)
 }
 
-/** An on/off key at this level, or, with no level, as it is in effect. */
-export function isBoolean(setting: Setting, layer?: string): boolean {
-  return typeof (layer ? valueAt(setting, layer) : (setting.value ?? setting.default)) === 'boolean'
-}
-
 // Where an edit lands unless the person picks another level: where the value is set now, else
 // where the declaration recommends, else global.
 export function targetLayer(setting: Setting, layers: readonly string[]): string {

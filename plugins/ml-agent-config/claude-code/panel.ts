@@ -2,9 +2,9 @@
 // edit starts, and `describe` turned into settings. Nothing here calls the engine; the presses that
 // do are in register.tsx, since the engine follows `$` only within the file that declares it.
 
-import type { Component, Edit, Json, Level, Panel, Screen, Setting } from '../types'
-import type { Defs, ValueSchema } from '../src/key-schema'
+import type { Component, Edit, Json, Level, Panel, Screen, Setting, ValueSchema } from '../types'
 import { isObject } from './shapes'
+import { addKey, atKey, choicesAt, getAt, isStructuredKind, isTreeSetting, kindAt, nodeAt, type At } from './tree'
 import { ORDER, levelLabel } from './ui/levels'
 import { SOURCES, editText, isReference, rootChoices, valueAt, type Stored } from './values'
 
@@ -51,7 +51,7 @@ export function readDescribe(stdout: string, home: string | undefined, name: str
     ),
     repo: isObject(answer.repo) ? (answer.repo as { checkout: string | null }) : undefined,
     // A CLI before schemas sends none: every key is then typed by its value, as it was.
-    defs: isObject(answer.defs) ? (answer.defs as Defs) : {},
+    defs: isObject(answer.defs) ? (answer.defs as Panel['defs']) : {},
   }
   const checkout = out.repo?.checkout
   const short = (path: string) =>
@@ -147,9 +147,42 @@ export function switchLevel(edit: Edit, setting: Setting, layer: string): Edit {
   return edit.isDirty ? { ...edit, layer } : editAt(setting, layer)
 }
 
-/** The edit screen's first element: the field to type in, or the first choice. */
-export function firstEdit(setting: Setting, edit: Edit, canType: boolean, levels = 2, defs: Defs = {}): string {
-  const choices = setting.credential ? null : rootChoices(setting, defs, edit.like)
+/**
+ * The parts a structured node lists: declared properties, then, in a map, whatever else it holds;
+ * a list's items by index. A field the schema does not name stays in the value either way.
+ */
+export function parts(now: Panel, at: At): string[] {
+  const setting = editing(now)!
+  const value = getAt(now.edit?.value, at)
+  const { resolved, kind } = nodeAt(setting.schema, now.defs, at)
+  if (kind === 'entries') return (Array.isArray(value) ? value : []).map((_, index) => String(index))
+  const declared = kind === 'fields' ? Object.keys(resolved.properties ?? {}) : []
+  const held = kind === 'map' && isObject(value) ? Object.keys(value).filter(name => !declared.includes(name)) : []
+  return [...declared, ...held]
+}
+
+/** Where the focus starts on a structured node: its first part, else its Add, else Save. */
+export function firstKey(now: Panel, at: At, canType: boolean): string {
+  const setting = editing(now)
+  if (!setting) return 'save'
+  for (const part of parts(now, at)) {
+    const child = [...at, part]
+    const node = nodeAt(setting.schema, now.defs, child)
+    if (node.kind === 'boolean' || node.kind === 'enum') return `${atKey(child)}:${editText(choicesAt(node, getAt(now.edit?.value, child), now.defs).current)}`
+    if (canType || isStructuredKind(node.kind)) return atKey(child)
+  }
+  const kind = kindAt(setting.schema, now.defs, at)
+  return kind === 'entries' || (kind === 'map' && canType) ? addKey(at) : 'save'
+}
+
+/** The edit screen's first element: a structured key's first part, the field to type in, or the first choice. */
+export function firstEdit(now: Panel, canType: boolean): string | undefined {
+  const setting = editing(now)
+  const edit = now.edit
+  if (!setting || !edit) return undefined
+  if (isTreeSetting(setting, now.defs)) return firstKey(now, [], canType)
+  const levels = now.layers.length
+  const choices = setting.credential ? null : rootChoices(setting, now.defs, edit.like)
   if (choices) return `value:${choices.includes(edit.text) ? edit.text : choices[0]}`
   if (!canType) return levels > 1 ? 'level' : 'save'
   if (!setting.credential) return 'value'

@@ -14,6 +14,7 @@ import { join, dirname } from "path";
 import { spawnSync } from "child_process";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { CONFIG_DIR, type RepoContext } from "./repo";
+import type { ConfigValue } from "./key-schema";
 
 export type Layer = "global" | "repo" | "user-repo" | "local";
 export const LAYERS: Layer[] = ["global", "repo", "user-repo", "local"];
@@ -27,7 +28,8 @@ const LOCAL_GITIGNORE_PATTERNS = [
 ];
 const JOURNAL_DEPTH = 3;
 
-export type ConfigValue = string | number | boolean | null | ConfigValue[] | { [key: string]: ConfigValue };
+// Defined in key-schema.ts, which has no Node, so the hooks module reads the same type.
+export type { ConfigValue };
 export type ConfigObject = { [key: string]: ConfigValue };
 
 export interface LayerFile {

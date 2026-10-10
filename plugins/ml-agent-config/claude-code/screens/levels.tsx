@@ -2,15 +2,17 @@
 
 import type { RenderElement } from 'claude-code'
 
-import type { Json } from '../../types'
+import type { Json, Setting } from '../../types'
+import type { Defs } from '../../src/key-schema'
+import { display } from '../tree'
 import { editing, layerNames, selected } from '../panel'
 import { levelStack } from '../ui/levels'
 import { note, row, screen } from '../ui/screen'
-import { lastPart, showValue, type Names } from '../values'
+import { lastPart, type Names } from '../values'
 import type { Ctx } from './context'
 
-function levelValue(value: Json | undefined, names: Names, isCredential: boolean): string {
-  return value === undefined ? 'not set' : value === null ? 'blocked' : showValue(value, names, isCredential)
+function levelValue(setting: Setting, value: Json | undefined, names: Names, defs: Defs): string {
+  return value === undefined ? 'not set' : value === null ? 'blocked' : display(setting, value, names, defs)
 }
 
 export function levels({ now, ui, act }: Ctx): RenderElement {
@@ -23,12 +25,12 @@ export function levels({ now, ui, act }: Ctx): RenderElement {
     ...levelStack(setting, layerNames(now)).map(level =>
       row(ui, {
         key: `level:${level.layer}`,
-        label: `${level.layer === chosen ? '◉' : '○'} ${level.label}  ${levelValue(level.value, now.names, setting.credential)}${level.isWinner ? '  wins' : ''}`,
+        label: `${level.layer === chosen ? '◉' : '○'} ${level.label}  ${levelValue(setting, level.value, now.names, now.defs)}${level.isWinner ? '  wins' : ''}`,
         detail: level.hint,
         onPress: () => act.chooseLevel(level.layer),
       }),
     ),
-    note(ui, `  Default  ${setting.default === null ? 'none' : showValue(setting.default, now.names, setting.credential)}${setting.source === 'default' ? '  wins' : ''}`),
+    note(ui, `  Default  ${setting.default === null ? 'none' : display(setting, setting.default, now.names, now.defs)}${setting.source === 'default' ? '  wins' : ''}`),
     layerNames(now).length === 1 && note(ui, 'Outside a repository only Everywhere is offered.'),
   ])
 }

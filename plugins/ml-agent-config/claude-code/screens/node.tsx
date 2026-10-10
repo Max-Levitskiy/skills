@@ -5,99 +5,49 @@
 
 import type { RenderElement, RenderNode } from 'claude-code'
 
-import type { Json, Panel } from '../../types'
-import { editing, selected, top } from '../panel'
-import { type Defs, resolveRef, type ValueSchema } from '../../src/key-schema'
-import { type At, getAt, itemName, kindAt, pointer, schemaAt, summary } from '../tree'
+import { same, type Kind } from '../../src/key-schema'
+import { editing, parts, selected, top } from '../panel'
+import { type At, addKey, atKey, choicesAt, getAt, isStructuredKind, itemName, kindAt, nodeAt, pointer, summary } from '../tree'
 import { editText } from '../values'
 import { note, row, screen } from '../ui/screen'
 import type { Ctx } from './context'
 
-/** An element's key: the part's place, dotted. */
-export const atKey = (at: At) => `at:${at.join('.')}`
-
-/** The draft's value as a node screen sees it: nothing yet reads as empty. */
-function draftValue(now: Panel): Json | undefined {
-  return now.edit?.value ?? undefined
-}
-
-/** A part's name as shown: the schema's title, else the property, entry name or item. */
-function label(schema: ValueSchema | null, defs: Defs, part: string, value: Json | undefined, isItem: boolean): string {
-  if (isItem) return itemName(value, Number(part))
-  const title = schema ? resolveRef(schema, defs).title : undefined
-  return title && !/^\d+$/.test(part) ? title : part
-}
-
-/** The part the parts of a node are listed in: declared properties, then whatever else it holds. */
-function parts(now: Panel, at: At): { part: string; isItem: boolean }[] {
-  const setting = editing(now)!
-  const value = getAt(draftValue(now), at)
-  const kind = kindAt(setting.schema, now.defs, at)
-  if (kind === 'entries') return (Array.isArray(value) ? value : []).map((_, index) => ({ part: String(index), isItem: true }))
-  const declared = kind === 'fields' ? Object.keys(resolveRef(schemaAt(setting.schema, now.defs, at)!, now.defs).properties ?? {}) : []
-  const held = value !== null && typeof value === 'object' && !Array.isArray(value) ? Object.keys(value) : []
-  // A field the schema does not name stays in the value, and is only shown in a map.
-  return [...declared, ...(kind === 'map' ? held.filter(name => !declared.includes(name)) : [])].map(part => ({ part, isItem: false }))
-}
-
-/** Where the focus starts on a node: its first part, else its Add, else Save. */
-export function firstKey(now: Panel, at: At, canType: boolean): string {
-  const setting = editing(now)
-  if (!setting) return 'save'
-  for (const { part } of parts(now, at)) {
-    const child = [...at, part]
-    const kind = kindAt(setting.schema, now.defs, child)
-    if (kind === 'boolean') return `${atKey(child)}:${getAt(draftValue(now), child) === true ? 'on' : 'off'}`
-    if (kind === 'enum') {
-      const options = resolveRef(schemaAt(setting.schema, now.defs, child)!, now.defs).enum ?? []
-      const current = getAt(draftValue(now), child) ?? options[0] ?? null
-      return `${atKey(child)}:${String(current)}`
-    }
-    if (canType || kind === 'fields' || kind === 'map' || kind === 'entries') return atKey(child)
-  }
-  const kind = kindAt(setting.schema, now.defs, at)
-  if (kind === 'entries' || (kind === 'map' && canType)) return `add:${at.join('.')}`
-  return 'save'
-}
-
 /** One part: picked, typed, or opened. */
-function field({ now, ui, Input, act }: Ctx, at: At, isItem: boolean): RenderNode {
+function field({ now, ui, Input, act }: Ctx, at: At, parent: Kind): RenderNode {
   const { Box, Button, Text } = ui
   const setting = editing(now)!
-  const schema = schemaAt(setting.schema, now.defs, at)
-  const kind = kindAt(setting.schema, now.defs, at)
-  const value = getAt(draftValue(now), at)
-  const name = label(schema, now.defs, at.at(-1)!, value, isItem)
+  const node = nodeAt(setting.schema, now.defs, at)
+  const { kind, resolved } = node
+  const value = getAt(now.edit?.value, at)
+  const part = at.at(-1)!
+  // An item by its label, a declared field by its schema's title, a map entry by its own name.
+  const name = parent === 'entries' ? itemName(value, Number(part)) : parent === 'fields' ? (resolved.title ?? part) : part
   const key = atKey(at)
-  const description = schema ? resolveRef(schema, now.defs).description : undefined
+  const description = resolved.description
 
   if (kind === 'boolean' || kind === 'enum') {
-    const options: Json[] = kind === 'boolean' ? [true, false] : (resolveRef(schema!, now.defs).enum ?? [])
-    const current = value ?? (kind === 'enum' ? (resolveRef(schema!, now.defs).default ?? null) : false)
+    const { options, current } = choicesAt(node, value, now.defs)
     return (
       <Box key={key} flexDirection="column">
         <Box>
           <Text>{name} </Text>
-          {options.map(option => {
-            const shown = option === true ? 'on' : option === false ? 'off' : String(option)
-            return (
-              <Button
-                key={`${key}:${shown}`}
-                label={shown}
-                variant={JSON.stringify(option) === JSON.stringify(current) ? 'primary' : undefined}
-                onPress={() => act.setPart(at, option)}
-              />
-            )
-          })}
+          {options.map(option => (
+            <Button
+              key={`${key}:${editText(option)}`}
+              label={editText(option)}
+              variant={same(option, current) ? 'primary' : undefined}
+              onPress={() => act.setPart(at, option)}
+            />
+          ))}
         </Box>
         {description && <Text dimColor>{`  ${description}`}</Text>}
       </Box>
     ) as RenderElement
   }
-  if (kind === 'fields' || kind === 'map' || kind === 'entries') {
-    return row(ui, { key, label: `› ${name}`, detail: summary(value, schema, now.defs), onPress: () => act.openNode(at) })
+  if (isStructuredKind(kind)) {
+    return row(ui, { key, label: `› ${name}`, detail: summary(value, node.schema, now.defs), onPress: () => act.openNode(at) })
   }
-  const text = setting && now.edit ? (now.edit.texts[pointer(at)] ?? editText(value ?? null)) : ''
+  const text = now.edit?.texts[pointer(at)] ?? editText(value ?? null)
   if (!Input) return note(ui, `${name}  ${text || 'not set'}`)
   return (
     <Input
@@ -113,35 +63,28 @@ function field({ now, ui, Input, act }: Ctx, at: At, isItem: boolean): RenderNod
 }
 
 /** A node's parts, and the way to add one: what the edit screen and each node screen draw. */
-export function nodeBody(ctx: Ctx, at: At): RenderNode[] {
+export function nodeBody(ctx: Ctx, at: At): (RenderNode | false | null | undefined)[] {
   const { now, ui, Input, act } = ctx
   const setting = editing(now)!
   const kind = kindAt(setting.schema, now.defs, at)
-  const listed = parts(now, at).map(({ part, isItem }) => field(ctx, [...at, part], isItem))
-  const where = at.join('.')
-  const noun = (() => {
-    const entry = schemaAt(setting.schema, now.defs, [...at, kind === 'entries' ? '0' : '*'])
-    return (entry && resolveRef(entry, now.defs).title) || (kind === 'entries' ? 'item' : 'entry')
-  })()
-  const adding: RenderNode[] = []
-  if (kind === 'map' && Input) {
-    adding.push(
+  const listed = parts(now, at).map(part => field(ctx, [...at, part], kind))
+  const noun = nodeAt(setting.schema, now.defs, [...at, kind === 'entries' ? '0' : '*']).resolved.title ?? (kind === 'entries' ? 'item' : 'entry')
+  return [
+    ...listed,
+    listed.length === 0 && kind !== 'fields' && note(ui, `No ${noun === 'entry' ? 'entries' : `${noun}s`} yet.`),
+    kind === 'map' && Input && (
       <Input
-        key={`add:${where}`}
+        key={addKey(at)}
         label={`Add ${noun}`}
         value={now.edit?.names[pointer(at)] ?? ''}
         placeholder={`a name for the new ${noun}`}
         submitLabel="add"
         onInput={typed => act.typeName(at, typed)}
         onSubmit={typed => act.addPart(at, typed)}
-      /> as RenderElement,
-    )
-  }
-  if (kind === 'entries') adding.push(row(ui, { key: `add:${where}`, label: `+ Add ${noun}`, onPress: () => act.addPart(at, '') }))
-  const isEmpty = listed.length === 0
-  return [...listed, isEmpty && kind !== 'fields' ? note(ui, `No ${noun === 'entry' ? 'entries' : `${noun}s`} yet.`) : null, ...adding].filter(
-    (one): one is RenderNode => Boolean(one),
-  )
+      /> as RenderElement
+    ),
+    kind === 'entries' && row(ui, { key: addKey(at), label: `+ Add ${noun}`, onPress: () => act.addPart(at, '') }),
+  ]
 }
 
 /** One part of the value on its own screen: its fields, its name when it is a map entry, Save and Remove. */
@@ -151,7 +94,7 @@ export function node(ctx: Ctx): RenderElement {
   const setting = editing(now)
   const at = top(now).at ?? []
   const path = [selected(now)?.name ?? '', setting?.path ?? '', ...at]
-  if (!setting || !now.edit || getAt(draftValue(now), at) === undefined) {
+  if (!setting || !now.edit || getAt(now.edit.value, at) === undefined) {
     return screen(ui, { path, onBack: () => act.back() }, [note(ui, 'Nothing to edit.')])
   }
   const parentKind = kindAt(setting.schema, now.defs, at.slice(0, -1))
@@ -172,6 +115,6 @@ export function node(ctx: Ctx): RenderElement {
     <Box key="actions" marginTop={1}>
       <Button key="save" label="Save here" variant="primary" onPress={() => act.saveEdit()} />
     </Box>,
-    (isEntry || isItem) && row(ui, { key: 'remove', label: `› Remove ${isEntry ? at.at(-1) : itemName(getAt(draftValue(now), at), Number(at.at(-1)))}`, onPress: () => act.removePart(at) }),
+    (isEntry || isItem) && row(ui, { key: 'remove', label: `› Remove ${isEntry ? at.at(-1) : itemName(getAt(now.edit.value, at), Number(at.at(-1)))}`, onPress: () => act.removePart(at) }),
   ])
 }

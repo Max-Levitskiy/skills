@@ -7,8 +7,8 @@ import type { RenderElement } from 'claude-code'
 import { editing, layerNames, selected } from '../panel'
 import { LEVELS, ORDER, effect, openAbove, under } from '../ui/levels'
 import { note, row, screen } from '../ui/screen'
-import { isStructured } from '../tree'
-import { SOURCES, rootChoices, showValue } from '../values'
+import { display, isTreeSetting } from '../tree'
+import { SOURCES, rootChoices } from '../values'
 import type { Ctx } from './context'
 import { nodeBody } from './node'
 
@@ -26,12 +26,12 @@ export function edit(ctx: Ctx): RenderElement {
   const overrides = openAbove(setting, layers).filter(layer => layer !== draft.layer)
   const kind = SOURCES[draft.source]
   // An object or a list of objects, with a schema saying so: its fields, not a line of JSON.
-  const isTree = !setting.credential && isStructured(setting.schema, now.defs)
+  const isTree = isTreeSetting(setting, now.defs)
   const isPlain = !setting.credential && !isTree
   // A plain value is picked when its schema says on/off or names the values it takes.
   const choices = isPlain ? rootChoices(setting, now.defs, draft.like) : null
 
-  const said = effect(setting, draft.layer, layers, now.names)
+  const said = effect(setting, draft.layer, layers, now.names, now.defs)
   // The level sits on the title line, at the right; a press opens the level list. With one level
   // there is nothing to pick, so it is only named.
   const others = ORDER.filter(layer => layers.includes(layer) && layer !== draft.layer)
@@ -111,7 +111,7 @@ export function edit(ctx: Ctx): RenderElement {
     here !== undefined &&
       row(ui, {
         key: 'remove',
-        label: below ? `› Remove here (back to ${showValue(below.value, now.names, setting.credential)})` : '› Remove here',
+        label: below ? `› Remove here (back to ${display(setting, below.value, now.names, now.defs)})` : '› Remove here',
         onPress: () => act.removeHere(),
       }),
     here !== null &&

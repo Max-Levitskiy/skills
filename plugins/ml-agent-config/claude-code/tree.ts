@@ -2,9 +2,9 @@
 // list's items. The edit keeps the whole value as a draft, and the text typed into each field
 // apart, read into the draft only on Save, so a half-typed number is never lost or saved.
 
-import type { Json } from '../types'
-import { check, childSchema, kindOf, resolveRef, type Defs, type Kind, type ValueSchema } from '../src/key-schema'
-import { editText, parseText, showValue } from './values'
+import type { Json, Setting } from '../types'
+import { check, childSchema, enumOf, kindOf, resolveRef, type Defs, type Kind, type ValueSchema } from '../src/key-schema'
+import { editText, parseText, showValue, type Names } from './values'
 
 /** Where a part sits in the value: property, entry name or item index, outermost first. */
 export type At = string[]
@@ -24,14 +24,47 @@ export function kindAt(root: ValueSchema | null, defs: Defs, at: At): Kind {
   return kindOf(schemaAt(root, defs, at), defs)
 }
 
-/** A key holding an object or a list of objects, drawn as fields rather than typed as JSON. */
-export function isStructured(schema: ValueSchema | null, defs: Defs): boolean {
-  const kind = kindOf(schema, defs)
+/** One part's schema, walked to once: as declared, with its `$ref` followed, and how it is drawn. */
+export function nodeAt(root: ValueSchema | null, defs: Defs, at: At): { schema: ValueSchema | null; resolved: ValueSchema; kind: Kind } {
+  const schema = schemaAt(root, defs, at)
+  return { schema, resolved: schema ? resolveRef(schema, defs) : {}, kind: kindOf(schema, defs) }
+}
+
+/** A kind drawn as fields on a screen of its own rather than typed. */
+export function isStructuredKind(kind: Kind): boolean {
   return kind === 'fields' || kind === 'map' || kind === 'entries'
 }
 
-const isObject = (value: Json | undefined): value is { [key: string]: Json } =>
+/** A key holding an object or a list of objects, drawn as fields rather than typed as JSON. */
+export function isStructured(schema: ValueSchema | null, defs: Defs): boolean {
+  return isStructuredKind(kindOf(schema, defs))
+}
+
+/** A setting edited a part at a time. A credential never is: it is a source and its fields. */
+export function isTreeSetting(setting: Setting, defs: Defs): boolean {
+  return !setting.credential && isStructured(setting.schema, defs)
+}
+
+export const isObject = (value: Json | undefined): value is { [key: string]: Json } =>
   value !== null && value !== undefined && typeof value === 'object' && !Array.isArray(value)
+
+/** A map that already holds an entry of this name. */
+export function nameTaken(holder: Json | undefined, name: string): boolean {
+  return isObject(holder) && name in holder
+}
+
+/** The element keys of a part, and of a map's or list's Add. */
+export const atKey = (at: At) => `at:${at.join('.')}`
+export const addKey = (at: At) => `add:${at.join('.')}`
+
+/**
+ * An on/off or enum part's choices, and the one in effect: its value, else its default, else the
+ * first. Labels are as typed (`on`, `off`, the value as text), so a button's key and its focus agree.
+ */
+export function choicesAt(node: { resolved: ValueSchema; kind: Kind }, value: Json | undefined, defs: Defs): { options: Json[]; current: Json } {
+  const options: Json[] = node.kind === 'boolean' ? [true, false] : enumOf(node.resolved, defs)
+  return { options, current: value ?? node.resolved.default ?? (node.kind === 'boolean' ? false : (options[0] ?? null)) }
+}
 
 export function getAt(value: Json | undefined, at: At): Json | undefined {
   let cursor = value
@@ -88,22 +121,20 @@ export function parseAs(text: string, schema: ValueSchema | null, like: Json, de
   const trimmed = text.trim()
   if (trimmed === '') return {}
   if (kind === 'number' || kind === 'integer') {
-    const number = Number(trimmed)
-    if (!Number.isFinite(number)) return { error: `${trimmed} is not a number` }
-    return kind === 'integer' && !Number.isInteger(number) ? { error: `${trimmed} is not a whole number` } : { value: number }
+    const parsed = parseText(text, 0)
+    const isFraction = kind === 'integer' && typeof parsed.value === 'number' && !Number.isInteger(parsed.value)
+    return isFraction ? { error: `${trimmed} is not a whole number` } : parsed
   }
   if (kind === 'string') return { value: text }
   if (kind === 'enum') {
-    const options = (schema ? resolveRef(schema, defs).enum : undefined) ?? []
+    const options = enumOf(schema, defs)
     const picked = options.find(option => editText(option) === trimmed)
     return picked === undefined ? { error: `pick one of ${options.map(option => editText(option)).join(', ')}` } : { value: picked }
   }
   if (kind === 'list') {
-    const items = schemaAt(schema, defs, ['0'])
-    const isNumbers = kindOf(items, defs) !== 'string'
-    if (trimmed.startsWith('[')) return parseText(text, [])
+    // Text items, or JSON: as any list of text is typed.
+    if (trimmed.startsWith('[') || kindOf(schemaAt(schema, defs, ['0']), defs) === 'string') return parseText(text, [])
     const parts = trimmed.split(',').map(part => part.trim()).filter(Boolean)
-    if (!isNumbers) return { value: parts }
     const numbers = parts.map(Number)
     const bad = parts.find((_, index) => !Number.isFinite(numbers[index]))
     return bad === undefined ? { value: numbers } : { error: `${bad} is not a number` }
@@ -156,6 +187,11 @@ export function summary(value: Json | undefined, schema: ValueSchema | null, def
   if (Array.isArray(value) && value.length === 0) return 'none'
   const line = showValue(value)
   return line.length > 72 ? `${line.slice(0, 71)}…` : line
+}
+
+/** A value of a setting as one line: a structured key by `summary`, any other as `showValue`. */
+export function display(setting: Setting, value: Json, names: Names, defs: Defs): string {
+  return isTreeSetting(setting, defs) ? summary(value, setting.schema, defs) : showValue(value, names, setting.credential)
 }
 
 /** What a list item is called: its label or name, else its place. */

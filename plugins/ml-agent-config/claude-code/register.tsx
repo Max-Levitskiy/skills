@@ -18,11 +18,10 @@ import type { EngineInterface, Register } from 'claude-code'
 import { cacheKey, parseCache } from '../src/secret-cache'
 import type { Component, Json, OnePassword, Panel, Screen, Setting, Unlock } from '../types'
 import { HARNESS, OWN, blockedParent, firstLine, withValue, type Plan } from './cli'
-import { PANE, editAt, editing, inheritedFields, referenceAt, firstEdit, firstSetting, layerNames, readDescribe, savedAt, selected, switchLevel, top } from './panel'
+import { PANE, editAt, editing, inheritedFields, referenceAt, firstEdit, firstKey, firstSetting, layerNames, readDescribe, savedAt, selected, switchLevel, top } from './panel'
 import { draw } from './screens'
-import { firstKey } from './screens/node'
-import { emptyOf, kindOf } from '../src/key-schema'
-import { fold, getAt, isStructured, kindAt, moveTexts, parseAs, pointer, renameAt, schemaAt, setAt } from './tree'
+import { emptyOf } from '../src/key-schema'
+import { atKey, fold, getAt, isStructured, isTreeSetting, kindAt, moveTexts, nameTaken, parseAs, pointer, renameAt, schemaAt, setAt } from './tree'
 import { readableReference } from './screens/onepassword'
 import type { Actions } from './screens/context'
 import { isObject, isPlan, listedComponents, onePasswordFields, onePasswordListing, pathLayer } from './shapes'
@@ -461,16 +460,7 @@ async function openEdit($: EngineInterface, setting: Setting, canType: boolean):
   const layer = layers.includes(now.show) ? now.show : targetLayer(setting, layers)
   const edit = editAt(setting, layer)
   await update($, panel, latest => ({ ...latest, edit }))
-  await go($, { kind: 'edit' }, `setting:${setting.path}`, await firstOnEdit($, canType))
-}
-
-/** Where the edit screen's focus starts: the first field of a structured key, else as firstEdit says. */
-async function firstOnEdit($: EngineInterface, canType: boolean): Promise<string | undefined> {
-  const now = await read($, panel)
-  const setting = editing(now)
-  if (!setting || !now.edit) return undefined
-  if (!setting.credential && isStructured(setting.schema, now.defs)) return firstKey(now, [], canType)
-  return firstEdit(setting, now.edit, canType, layerNames(now).length, now.defs)
+  await go($, { kind: 'edit' }, `setting:${setting.path}`, firstEdit({ ...now, edit }, canType))
 }
 
 async function setLevel($: EngineInterface, layer: string): Promise<void> {
@@ -522,17 +512,17 @@ async function saveEdit($: EngineInterface, layer?: string, close = 1): Promise<
     if (close > 1) return back($, close - 1, { message: `Not saved: ${why}` })
     await update($, panel, latest => ({ ...latest, message: `Not saved: ${why}` }))
   }
-  if (!setting.credential && isStructured(setting.schema, now.defs)) {
-    if (!edit.isDirty && at === edit.layer && setting.levels[at] === null) {
-      return refuse('this level blocks the ones under it; change a field to replace the block, or Remove here')
-    }
+  const isTree = isTreeSetting(setting, now.defs)
+  // A block stays until something is typed or picked: the value shown is only the one under it.
+  if (!edit.isDirty && at === edit.layer && setting.levels[at] === null) {
+    const replace = isTree ? 'change a field' : 'type or pick a value'
+    return refuse(`this level blocks the ones under it; ${replace} to replace the block, or Remove here`)
+  }
+  if (isTree) {
+    // Nothing set reads as no value, which removes the key here, never as a null that blocks.
     const folded = fold(edit.value ?? undefined, edit.texts, setting.schema, now.defs, setting.path)
     if (folded.error) return refuse(folded.error)
     return saveHere($, folded.value, at, closing)
-  }
-  // A block stays until something is typed or picked: the value shown is only the one under it.
-  if (!edit.isDirty && at === edit.layer && setting.levels[at] === null) {
-    return refuse('this level blocks the ones under it; type or pick a value to replace the block, or Remove here')
   }
   if (!setting.credential) {
     // Typed as its schema says, else as the value the edit started from, which stays with what was
@@ -662,12 +652,19 @@ function withoutAccount(draft: Record<string, string>): Record<string, string> {
 
 // A structured key's parts. Each change lands in the edit's draft; Save here writes the whole value.
 
+/** A draft value with every part removed reads as nothing set. */
+const asDraft = (value: Json | undefined): Json => value ?? null
+
+async function say($: EngineInterface, message: string): Promise<void> {
+  await update($, panel, latest => ({ ...latest, message }))
+}
+
 async function changeDraft($: EngineInterface, change: (edit: NonNullable<Panel['edit']>) => NonNullable<Panel['edit']>, isDirty = true): Promise<void> {
   await update($, panel, now => ({ ...now, message: null, edit: now.edit && { ...change(now.edit), isDirty: isDirty || now.edit.isDirty } }))
 }
 
 async function openNode($: EngineInterface, at: string[], canType: boolean): Promise<void> {
-  await go($, { kind: 'node', at }, `at:${at.join('.')}`)
+  await go($, { kind: 'node', at }, atKey(at))
   await refocus($, firstKey(await read($, panel), at, canType))
 }
 
@@ -675,24 +672,20 @@ async function addPart($: EngineInterface, at: string[], typed: string, canType:
   const now = await read($, panel)
   const setting = editing(now)
   if (!setting || !now.edit) return
-  const holder = getAt(now.edit.value ?? undefined, at)
+  const holder = getAt(now.edit.value, at)
   const kind = kindAt(setting.schema, now.defs, at)
   const name = kind === 'entries' ? String(Array.isArray(holder) ? holder.length : 0) : typed.trim()
-  const say = async (message: string) => {
-    await update($, panel, latest => ({ ...latest, message }))
-  }
-  if (!name) return say('Type a name for it first.')
-  if (kind === 'map' && holder !== null && typeof holder === 'object' && !Array.isArray(holder) && name in holder) return say(`${name} is already there.`)
+  if (!name) return say($, 'Type a name for it first.')
+  if (nameTaken(holder, name)) return say($, `${name} is already there.`)
   const child = [...at, name]
   const schema = schemaAt(setting.schema, now.defs, child)
   await changeDraft($, edit => ({
     ...edit,
-    value: setAt(edit.value ?? undefined, child, emptyOf(schema, now.defs)) ?? null,
+    value: asDraft(setAt(edit.value, child, emptyOf(schema, now.defs))),
     names: { ...edit.names, [pointer(at)]: '' },
   }))
-  const childKind = kindOf(schema, now.defs)
-  if (childKind === 'fields' || childKind === 'map' || childKind === 'entries') return openNode($, child, canType)
-  await refocus($, `at:${child.join('.')}`)
+  if (isStructured(schema, now.defs)) return openNode($, child, canType)
+  await refocus($, atKey(child))
 }
 
 async function renamePart($: EngineInterface, at: string[], typed: string): Promise<void> {
@@ -700,21 +693,17 @@ async function renamePart($: EngineInterface, at: string[], typed: string): Prom
   const name = typed.trim()
   const old = at.at(-1)!
   if (!now.edit || name === old) return
-  const parent = getAt(now.edit.value ?? undefined, at.slice(0, -1))
-  const say = async (message: string) => {
-    await update($, panel, latest => ({ ...latest, message }))
-  }
-  if (!name) return say('A name cannot be empty; Remove takes the entry out.')
-  if (parent !== null && typeof parent === 'object' && !Array.isArray(parent) && name in parent) return say(`${name} is already there.`)
+  if (!name) return say($, 'A name cannot be empty; Remove takes the entry out.')
+  if (nameTaken(getAt(now.edit.value, at.slice(0, -1)), name)) return say($, `${name} is already there.`)
   const to = [...at.slice(0, -1), name]
   await update($, panel, latest => ({
     ...latest,
     message: `Renamed ${old} to ${name}.`,
     // The screen on top shows the entry under its new name.
-    stack: latest.stack.map(screen => (screen.kind === 'node' && JSON.stringify(screen.at) === JSON.stringify(at) ? { ...screen, at: to } : screen)),
+    stack: latest.stack.map(screen => (screen.kind === 'node' && pointer(screen.at ?? []) === pointer(at) ? { ...screen, at: to } : screen)),
     edit: latest.edit && {
       ...latest.edit,
-      value: renameAt(latest.edit.value ?? undefined, at, name) ?? null,
+      value: asDraft(renameAt(latest.edit.value, at, name)),
       texts: moveTexts(latest.edit.texts, at, to),
       names: { ...latest.edit.names, [pointer(at)]: '' },
       isDirty: true,
@@ -727,13 +716,13 @@ async function removePart($: EngineInterface, at: string[]): Promise<void> {
   if (!now.edit) return
   const parent = at.slice(0, -1)
   // A list closes up behind the item taken out, so the texts typed for the items after it go too.
-  const isItem = Array.isArray(getAt(now.edit.value ?? undefined, parent))
+  const isItem = Array.isArray(getAt(now.edit.value, parent))
   await changeDraft($, edit => ({
     ...edit,
-    value: setAt(edit.value ?? undefined, at, undefined) ?? null,
+    value: asDraft(setAt(edit.value, at, undefined)),
     texts: moveTexts(edit.texts, isItem ? parent : at, null),
   }))
-  await back($, 1, { message: `Removed ${at.at(-1)}. Save here to keep it.`, focus: parent.length === 0 ? undefined : `at:${parent.join('.')}` })
+  await back($, 1, { message: `Removed ${at.at(-1)}. Save here to keep it.`, focus: parent.length === 0 ? undefined : atKey(parent) })
 }
 
 /** The presses, bound to this engine, for the screens to call. */
@@ -752,8 +741,7 @@ function actions($: EngineInterface, canType: boolean): Actions {
     setLevel: layer => setLevel($, layer),
     overrideAt: async layer => {
       await setLevel($, layer)
-      const now = await read($, panel)
-      await refocus($, await firstOnEdit($, canType))
+      await refocus($, firstEdit(await read($, panel), canType))
     },
     chooseLevel: async layer => {
       await setLevel($, layer)
@@ -785,7 +773,7 @@ function actions($: EngineInterface, canType: boolean): Actions {
     openItem: id => openItem($, id),
     pickField: reference => pickField($, reference),
     openNode: at => openNode($, at, canType),
-    setPart: (at, value) => changeDraft($, edit => ({ ...edit, value: setAt(edit.value ?? undefined, at, value) ?? null, texts: moveTexts(edit.texts, at, null) })),
+    setPart: (at, value) => changeDraft($, edit => ({ ...edit, value: asDraft(setAt(edit.value, at, value)), texts: moveTexts(edit.texts, at, null) })),
     typePart: (at, text) => changeDraft($, edit => ({ ...edit, texts: { ...edit.texts, [pointer(at)]: text } })),
     typeName: (at, text) => changeDraft($, edit => ({ ...edit, names: { ...edit.names, [pointer(at)]: text } }), false),
     addPart: (at, name) => addPart($, at, name, canType),

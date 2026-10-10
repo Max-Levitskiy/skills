@@ -1245,6 +1245,8 @@ test('a map of projects is edited a field at a time: typed, picked and opened, t
   await ui.press({ key: 'setting:projects' })
   expect(await ui.find({ key: 'value' })).toBeUndefined()
   expect(await text(ui, 'row:at:acme')).toContain('label: Acme')
+  // An entry reads by its own name, never by its schema's title (project).
+  expect(await text(ui, 'row:at:acme')).toContain('› acme')
   await ui.press({ key: 'at:acme' })
   await ui.input({ key: 'at:acme.label', text: 'Acme Corp', kind: 'change' })
   // An enum is picked; its default shows picked until then.
