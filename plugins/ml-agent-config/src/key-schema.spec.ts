@@ -153,6 +153,13 @@ describe("the CLI", () => {
     expect(constant(["describe", "demo"]).stderr).toContain("a key cannot hold null");
     const looping = component({ version: 1, keys: { k: { description: "K", $ref: "#/$defs/loop" } }, $defs: { loop: { $ref: "#/$defs/loop" } } });
     expect(looping(["describe", "demo"]).stderr).toContain("leads back to itself through $refs alone");
+    const saying = component({ version: 1, keys: { k: { description: "K", $ref: "#/$defs/loop" } }, $defs: { loop: { $ref: "#/$defs/loop", type: "string" } } });
+    expect(saying(["describe", "demo"]).code).toBe(0);
+    const mixed = component({ version: 1, keys: { mode: { description: "M", enum: [null, "auto"] } } });
+    expect(mixed(["describe", "demo"]).stderr).toContain("a key cannot hold null");
+    const malformed = component({ version: 1, keys: { mode: { description: "M", enum: {} } } });
+    const answer = malformed(["describe", "demo"]);
+    expect([answer.code, answer.stderr.includes("enum should be a list")]).toEqual([2, true]);
   });
 
   test("a declaration whose $ref names nothing, or whose default its schema refuses, is an error", () => {

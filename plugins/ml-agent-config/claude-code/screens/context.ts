@@ -36,7 +36,8 @@ export type Actions = {
   pickField: (reference: string) => Promise<void>
   /** A structured key's parts, each a place in the draft value: open one, pick or type its value. */
   openNode: (at: string[]) => Promise<void>
-  setPart: (at: string[], value: Json) => Promise<void>
+  /** No value takes the part out of the draft. */
+  setPart: (at: string[], value: Json | undefined) => Promise<void>
   typePart: (at: string[], text: string) => Promise<void>
   /** The name typed for a new map entry, or for a rename of one. */
   typeName: (at: string[], text: string) => Promise<void>

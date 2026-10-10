@@ -40,6 +40,8 @@ function field({ now, ui, Input, act }: Ctx, at: At): RenderNode {
               onPress={() => act.setPart(at, option)}
             />
           ))}
+          {/* Set here, it can be taken out again, back to the default or the level below. */}
+          {value !== undefined && <Button key={`${key}:unset`} label="unset" plain dimColor onPress={() => act.setPart(at, undefined)} />}
         </Box>
         {description && <Text dimColor>{`  ${description}`}</Text>}
       </Box>

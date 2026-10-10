@@ -181,7 +181,8 @@ export function parseAs(text: string, schema: ValueSchema | null, like: Json, de
   if (kind === 'enum') {
     const options = enumOf(schema, defs)
     const labels = choiceLabels(options)
-    const index = labels.indexOf(trimmed)
+    // A label may carry spaces of its own, so it is matched as typed before trimmed.
+    const index = labels.includes(text) ? labels.indexOf(text) : labels.indexOf(trimmed)
     if (index >= 0) return { value: options[index]! }
     return trimmed === '' ? {} : { error: `pick one of ${labels.join(', ')}` }
   }

@@ -183,7 +183,7 @@ export function keySchemaProblems(schema: ValueSchema, defs: Defs, at: string): 
   const problems = schemaProblems(schema, defs, at);
   const resolved = resolveRef(schema, defs);
   const own = types(resolved) ?? [];
-  const forcesNull = resolved.const === null || (resolved.enum !== undefined && resolved.enum.every((one) => one === null));
+  const forcesNull = resolved.const === null || (Array.isArray(resolved.enum) && resolved.enum.includes(null));
   if (own.includes("null") || forcesNull) problems.push(`${at}: a key cannot hold null, which blocks the layers under it; leave the key unset instead`);
   return problems;
 }
@@ -191,9 +191,12 @@ export function keySchemaProblems(schema: ValueSchema, defs: Defs, at: string): 
 /** A chain of schemas that are only a $ref each, leading back to one already met: it describes nothing. */
 function refLoops(ref: string, defs: Defs): boolean {
   const met: string[] = [];
-  for (let next: string | undefined = ref; next !== undefined; next = refTarget(next, defs).target?.$ref) {
+  for (let next: string | undefined = ref; next !== undefined; ) {
     if (met.includes(next)) return true;
     met.push(next);
+    // A schema that adds any keyword beside its $ref says something, so the chain is not empty.
+    const target: ValueSchema | undefined = refTarget(next, defs).target;
+    next = target && Object.keys(target).length === 1 ? target.$ref : undefined;
   }
   return false;
 }
@@ -211,6 +214,14 @@ export function schemaProblems(schema: ValueSchema, defs: Defs, at: string, seen
     else problems.push(...schemaProblems(target, defs, `$defs.${name}`, seen));
   }
   for (const type of types(schema) ?? []) if (!TYPES.includes(type)) problems.push(`${at}: unknown type "${type}"`);
+  // The declaration is JSON from a plugin, so each keyword's own shape is checked before it is read.
+  const isMap = (value: unknown) => value !== null && typeof value === "object" && !Array.isArray(value);
+  if (schema.enum !== undefined && !Array.isArray(schema.enum)) problems.push(`${at}: enum should be a list`);
+  if (schema.required !== undefined && !(Array.isArray(schema.required) && schema.required.every((one) => typeof one === "string"))) problems.push(`${at}: required should be a list of names`);
+  if (schema.properties !== undefined && !isMap(schema.properties)) problems.push(`${at}: properties should be an object`);
+  if (schema.items !== undefined && !isMap(schema.items)) problems.push(`${at}: items should be a schema`);
+  if (schema.additionalProperties !== undefined && typeof schema.additionalProperties !== "boolean" && !isMap(schema.additionalProperties)) problems.push(`${at}: additionalProperties should be true, false or a schema`);
+  if (problems.length > 0) return problems;
   if (schema.pattern !== undefined) {
     try {
       new RegExp(schema.pattern, "u");
