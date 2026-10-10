@@ -2,6 +2,7 @@
 // secret lives.
 
 import type { Json, Setting } from '../types'
+import { kindOf, resolveRef, type Defs } from '../src/key-schema'
 
 // What each credential source needs, in the order asked. The same required fields as
 // REQUIRED_FIELDS in src/credentials.ts, which this module cannot import (it needs Node).
@@ -120,11 +121,6 @@ export function valueAt(setting: Setting, layer: string): Json {
   return here !== undefined && here !== null ? here : (setting.value ?? setting.default)
 }
 
-/** An on/off key at this level, or, with no level, as it is in effect. */
-export function isBoolean(setting: Setting, layer?: string): boolean {
-  return typeof (layer ? valueAt(setting, layer) : (setting.value ?? setting.default)) === 'boolean'
-}
-
 // Where an edit lands unless the person picks another level: where the value is set now, else
 // where the declaration recommends, else global.
 export function targetLayer(setting: Setting, layers: readonly string[]): string {
@@ -135,4 +131,23 @@ export function targetLayer(setting: Setting, layers: readonly string[]): string
 /** A dotted key's last part, for a breadcrumb: credentials.apiKey is apiKey. */
 export function lastPart(path: string): string {
   return path.split('.').at(-1) ?? path
+}
+
+/**
+ * The values a plain key is picked from, as typed: on and off for one that holds on/off by its
+ * schema or its value, the schema's own values for an enum. Null for a key that is typed.
+ */
+export function rootChoices(setting: Setting, defs: Defs, like: Json): string[] | null {
+  const kind = setting.schema ? kindOf(setting.schema, defs) : null
+  if (kind === 'enum') return choiceLabels(resolveRef(setting.schema!, defs).enum ?? [])
+  return kind === 'boolean' || (kind === null && typeof like === 'boolean') ? ['on', 'off'] : null
+}
+
+/**
+ * Each choice's label, as typed: `on`, `off`, the value as text. Two values that would read alike
+ * (`1` and `"1"`) read as JSON instead, so each label names one value.
+ */
+export function choiceLabels(options: Json[]): string[] {
+  const plain = options.map(option => editText(option))
+  return options.map((option, index) => (plain.indexOf(plain[index]!) !== plain.lastIndexOf(plain[index]!) ? JSON.stringify(option) : plain[index]!))
 }

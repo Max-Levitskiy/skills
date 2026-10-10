@@ -14,6 +14,7 @@
 import {
   declaredKeys,
   DEFAULT_ONBOARD_ACTION,
+  valueProblems,
   type Declaration,
   type KeyEntry,
   type KeyGroup,
@@ -21,6 +22,7 @@ import {
 } from "./declaration";
 import { setValueAt, valueAt, type ConfigObject, type ConfigValue, type Layer } from "./layers";
 import { referenceProblems } from "./credentials";
+import { keySchema } from "./key-schema";
 import type { DescribedKey, Problem } from "./types";
 
 export type GroupStatus = "active" | "inactive" | "unevaluated";
@@ -96,6 +98,7 @@ export function effectiveConfig(
       description: entry.description,
       layer: entry.layer ?? null,
       default: entry.default ?? null,
+      schema: keySchema(entry),
       credential,
       group: group ? { when: group.when, action: group.action ?? DEFAULT_ONBOARD_ACTION, status } : null,
       required,
@@ -120,6 +123,12 @@ export function effectiveConfig(
       });
     }
     gaps.set(action, [...(gaps.get(action) ?? []), path]);
+  }
+
+  // A value its schema refuses is said, not planned for: the config may still work, and only the
+  // person knows which value was meant.
+  for (const { path, problems: wrong } of valueProblems(declaration, config, false)) {
+    problems.push({ code: "invalid-value", message: wrong.join("; "), keys: [path] });
   }
 
   return {

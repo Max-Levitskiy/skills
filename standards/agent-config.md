@@ -161,6 +161,8 @@ Relative paths resolve from the repo root; `~` expands to home. Supporting both 
 
 **Defaults** — a `defaults` object for tunables like page size or lookback window, so the user can change behaviour without passing flags every time.
 
+**Say what a key holds.** A key holding more than text — a number, a fixed set of values, an object, a map of named entries — declares it as JSON Schema in its key entry (`type`, `enum`, `properties`, `additionalProperties`, `items`; shared shapes in `schema.$defs`). `write` then refuses a value no consumer could read, and the `/agent-config` pane draws a field for each part instead of a line of JSON. The keywords are listed in `plugins/ml-agent-config/docs/working-actions.md`, under "What a key holds".
+
 ## Using the shared library
 
 The canonical implementation is [`plugins/ml-agent-config`](../plugins/ml-agent-config): a skill that teaches this protocol, plus `lib/config.ts` (layer paths, merge, gitignore, validation) and `lib/credentials.ts` (resolution) beside it. Those files define the API — read the signatures there rather than trusting a copy of them in prose.

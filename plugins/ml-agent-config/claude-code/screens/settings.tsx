@@ -3,23 +3,26 @@
 
 import type { RenderElement } from 'claude-code'
 
-import type { Setting } from '../../types'
+import type { Json, Setting } from '../../types'
+import type { Defs } from '../../src/key-schema'
+import { display } from '../tree'
 import { layerNames, selected } from '../panel'
 import { LEVELS, levelLabel, under } from '../ui/levels'
 import { note, row, screen } from '../ui/screen'
-import { showValue, type Names } from '../values'
+import type { Names } from '../values'
 import type { Ctx } from './context'
 
 /** The value line: in effect and from where, or what one level sets. */
-export function valueLine(setting: Setting, show: string, layers: readonly string[], names: Names = {}): string {
+export function valueLine(setting: Setting, show: string, layers: readonly string[], names: Names, defs: Defs): string {
+  const shown = (value: Json) => display(setting, value, names, defs)
   if (show !== 'effective') {
     const here = setting.levels[show]
-    return here === undefined ? 'not set here' : here === null ? 'blocked here' : showValue(here, names, setting.credential)
+    return here === undefined ? 'not set here' : here === null ? 'blocked here' : shown(here)
   }
   if (setting.value === null) return setting.required ? 'missing' : 'not set'
   const below = setting.source && setting.source !== 'default' ? under(setting, setting.source, layers) : undefined
-  const overrides = below && showValue(below.value, names, setting.credential) !== showValue(setting.value, names, setting.credential) ? `, overrides ${showValue(below.value, names, setting.credential)}` : ''
-  return `${showValue(setting.value, names, setting.credential)} · ${levelLabel(setting.source)}${overrides}`
+  const overrides = below && shown(below.value) !== shown(setting.value) ? `, overrides ${shown(below.value)}` : ''
+  return `${shown(setting.value)} · ${levelLabel(setting.source)}${overrides}`
 }
 
 export function settings({ now, ui, Input, act }: Ctx): RenderElement {
@@ -30,7 +33,7 @@ export function settings({ now, ui, Input, act }: Ctx): RenderElement {
     row(ui, {
       key: `setting:${setting.path}`,
       label: `› ${setting.path}`,
-      detail: valueLine(setting, now.show, layers, now.names),
+      detail: valueLine(setting, now.show, layers, now.names, now.defs),
       color: setting.value === null && setting.required && now.show === 'effective' ? 'red' : undefined,
       onPress: () => act.openEdit(setting),
     })

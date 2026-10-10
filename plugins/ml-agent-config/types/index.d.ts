@@ -6,6 +6,33 @@ export type Unlock = { name: string; keys: string[]; refs: string[]; isCached: b
 
 export type Json = string | number | boolean | null | Json[] | { [key: string]: Json }
 
+/**
+ * What a key holds, as JSON Schema: the subset src/key-schema.ts reads, restated here because the
+ * contract stands alone.
+ */
+export type JsonType = 'string' | 'number' | 'integer' | 'boolean' | 'object' | 'array' | 'null'
+
+export type ValueSchema = {
+  $ref?: string
+  type?: JsonType | JsonType[]
+  title?: string
+  description?: string
+  default?: Json
+  enum?: Json[]
+  const?: Json
+  properties?: { [name: string]: ValueSchema }
+  additionalProperties?: boolean | ValueSchema
+  required?: string[]
+  items?: ValueSchema
+  minimum?: number
+  maximum?: number
+  minLength?: number
+  maxLength?: number
+  pattern?: string
+  minItems?: number
+  maxItems?: number
+}
+
 /** One component in the pane: an installed plugin's declaration, or agent-config's own. */
 export type Component = { name: string; plugin: string; from?: string; ready: boolean | null }
 
@@ -19,6 +46,8 @@ export type Setting = {
   source: string | null
   credential: boolean
   required: boolean
+  /** What the key holds, as JSON Schema: a key holding an object is edited a field at a time. */
+  schema: ValueSchema | null
   /** What each level itself sets: absent where it sets nothing, null where it blocks the levels under it. */
   levels: { [layer: string]: Json }
 }
@@ -28,7 +57,9 @@ export type Level = { layer: string; path: string; exists: boolean }
 
 /** One screen of the pane. The pane draws the top of the stack; Back pops it. */
 export type Screen = {
-  kind: 'components' | 'settings' | 'show' | 'edit' | 'levels' | 'saveto' | 'files' | 'source' | 'onepassword' | 'filter' | 'fields'
+  kind: 'components' | 'settings' | 'show' | 'edit' | 'node' | 'levels' | 'saveto' | 'files' | 'source' | 'onepassword' | 'filter' | 'fields'
+  /** A node screen's part of the value being edited: property, entry name or item index, outermost first. */
+  at?: string[]
   /** A filter screen's subject. */
   by?: 'account' | 'vault' | 'type'
   /** The element pressed to open the next screen, focused again when it closes. */
@@ -48,6 +79,12 @@ export type Edit = {
   isDirty: boolean
   /** What the text is read as: the value the edit started from, kept while what was typed moves levels. */
   like: Json
+  /** A structured key's whole value as edited so far; parts are changed here, and saved together. */
+  value: Json
+  /** The text typed into each of its fields, by the part's pointer, read into the value on Save. */
+  texts: Record<string, string>
+  /** A name typed for a new entry or a rename, by the pointer of the map or the entry. */
+  names: Record<string, string>
 }
 
 /** A 1Password item as listed: names only, never a value. */
@@ -80,6 +117,8 @@ export type Panel = {
   components: Component[]
   selected: string | null
   settings: Setting[]
+  /** The selected component's `schema.$defs`, which a setting's schema may name. */
+  defs: Record<string, ValueSchema>
   /** The levels a value can be written to here, lowest first; the project levels need a repository. */
   layers: Level[]
   /** What the settings screen shows: the merged value, or one level's own. */

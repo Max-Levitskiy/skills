@@ -42,8 +42,9 @@ user's answers.
 _Avoid_: Manifest (that names the plugin manifest the harness reads), config, requirements
 
 **Schema**:
-The part of a declaration describing the component's own config. Today, which keys are required;
-later, the shape those keys must take.
+The part of a declaration describing the component's own config: which keys are required, and,
+as JSON Schema in each key's entry, the shape its value takes. `write` refuses a value that breaks
+it, and the settings pane draws a field for each part of it.
 _Avoid_: Validation, config spec
 
 ### Repositories

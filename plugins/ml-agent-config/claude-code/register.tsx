@@ -18,8 +18,11 @@ import type { EngineInterface, Register } from 'claude-code'
 import { cacheKey, parseCache } from '../src/secret-cache'
 import type { Component, Json, OnePassword, Panel, Screen, Setting, Unlock } from '../types'
 import { HARNESS, OWN, blockedParent, firstLine, withValue, type Plan } from './cli'
-import { PANE, editAt, editing, inheritedFields, referenceAt, firstEdit, firstSetting, layerNames, readDescribe, savedAt, selected, switchLevel } from './panel'
+import { PANE, editAt, editing, inheritedFields, referenceAt, firstEdit, firstKey, firstSetting, layerNames, readDescribe, savedAt, selected, switchLevel, top } from './panel'
 import { draw } from './screens'
+import { ORDER } from './ui/levels'
+import { emptyOf, has, kindOf } from '../src/key-schema'
+import { atKey, fold, getAt, isStructured, isTreeSetting, kindAt, mergedBelow, moveTexts, nameTaken, nodeAt, parseAs, pointer, renameAt, schemaAt, setAt, withRemovals, withoutPart } from './tree'
 import { readableReference } from './screens/onepassword'
 import type { Actions } from './screens/context'
 import { isObject, isPlan, listedComponents, onePasswordFields, onePasswordListing, pathLayer } from './shapes'
@@ -357,14 +360,14 @@ async function components($: EngineInterface): Promise<Component[]> {
   return Promise.all(all.map(async one => ({ ...one, ready: (await start($, one.name, one.from))?.ready ?? null })))
 }
 
-async function describe($: EngineInterface, component: Component): Promise<Pick<Panel, 'settings' | 'layers' | 'message'>> {
+async function describe($: EngineInterface, component: Component): Promise<Pick<Panel, 'settings' | 'defs' | 'layers' | 'message'>> {
   const from = component.from ? ['--from', component.from] : []
   try {
     const ran = await $.process.run([await bin($), 'describe', component.name, ...from], { env: HARNESS, timeoutMs: 15000 })
-    if (ran.exitCode !== 0) return { settings: [], layers: [], message: firstLine(ran.stderr) || 'describe failed' }
+    if (ran.exitCode !== 0) return { settings: [], defs: {}, layers: [], message: firstLine(ran.stderr) || 'describe failed' }
     return { ...readDescribe(ran.stdout, await $.env.get('HOME'), component.name), message: null }
   } catch (error) {
-    return { settings: [], layers: [], message: `describe failed: ${(error as Error).message}` }
+    return { settings: [], defs: {}, layers: [], message: `describe failed: ${(error as Error).message}` }
   }
 }
 
@@ -456,15 +459,15 @@ async function openEdit($: EngineInterface, setting: Setting, canType: boolean):
   const now = await read($, panel)
   const layers = layerNames(now)
   const layer = layers.includes(now.show) ? now.show : targetLayer(setting, layers)
-  const edit = editAt(setting, layer)
+  const edit = editAt(setting, layer, now.defs)
   await update($, panel, latest => ({ ...latest, edit }))
-  await go($, { kind: 'edit' }, `setting:${setting.path}`, firstEdit(setting, edit, canType, layers.length))
+  await go($, { kind: 'edit' }, `setting:${setting.path}`, firstEdit({ ...now, edit }, canType))
 }
 
 async function setLevel($: EngineInterface, layer: string): Promise<void> {
   const setting = editing(await read($, panel))
   if (!setting) return
-  await update($, panel, now => ({ ...now, message: null, edit: now.edit && switchLevel(now.edit, setting, layer) }))
+  await update($, panel, now => ({ ...now, message: null, edit: now.edit && switchLevel(now.edit, setting, layer, now.defs) }))
 }
 
 async function chooseSource($: EngineInterface, source: string): Promise<void> {
@@ -474,7 +477,7 @@ async function chooseSource($: EngineInterface, source: string): Promise<void> {
   // The source already picked: the fields typed so far stay.
   if (source === now.edit.source) return back($)
   // The source it had: its fields as stored. Another: empty fields.
-  const stored = editAt(setting, now.edit.layer)
+  const stored = editAt(setting, now.edit.layer, now.defs)
   const draft = stored.source === source ? stored.draft : {}
   await update($, panel, latest => ({ ...latest, edit: latest.edit && { ...latest.edit, source, draft, isDirty: true } }))
   await back($)
@@ -502,18 +505,37 @@ async function saveEdit($: EngineInterface, layer?: string, close = 1): Promise<
   const edit = now.edit
   if (!setting || !edit) return
   const at = layer ?? edit.layer
-  // Refused, the edit screen says why, so the value can be fixed where it was typed.
+  // Saved from a part's screen, those screens close too, back to the settings.
+  const parts = now.stack.length - 1 - now.stack.findLastIndex(one => one.kind === 'edit')
+  const closing = top(now).kind === 'node' ? parts + 1 : close
+  // Refused, the screen says why, so the value can be fixed where it was typed.
   const refuse = async (why: string) => {
     if (close > 1) return back($, close - 1, { message: `Not saved: ${why}` })
     await update($, panel, latest => ({ ...latest, message: `Not saved: ${why}` }))
   }
+  const isTree = isTreeSetting(setting, now.defs)
   // A block stays until something is typed or picked: the value shown is only the one under it.
   if (!edit.isDirty && at === edit.layer && setting.levels[at] === null) {
-    return refuse('this level blocks the ones under it; type or pick a value to replace the block, or Remove here')
+    const replace = isTree ? 'change a field' : 'type or pick a value'
+    return refuse(`this level blocks the ones under it; ${replace} to replace the block, or Remove here`)
+  }
+  if (isTree) {
+    // Nothing set reads as no value, which removes the key here, never as a null that blocks.
+    const folded = fold(edit.value ?? undefined, edit.texts, setting.schema, now.defs, setting.path)
+    if (folded.error) return refuse(folded.error)
+    const below = mergedBelow(ORDER.slice(0, ORDER.indexOf(at)).map(layer => setting.levels[layer]))
+    return saveHere($, withRemovals(folded.value, edit.like, below), at, closing)
   }
   if (!setting.credential) {
-    // Typed as the value the edit started from, which stays with what was typed when it moves levels.
-    const parsed = parseText(edit.text, edit.like)
+    // Typed as its schema says, else as the value the edit started from, which stays with what was
+    // typed when it moves levels.
+    // A text key typed empty holds empty text, which overrides a lower level; Remove here removes it.
+    const isEmptyText = edit.isDirty && edit.text.trim() === '' && setting.schema !== null && kindOf(setting.schema, now.defs) === 'string'
+    const parsed = isEmptyText
+      ? { value: edit.text }
+      : setting.schema
+        ? parseAs(edit.text, setting.schema, edit.like, now.defs)
+        : parseText(edit.text, edit.like)
     if (parsed.error) return refuse(parsed.error)
     return saveHere($, parsed.value, at, close)
   }
@@ -636,6 +658,85 @@ function withoutAccount(draft: Record<string, string>): Record<string, string> {
   return rest
 }
 
+// A structured key's parts. Each change lands in the edit's draft; Save here writes the whole value.
+
+/** A draft value with every part removed reads as nothing set. */
+const asDraft = (value: Json | undefined): Json => value ?? null
+
+async function say($: EngineInterface, message: string): Promise<void> {
+  await update($, panel, latest => ({ ...latest, message }))
+}
+
+async function changeDraft($: EngineInterface, change: (edit: NonNullable<Panel['edit']>) => NonNullable<Panel['edit']>, isDirty = true): Promise<void> {
+  await update($, panel, now => ({ ...now, message: null, edit: now.edit && { ...change(now.edit), isDirty: isDirty || now.edit.isDirty } }))
+}
+
+async function openNode($: EngineInterface, at: string[], canType: boolean): Promise<void> {
+  await go($, { kind: 'node', at }, atKey(at))
+  await refocus($, firstKey(await read($, panel), at, canType))
+}
+
+async function addPart($: EngineInterface, at: string[], typed: string, canType: boolean): Promise<void> {
+  const now = await read($, panel)
+  const setting = editing(now)
+  if (!setting || !now.edit) return
+  const holder = getAt(now.edit.value, at)
+  const kind = kindAt(setting.schema, now.defs, at)
+  const name = kind === 'entries' ? String(Array.isArray(holder) ? holder.length : 0) : typed.trim()
+  if (!name) return say($, 'Type a name for it first.')
+  const isField = kind === 'fields' && has(nodeAt(setting.schema, now.defs, at).resolved.properties ?? {}, name)
+  if (nameTaken(holder, name) || isField) return say($, `${name} is already there.`)
+  const child = [...at, name]
+  const schema = schemaAt(setting.schema, now.defs, child)
+  const empty = emptyOf(schema, now.defs)
+  await changeDraft($, edit => ({
+    ...edit,
+    // A list not set yet is started as a list, so its first item lands at index 0 of one.
+    value: asDraft(kind === 'entries' ? setAt(edit.value, at, [...(Array.isArray(holder) ? holder : []), empty]) : setAt(edit.value, child, empty)),
+    names: { ...edit.names, [pointer(at)]: '' },
+  }))
+  if (isStructured(schema, now.defs)) return openNode($, child, canType)
+  await refocus($, atKey(child))
+}
+
+async function renamePart($: EngineInterface, at: string[], typed: string): Promise<void> {
+  const now = await read($, panel)
+  const name = typed.trim()
+  const old = at.at(-1)!
+  if (!now.edit || name === old) return
+  if (!name) return say($, 'A name cannot be empty; Remove takes the entry out.')
+  if (nameTaken(getAt(now.edit.value, at.slice(0, -1)), name)) return say($, `${name} is already there.`)
+  const to = [...at.slice(0, -1), name]
+  await update($, panel, latest => ({
+    ...latest,
+    message: `Renamed ${old} to ${name}.`,
+    // The screen on top shows the entry under its new name.
+    stack: latest.stack.map(screen => (screen.kind === 'node' && pointer(screen.at ?? []) === pointer(at) ? { ...screen, at: to } : screen)),
+    edit: latest.edit && {
+      ...latest.edit,
+      value: asDraft(renameAt(latest.edit.value, at, name)),
+      texts: moveTexts(latest.edit.texts, at, to),
+      names: { ...latest.edit.names, [pointer(at)]: '' },
+      isDirty: true,
+    },
+  }))
+}
+
+async function removePart($: EngineInterface, at: string[]): Promise<void> {
+  const now = await read($, panel)
+  if (!now.edit) return
+  const parent = at.slice(0, -1)
+  // A list closes up behind the item taken out, and the texts typed for the items after it move with them.
+  const isItem = Array.isArray(getAt(now.edit.value, parent))
+  await changeDraft($, edit => ({
+    ...edit,
+    value: asDraft(setAt(edit.value, at, undefined)),
+    texts: withoutPart(edit.texts, at, isItem),
+    names: withoutPart(edit.names, at, isItem),
+  }))
+  await back($, 1, { message: `Removed ${at.at(-1)}. Save here to keep it.`, focus: parent.length === 0 ? undefined : atKey(parent) })
+}
+
 /** The presses, bound to this engine, for the screens to call. */
 function actions($: EngineInterface, canType: boolean): Actions {
   return {
@@ -652,9 +753,7 @@ function actions($: EngineInterface, canType: boolean): Actions {
     setLevel: layer => setLevel($, layer),
     overrideAt: async layer => {
       await setLevel($, layer)
-      const now = await read($, panel)
-      const setting = editing(now)
-      if (setting && now.edit) await refocus($, firstEdit(setting, now.edit, canType))
+      await refocus($, firstEdit(await read($, panel), canType))
     },
     chooseLevel: async layer => {
       await setLevel($, layer)
@@ -685,6 +784,13 @@ function actions($: EngineInterface, canType: boolean): Actions {
     },
     openItem: id => openItem($, id),
     pickField: reference => pickField($, reference),
+    openNode: at => openNode($, at, canType),
+    setPart: (at, value) => changeDraft($, edit => ({ ...edit, value: asDraft(setAt(edit.value, at, value)), texts: moveTexts(edit.texts, at, null) })),
+    typePart: (at, text) => changeDraft($, edit => ({ ...edit, texts: { ...edit.texts, [pointer(at)]: text } })),
+    typeName: (at, text) => changeDraft($, edit => ({ ...edit, names: { ...edit.names, [pointer(at)]: text } }), false),
+    addPart: (at, name) => addPart($, at, name, canType),
+    renamePart: (at, name) => renamePart($, at, name),
+    removePart: at => removePart($, at),
   }
 }
 

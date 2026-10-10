@@ -34,13 +34,13 @@
   },
 
   "//projects": "Named scopes. Filtering applies automatically when defaultProject is set; --all-meetings turns it off. A plain string matches as a substring; wrap in /slashes/ for a regex.",
+  "//people": "people: attendee emails or domains. A client domain is often the single most reliable signal.",
+  "//fallback": "fallback: what to do when nothing matches: undecided (default), include, or exclude. A project takes only label, title, people and fallback.",
   "projects": {
     "acme": {
       "label": "Acme Corp engagement",
       "title": { "include": ["Acme", "Project Falcon", "/\\bACM\\b/i"], "exclude": ["Acme social"] },
-      "//people": "Attendee emails or domains. A client domain is often the single most reliable signal.",
       "people": { "include": ["@acme.example"], "exclude": [] },
-      "//fallback": "What to do when nothing matches: undecided (default), include, or exclude.",
       "fallback": "undecided"
     },
     "platform": {

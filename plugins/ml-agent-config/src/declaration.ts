@@ -11,8 +11,9 @@
 
 import { join, dirname } from "path";
 import { existsSync, readFileSync, readdirSync } from "fs";
-import { ConfigError, type ConfigValue, type Layer } from "./layers";
+import { ConfigError, ownValueAt, type ConfigObject, type ConfigValue, type Layer } from "./layers";
 import { pluginInstalls, type DependencyKind, type Harness } from "./harness";
+import { check, keySchema, keySchemaProblems, type Defs, type ValueSchema } from "./key-schema";
 
 export const DECLARATION_FILE = "agent-config.json";
 export const DECLARATION_VERSION = 2;
@@ -22,7 +23,8 @@ export type Scalar = string | number | boolean;
 /** A bare string is a dot-path meaning "truthy". An object is AND across its entries. */
 export type WhenMatcher = string | Record<string, Scalar | Scalar[]>;
 
-export interface KeyEntry {
+/** A key: what it means, where it is expected, and, as JSON Schema, what it holds (key-schema.ts). */
+export interface KeyEntry extends ValueSchema {
   description: string;
   /** Advisory only: onboarding recommends it with a reason, writing elsewhere is permitted. */
   layer?: Layer;
@@ -57,6 +59,8 @@ export interface Declaration {
     version?: number;
     keys?: Record<string, KeyEntry>;
     groups?: KeyGroup[];
+    /** Schemas a key reaches with `"$ref": "#/$defs/<name>"`. */
+    $defs?: Defs;
   };
   dependencies?: Record<string, Dependency>;
   registry?: { dirtyCheckout?: "refuse" | "allow" };
@@ -95,6 +99,23 @@ export function declaredKeys(declaration: Declaration): DeclaredKey[] {
   return out;
 }
 
+/**
+ * Where a config breaks the schemas its keys declare, one line each. A layer is `partial`: it may
+ * leave out what another layer gives, and hold null where it blocks the ones under it.
+ */
+export function valueProblems(declaration: Declaration, config: ConfigObject, partial: boolean): { path: string; problems: string[] }[] {
+  const defs = declaration.schema?.$defs ?? {};
+  const out: { path: string; problems: string[] }[] = [];
+  for (const { path, entry } of declaredKeys(declaration)) {
+    const schema = keySchema(entry);
+    const value = schema ? ownValueAt(config, path) : undefined;
+    if (!schema || value === undefined) continue;
+    const problems = check(value, schema, defs, path, partial);
+    if (problems.length > 0) out.push({ path, problems });
+  }
+  return out;
+}
+
 function validate(declaration: Declaration, expectedName: string, path: string): void {
   const fail = (message: string): never => {
     throw new ConfigError(`${path}: ${message}`);
@@ -108,9 +129,19 @@ function validate(declaration: Declaration, expectedName: string, path: string):
   }
 
   const topLevel = declaration.schema?.keys ?? {};
+  const defs = declaration.schema?.$defs ?? {};
   for (const { path: keyPath, entry } of declaredKeys(declaration)) {
     if (!entry || typeof entry.description !== "string" || !entry.description) {
       fail(`key "${keyPath}" needs a description — onboarding has nothing to ask without one`);
+    }
+    const schema = keySchema(entry);
+    if (!schema) continue;
+    const problems = keySchemaProblems(schema, defs, keyPath);
+    if (problems.length > 0) fail(`key "${keyPath}" has a schema it cannot read: ${problems.join("; ")}`);
+    // A default is the whole value when no layer sets the key, so it is checked whole.
+    if (entry.default !== undefined) {
+      const wrong = check(entry.default, schema, defs, keyPath);
+      if (wrong.length > 0) fail(`key "${keyPath}" has a default its schema refuses: ${wrong.join("; ")}`);
     }
   }
 

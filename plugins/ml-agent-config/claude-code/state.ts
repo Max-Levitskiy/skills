@@ -25,6 +25,7 @@ export const EMPTY_PANEL: Panel = {
   components: [],
   selected: null,
   settings: [],
+  defs: {},
   layers: [],
   show: 'effective',
   edit: null,
