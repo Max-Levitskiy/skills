@@ -1,0 +1,69 @@
+{
+  "skill_name": "cleanup",
+  "notes": "Fixtures are built by build_fixtures.sh (eval workspace). Each run gets a fresh copy of its fixture repo; <repo> is replaced with that path.",
+  "evals": [
+    {
+      "id": 0,
+      "name": "js-shop-cleanup",
+      "prompt": "I inherited this node repo at <repo>. Half of it looks like junk to me \u2014 make it simpler, less code doing the same, and improve the code quality where it's safe. Commit the cleanup on a branch; there's no remote so don't try to push.",
+      "expected_output": "Dead files, export, script, dependency, workflow and stale docs removed on a branch; dynamically imported plugin kept; swallowed-error bug reported; tests still green. Live code simplified (single-implementation factory, pass-through wrapper, nested loop, duplicated date formatting) with cart behaviour and fetchJson unchanged.",
+      "assertions": [
+        "Deletes src/legacy/oldApi.js (nothing imports it)",
+        "Removes the unused export formatCurrencyOld from src/utils/format.js",
+        "Deletes scripts/seed-db.sh and leaves no doc reference to seed-db or the nonexistent `npm run start:legacy`",
+        "Deletes or fixes .github/workflows/old-release.yml (dispatch-only trigger, job gated on push, so it never runs)",
+        "Removes the unused left-pad dependency from package.json",
+        "Keeps src/plugins/stripe.js, which is reached through a dynamic import driven by src/config.json",
+        "Keeps scripts/deploy.sh, which `npm run deploy` runs from CI",
+        "Handles the speckit stubs copied into .claude/.cursor/.agent explicitly: removed, or surfaced as an owner decision in the report",
+        "Reports fetchJson's catch-and-return-{} as a bug (the retry loop can never retry)",
+        "npm test passes on the cleanup branch",
+        "Commits are on a branch other than main, and main is unchanged",
+        "Simplifies at least 3 of the planted live-code smells: CartFactory (single-implementation factory), addCents in src/utils/money.js (pass-through wrapper), the nested loop in Cart.total(), receiptDate duplicating formatDate",
+        "Cart behaviour is unchanged: the cart test still asserts 1000 cents with null and zero-qty items skipped, and passes",
+        "src/api/client.js is unchanged on the branch: the fetchJson bug is reported, not silently fixed"
+      ],
+      "files": []
+    },
+    {
+      "id": 1,
+      "name": "py-ledger-audit",
+      "prompt": "can you go through <repo> and tell me what's dead or pointless in there? don't change anything yet, I want a list first",
+      "expected_output": "Read-only ranked findings with evidence; entry-point and importlib-loaded modules not called dead; masking bug flagged. Simplification proposals for live code, such as the single-implementation EntryStore abstraction.",
+      "assertions": [
+        "Leaves the repo unchanged: no new commits and a clean working tree",
+        "Flags ledger/legacy_sync.py as dead, noting its only reference is its own test",
+        "Flags ledger/utils.py: slugify duplicates ledger/text.py and chunks is unused",
+        "Flags the requests dependency as unused",
+        "Flags the README's `ledger sync` instruction as stale (no such subcommand)",
+        "Does not call ledger/exporters/csv_exporter.py dead (registered entry point)",
+        "Does not call ledger/formats/yaml_fmt.py dead (loaded through importlib by name)",
+        "Reports config.load swallowing every exception into {} as a bug",
+        "Each finding names the evidence behind it (search run, caller traced, or tool output)",
+        "Proposes simplifying the single-implementation EntryStore / ConfigEntryStore / make_store abstraction in ledger/store.py, and does not call it dead (cli.py uses it)",
+        "Notes that the export path has no meaningful test (test_export_runs passes only because ledger.json is missing), so a simplification there needs a test first"
+      ],
+      "files": []
+    },
+    {
+      "id": 2,
+      "name": "tf-platform-cleanup",
+      "prompt": "clean up the terraform repo at <repo> \u2014 less code, but prod infra must stay exactly as it is. commit on a branch. you don't have AWS credentials.",
+      "expected_output": "Uninstantiated module and unused variables removed; live resources untouched or retired with removed{destroy=false}; abandoned root flagged with its state; plan limits stated. Duplicated tag maps folded into local.common_tags with an identical plan; legacy-stage code kept until its state is handled.",
+      "assertions": [
+        "Deletes modules/search and the commented-out module block in envs/prod/main.tf",
+        "Removes the unused variables legacy_ami and enable_search",
+        "Does not plainly delete aws_route53_record.www or aws_route53_zone.acme; if either leaves the code it is via a removed block with destroy = false, and the report marks it as needing care",
+        "The set of resource and module addresses in envs/prod is otherwise unchanged",
+        "Keeps envs/legacy-stage in the code (its state may still hold the live bucket acme-assets-stage) and drafts or files a follow-up to retire it",
+        "Removes the Makefile migrate target (scripts/migrate_state.sh does not exist)",
+        "Runs terraform fmt and validate (or explains why not) and says a real plan could not be run without credentials",
+        "Notes that merging to main triggers a CI apply on envs/prod",
+        "Commits are on a branch other than main",
+        "Deduplicates the three identical inline tag maps on the prod buckets into a single source (local.common_tags or equivalent) with the planned values unchanged",
+        "Changes no bucket address: no conversion to for_each/count unless every bucket gets a moved block"
+      ],
+      "files": []
+    }
+  ]
+}
