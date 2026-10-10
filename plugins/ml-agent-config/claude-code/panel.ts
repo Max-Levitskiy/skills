@@ -3,9 +3,10 @@
 // do are in register.tsx, since the engine follows `$` only within the file that declares it.
 
 import type { Component, Edit, Json, Level, Panel, Screen, Setting } from '../types'
+import type { Defs, ValueSchema } from '../src/key-schema'
 import { isObject } from './shapes'
 import { ORDER, levelLabel } from './ui/levels'
-import { SOURCES, editText, isReference, valueAt, type Stored } from './values'
+import { SOURCES, editText, isReference, rootChoices, valueAt, type Stored } from './values'
 
 export const PANE = 'agent-config'
 
@@ -32,7 +33,7 @@ export function fileOf(now: Panel, layer: string): string {
 }
 
 /** `describe` as the screens read it: paths shortened to ~ and to the repository's root. */
-export function readDescribe(stdout: string, home: string | undefined, name: string): Pick<Panel, 'settings' | 'layers'> {
+export function readDescribe(stdout: string, home: string | undefined, name: string): Pick<Panel, 'settings' | 'layers' | 'defs'> {
   const answer: unknown = JSON.parse(stdout)
   // An answer in another shape is no answer: the pane says describe failed, and stays usable.
   if (!isObject(answer) || !Array.isArray(answer.keys) || !Array.isArray(answer.layers)) throw new Error('it answered in another shape')
@@ -49,6 +50,8 @@ export function readDescribe(stdout: string, home: string | undefined, name: str
         isObject(one) && ORDER.includes(one.layer as string) && (one.path === null || typeof one.path === 'string'),
     ),
     repo: isObject(answer.repo) ? (answer.repo as { checkout: string | null }) : undefined,
+    // A CLI before schemas sends none: every key is then typed by its value, as it was.
+    defs: isObject(answer.defs) ? (answer.defs as Defs) : {},
   }
   const checkout = out.repo?.checkout
   const short = (path: string) =>
@@ -59,7 +62,7 @@ export function readDescribe(stdout: string, home: string | undefined, name: str
         : path
   return {
     // Each field as the screens read it, whatever an out-of-sync CLI left out.
-    settings: out.keys.map(({ path, description, layer, default: fallback, value, source, credential, required, levels }) => ({
+    settings: out.keys.map(({ path, description, layer, default: fallback, value, source, credential, required, levels, schema }) => ({
       path,
       description: typeof description === 'string' ? description : '',
       layer: typeof layer === 'string' ? layer : null,
@@ -68,8 +71,10 @@ export function readDescribe(stdout: string, home: string | undefined, name: str
       source: typeof source === 'string' ? source : null,
       credential: credential === true,
       required: required === true,
+      schema: isObject(schema) ? (schema as ValueSchema) : null,
       levels: Object.fromEntries(Object.entries(levels ?? {}).filter(([layer]) => ORDER.includes(layer))),
     })),
+    defs: out.defs,
     layers: out.layers.filter(one => one.path).map(one => ({ layer: one.layer, path: short(one.path!), exists: one.exists ?? false }) satisfies Level),
   }
 }
@@ -128,6 +133,9 @@ export function editAt(setting: Setting, layer: string): Edit {
     draft: Object.fromEntries(Object.entries(reference ?? {}).filter((entry): entry is [string, string] => typeof entry[1] === 'string')),
     isDirty: false,
     like: from,
+    value: from,
+    texts: {},
+    names: {},
   }
 }
 
@@ -140,8 +148,9 @@ export function switchLevel(edit: Edit, setting: Setting, layer: string): Edit {
 }
 
 /** The edit screen's first element: the field to type in, or the first choice. */
-export function firstEdit(setting: Setting, edit: Edit, canType: boolean, levels = 2): string {
-  if (typeof edit.like === 'boolean') return `value:${edit.text === 'off' ? 'off' : 'on'}`
+export function firstEdit(setting: Setting, edit: Edit, canType: boolean, levels = 2, defs: Defs = {}): string {
+  const choices = setting.credential ? null : rootChoices(setting, defs, edit.like)
+  if (choices) return `value:${choices.includes(edit.text) ? edit.text : choices[0]}`
   if (!canType) return levels > 1 ? 'level' : 'save'
   if (!setting.credential) return 'value'
   if (edit.source === '1password') return 'pick'

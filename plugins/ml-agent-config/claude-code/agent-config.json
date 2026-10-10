@@ -7,7 +7,8 @@
       "notices.cacheBanner": {
         "description": "Show the band above the prompt when 1Password secrets are cached for the session (Claude Code only)",
         "layer": "global",
-        "default": true
+        "default": true,
+        "type": "boolean"
       }
     }
   }

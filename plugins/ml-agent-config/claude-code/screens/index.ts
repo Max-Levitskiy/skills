@@ -10,6 +10,7 @@ import { fields } from './fields'
 import { files } from './files'
 import { filter } from './filter'
 import { levels } from './levels'
+import { node } from './node'
 import { onePassword } from './onepassword'
 import { saveTo } from './saveto'
 import { settings } from './settings'
@@ -22,6 +23,7 @@ const SCREENS: Record<Screen['kind'], (ctx: Ctx) => RenderElement> = {
   settings,
   show,
   edit,
+  node,
   levels,
   saveto: saveTo,
   files,

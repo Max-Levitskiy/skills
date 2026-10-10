@@ -7,10 +7,13 @@ import type { RenderElement } from 'claude-code'
 import { editing, layerNames, selected } from '../panel'
 import { LEVELS, ORDER, effect, openAbove, under } from '../ui/levels'
 import { note, row, screen } from '../ui/screen'
-import { SOURCES, showValue } from '../values'
+import { isStructured } from '../tree'
+import { SOURCES, rootChoices, showValue } from '../values'
 import type { Ctx } from './context'
+import { nodeBody } from './node'
 
-export function edit({ now, ui, Input, act }: Ctx): RenderElement {
+export function edit(ctx: Ctx): RenderElement {
+  const { now, ui, Input, act } = ctx
   const { Box, Button, Text } = ui
   const setting = editing(now)
   const draft = now.edit
@@ -22,8 +25,11 @@ export function edit({ now, ui, Input, act }: Ctx): RenderElement {
   const below = under(setting, draft.layer, layers)
   const overrides = openAbove(setting, layers).filter(layer => layer !== draft.layer)
   const kind = SOURCES[draft.source]
-  // On or off is picked like any value, and saved with Save here or Save to….
-  const isOn = draft.text === 'on'
+  // An object or a list of objects, with a schema saying so: its fields, not a line of JSON.
+  const isTree = !setting.credential && isStructured(setting.schema, now.defs)
+  const isPlain = !setting.credential && !isTree
+  // A plain value is picked when its schema says on/off or names the values it takes.
+  const choices = isPlain ? rootChoices(setting, now.defs, draft.like) : null
 
   const said = effect(setting, draft.layer, layers, now.names)
   // The level sits on the title line, at the right; a press opens the level list. With one level
@@ -47,15 +53,17 @@ export function edit({ now, ui, Input, act }: Ctx): RenderElement {
         {others.length === 0 && <Text dimColor>The only level outside a git repo. Open Claude Code in one for the project levels.</Text>}
       </Box>
     ),
-    typeof draft.like === 'boolean' && (
-      <Box key="booleans">
+    ...(isTree ? nodeBody(ctx, []) : []),
+    choices && (
+      <Box key="choices">
         <Text>Value </Text>
-        <Button key="value:on" label="on" variant={isOn ? 'primary' : undefined} onPress={() => act.typeText('on')} />
-        <Text> </Text>
-        <Button key="value:off" label="off" variant={isOn ? undefined : 'primary'} onPress={() => act.typeText('off')} />
+        {choices.flatMap((choice, index) => [
+          index > 0 && <Text key={`gap:${choice}`}> </Text>,
+          <Button key={`value:${choice}`} label={choice} variant={draft.text === choice ? 'primary' : undefined} onPress={() => act.typeText(choice)} />,
+        ])}
       </Box>
     ),
-    typeof draft.like !== 'boolean' && !setting.credential && Input && (
+    isPlain && !choices && Input && (
       <Input
         key="value"
         label="Value"
@@ -66,7 +74,7 @@ export function edit({ now, ui, Input, act }: Ctx): RenderElement {
         onSubmit={text => act.typeText(text).then(() => act.saveEdit())}
       />
     ),
-    typeof draft.like !== 'boolean' && !setting.credential && !Input && note(ui, `Value  ${draft.text || 'not set'}`),
+    isPlain && !choices && !Input && note(ui, `Value  ${draft.text || 'not set'}`),
     setting.credential &&
       row(ui, {
         key: 'source',
@@ -93,7 +101,7 @@ export function edit({ now, ui, Input, act }: Ctx): RenderElement {
     setting.credential &&
       draft.source === '1password' &&
       row(ui, { key: 'pick', label: '› Pick from 1Password', onPress: () => act.openOnePassword() }),
-    (typeof draft.like === 'boolean' || Input || setting.credential) && (
+    (choices || Input || setting.credential || isTree) && (
       <Box key="actions" marginTop={1}>
         <Button key="save" label="Save here" variant="primary" onPress={() => act.saveEdit()} />
         {others.length > 0 && <Text> </Text>}

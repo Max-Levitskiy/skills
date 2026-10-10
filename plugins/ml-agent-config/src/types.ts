@@ -4,6 +4,7 @@
 import type { ConfigObject, ConfigValue, Layer } from "./layers";
 import type { Harness } from "./harness";
 import type { WhenMatcher } from "./declaration";
+import type { Defs, ValueSchema } from "./key-schema";
 
 export const ACS_VERSION = 2;
 
@@ -18,7 +19,8 @@ export interface Problem {
     | "dependency-ambiguous"
     | "schema-rolled-back"
     | "schema-behind"
-    | "dirty-checkout";
+    | "dirty-checkout"
+    | "invalid-value";
   message: string;
   keys?: string[];
   layer?: Layer;
@@ -75,6 +77,8 @@ export interface DescribedKey {
   /** Advisory: where onboarding recommends writing it. */
   layer: Layer | null;
   default: ConfigValue | null;
+  /** What the key holds, as JSON Schema; null when the declaration leaves it to the default. */
+  schema: ValueSchema | null;
   credential: boolean;
   /** The condition this key sits behind, and whether that condition currently holds. */
   group: { when: WhenMatcher; action: string; status: "active" | "inactive" | "unevaluated" } | null;
@@ -97,6 +101,8 @@ export interface DescribeOutput {
   schemaVersion: number;
   repo: RepoReport;
   keys: DescribedKey[];
+  /** The declaration's `schema.$defs`, which a key's `$ref` names. */
+  defs: Defs;
   layers: {
     layer: Layer;
     path: string | null;

@@ -40,6 +40,11 @@
           "type": "array",
           "description": "Conditional sets of keys, each active only when its matcher is satisfied.",
           "items": { "$ref": "#/$defs/group" }
+        },
+        "$defs": {
+          "type": "object",
+          "description": "Value schemas a key reaches with \"$ref\": \"#/$defs/<name>\", so a shape used twice is written once.",
+          "additionalProperties": { "$ref": "#/$defs/valueSchema" }
         }
       },
       "additionalProperties": false
@@ -68,7 +73,7 @@
   "$defs": {
     "keyEntry": {
       "type": "object",
-      "description": "A single configuration key: what it means, where it is stored, and its default.",
+      "description": "A single configuration key: what it means, where it is stored, its default, and, as JSON Schema, what it holds. A key with no type keyword is typed by its default.",
       "properties": {
         "description": {
           "type": "string",
@@ -81,10 +86,97 @@
         },
         "default": {
           "description": "Default value used when the key is not set."
-        }
+        },
+        "$ref": {
+          "type": "string",
+          "pattern": "^#/\\$defs/[^/]+$",
+          "description": "A schema in schema.$defs, as #/$defs/<name>."
+        },
+        "type": {
+          "description": "The JSON type, or several.",
+          "oneOf": [
+            { "$ref": "#/$defs/jsonType" },
+            { "type": "array", "items": { "$ref": "#/$defs/jsonType" }, "minItems": 1 }
+          ]
+        },
+        "title": { "type": "string", "description": "The name an editor shows for this part." },
+        "enum": { "type": "array", "minItems": 1, "description": "The values allowed; an editor offers them as choices." },
+        "const": { "description": "The one value allowed." },
+        "properties": {
+          "type": "object",
+          "description": "An object's named fields.",
+          "additionalProperties": { "$ref": "#/$defs/valueSchema" }
+        },
+        "additionalProperties": {
+          "description": "Fields beyond `properties`: false refuses them; a schema makes the object a map of named entries.",
+          "oneOf": [{ "type": "boolean" }, { "$ref": "#/$defs/valueSchema" }]
+        },
+        "required": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Fields the merged value must have. A single layer is not held to it."
+        },
+        "items": { "$ref": "#/$defs/valueSchema" },
+        "minimum": { "type": "number" },
+        "maximum": { "type": "number" },
+        "minLength": { "type": "integer", "minimum": 0 },
+        "maxLength": { "type": "integer", "minimum": 0 },
+        "pattern": { "type": "string", "description": "A regular expression text must match." },
+        "minItems": { "type": "integer", "minimum": 0 },
+        "maxItems": { "type": "integer", "minimum": 0 }
       },
       "required": ["description"],
       "additionalProperties": false
+    },
+    "valueSchema": {
+      "type": "object",
+      "description": "What a part of a key's value holds: the subset of JSON Schema 2020-12 agent-config reads.",
+      "properties": {
+        "description": { "type": "string" },
+        "default": { "description": "The value a new part starts as." },
+        "$ref": {
+          "type": "string",
+          "pattern": "^#/\\$defs/[^/]+$",
+          "description": "A schema in schema.$defs, as #/$defs/<name>."
+        },
+        "type": {
+          "description": "The JSON type, or several.",
+          "oneOf": [
+            { "$ref": "#/$defs/jsonType" },
+            { "type": "array", "items": { "$ref": "#/$defs/jsonType" }, "minItems": 1 }
+          ]
+        },
+        "title": { "type": "string", "description": "The name an editor shows for this part." },
+        "enum": { "type": "array", "minItems": 1, "description": "The values allowed; an editor offers them as choices." },
+        "const": { "description": "The one value allowed." },
+        "properties": {
+          "type": "object",
+          "description": "An object's named fields.",
+          "additionalProperties": { "$ref": "#/$defs/valueSchema" }
+        },
+        "additionalProperties": {
+          "description": "Fields beyond `properties`: false refuses them; a schema makes the object a map of named entries.",
+          "oneOf": [{ "type": "boolean" }, { "$ref": "#/$defs/valueSchema" }]
+        },
+        "required": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Fields the merged value must have. A single layer is not held to it."
+        },
+        "items": { "$ref": "#/$defs/valueSchema" },
+        "minimum": { "type": "number" },
+        "maximum": { "type": "number" },
+        "minLength": { "type": "integer", "minimum": 0 },
+        "maxLength": { "type": "integer", "minimum": 0 },
+        "pattern": { "type": "string", "description": "A regular expression text must match." },
+        "minItems": { "type": "integer", "minimum": 0 },
+        "maxItems": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "jsonType": {
+      "type": "string",
+      "enum": ["string", "number", "integer", "boolean", "object", "array", "null"]
     },
     "group": {
       "type": "object",

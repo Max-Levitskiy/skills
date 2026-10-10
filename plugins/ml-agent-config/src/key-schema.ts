@@ -1,0 +1,205 @@
+// What a declared key holds, as JSON Schema: a key entry already carries `description` and
+// `default`, and may add the keywords below. The CLI checks a written value against it, and the
+// pane reads it to draw one field per part of the value instead of a line of JSON.
+//
+// No Node here: the hooks module imports this file too.
+//
+// A subset of JSON Schema 2020-12, the keywords a config value needs. `$ref` reaches the
+// declaration's own `schema.$defs` only (`#/$defs/<name>`). Any other keyword is an annotation,
+// read by neither.
+
+// The same shape as ConfigValue in layers.ts, which this file cannot import: that one needs Node.
+export type ConfigValue = string | number | boolean | null | ConfigValue[] | { [key: string]: ConfigValue };
+
+export type JsonType = "string" | "number" | "integer" | "boolean" | "object" | "array" | "null";
+
+export interface ValueSchema {
+  $ref?: string;
+  type?: JsonType | JsonType[];
+  title?: string;
+  description?: string;
+  default?: ConfigValue;
+  enum?: ConfigValue[];
+  const?: ConfigValue;
+  properties?: Record<string, ValueSchema>;
+  additionalProperties?: boolean | ValueSchema;
+  required?: string[];
+  items?: ValueSchema;
+  minimum?: number;
+  maximum?: number;
+  minLength?: number;
+  maxLength?: number;
+  pattern?: string;
+  minItems?: number;
+  maxItems?: number;
+}
+
+export type Defs = Record<string, ValueSchema>;
+
+/** The keywords that say what a value is. A key entry with none of them is typed by its default. */
+const TYPING = ["$ref", "type", "enum", "const", "properties", "additionalProperties", "items"] as const;
+const TYPES: JsonType[] = ["string", "number", "integer", "boolean", "object", "array", "null"];
+const REF = /^#\/\$defs\/([^/]+)$/;
+
+/** A key entry's schema: the entry itself, less the advisory `layer`. Null when it types nothing. */
+export function keySchema(entry: ValueSchema & { layer?: string }): ValueSchema | null {
+  if (!TYPING.some((keyword) => entry[keyword] !== undefined)) return null;
+  const { layer: _layer, ...schema } = entry;
+  return schema;
+}
+
+/** The schema a `$ref` points at, followed until it points at none. */
+export function resolveRef(schema: ValueSchema, defs: Defs): ValueSchema {
+  let current = schema;
+  for (let hops = 0; current.$ref !== undefined; hops++) {
+    const name = REF.exec(current.$ref)?.[1];
+    const target = name === undefined ? undefined : defs[decodeURIComponent(name)];
+    if (!target || hops > 32) return {};
+    // Keywords beside the $ref still apply; the target's fill in the rest.
+    const { $ref: _ref, ...beside } = current;
+    current = { ...target, ...beside };
+  }
+  return current;
+}
+
+function types(schema: ValueSchema): JsonType[] | null {
+  if (schema.type === undefined) return null;
+  return Array.isArray(schema.type) ? schema.type : [schema.type];
+}
+
+function typeOf(value: ConfigValue): JsonType {
+  if (value === null) return "null";
+  if (Array.isArray(value)) return "array";
+  if (typeof value === "number") return Number.isInteger(value) ? "integer" : "number";
+  return typeof value as JsonType;
+}
+
+function fits(value: ConfigValue, type: JsonType): boolean {
+  const actual = typeOf(value);
+  return actual === type || (type === "number" && actual === "integer");
+}
+
+const same = (a: ConfigValue, b: ConfigValue) => JSON.stringify(a) === JSON.stringify(b);
+
+/**
+ * Where a value breaks its schema, one line each, `at` naming the part. A layer may leave out what
+ * another layer gives and holds null where it blocks the levels under it, so `partial` lets both
+ * through; the merged value is checked whole.
+ */
+export function check(value: ConfigValue, schema: ValueSchema, defs: Defs, at: string, partial = false): string[] {
+  const s = resolveRef(schema, defs);
+  if (value === null && partial) return [];
+  const wanted = types(s) ?? (s.properties || s.additionalProperties !== undefined ? ["object"] : s.items ? ["array"] : null);
+  if (wanted && !wanted.some((type) => fits(value, type))) return [`${at} should be ${wanted.map(article).join(" or ")}, not ${article(typeOf(value))}`];
+  if (s.enum && !s.enum.some((one) => same(one, value))) return [`${at} should be one of ${s.enum.map((one) => JSON.stringify(one)).join(", ")}`];
+  if (s.const !== undefined && !same(s.const, value)) return [`${at} should be ${JSON.stringify(s.const)}`];
+  const problems: string[] = [];
+  if (typeof value === "number") {
+    if (s.minimum !== undefined && value < s.minimum) problems.push(`${at} should be at least ${s.minimum}`);
+    if (s.maximum !== undefined && value > s.maximum) problems.push(`${at} should be at most ${s.maximum}`);
+  }
+  if (typeof value === "string") {
+    if (s.minLength !== undefined && value.length < s.minLength) problems.push(`${at} should be at least ${s.minLength} characters`);
+    if (s.maxLength !== undefined && value.length > s.maxLength) problems.push(`${at} should be at most ${s.maxLength} characters`);
+    if (s.pattern !== undefined && !new RegExp(s.pattern, "u").test(value)) problems.push(`${at} should match ${s.pattern}`);
+  }
+  if (Array.isArray(value)) {
+    if (s.minItems !== undefined && value.length < s.minItems) problems.push(`${at} should hold at least ${s.minItems} items`);
+    if (s.maxItems !== undefined && value.length > s.maxItems) problems.push(`${at} should hold at most ${s.maxItems} items`);
+    if (s.items) value.forEach((item, index) => problems.push(...check(item, s.items!, defs, `${at}[${index}]`, partial)));
+  }
+  if (value !== null && typeof value === "object" && !Array.isArray(value)) {
+    if (!partial) for (const name of s.required ?? []) if (value[name] === undefined) problems.push(`${at}.${name} is required`);
+    for (const [name, child] of Object.entries(value)) {
+      const declared = s.properties?.[name];
+      if (declared) problems.push(...check(child, declared, defs, `${at}.${name}`, partial));
+      else if (s.additionalProperties === false) problems.push(`${at}.${name} is not a key it takes`);
+      else if (typeof s.additionalProperties === "object") problems.push(...check(child, s.additionalProperties, defs, `${at}.${name}`, partial));
+    }
+  }
+  return problems;
+}
+
+function article(type: JsonType): string {
+  return { string: "text", number: "a number", integer: "a whole number", boolean: "true or false", object: "an object", array: "a list", null: "null" }[type];
+}
+
+/** Where a declaration's schema cannot be read: an unknown type, or a `$ref` to nothing. */
+export function schemaProblems(schema: ValueSchema, defs: Defs, at: string, seen = new Set<ValueSchema>()): string[] {
+  if (seen.has(schema)) return [];
+  seen.add(schema);
+  const problems: string[] = [];
+  if (schema.$ref !== undefined) {
+    const name = REF.exec(schema.$ref)?.[1];
+    if (name === undefined) problems.push(`${at}: $ref "${schema.$ref}" should be #/$defs/<name>`);
+    else if (!defs[decodeURIComponent(name)]) problems.push(`${at}: $ref "${schema.$ref}" names no entry in schema.$defs`);
+    else problems.push(...schemaProblems(defs[decodeURIComponent(name)]!, defs, `$defs.${name}`, seen));
+  }
+  for (const type of types(schema) ?? []) if (!TYPES.includes(type)) problems.push(`${at}: unknown type "${type}"`);
+  if (schema.pattern !== undefined) {
+    try {
+      new RegExp(schema.pattern, "u");
+    } catch {
+      problems.push(`${at}: pattern ${schema.pattern} is not a regular expression`);
+    }
+  }
+  for (const [name, child] of Object.entries(schema.properties ?? {})) problems.push(...schemaProblems(child, defs, `${at}.${name}`, seen));
+  if (typeof schema.additionalProperties === "object") problems.push(...schemaProblems(schema.additionalProperties, defs, `${at}.*`, seen));
+  if (schema.items) problems.push(...schemaProblems(schema.items, defs, `${at}[]`, seen));
+  return problems;
+}
+
+/**
+ * How an editor draws a value: on/off, a pick among fixed values, a typed scalar, a list of
+ * scalars typed as `a, b`, an object's fields, a map of named entries, a list of entries, or, for
+ * anything else, JSON.
+ */
+export type Kind = "boolean" | "enum" | "number" | "integer" | "string" | "list" | "fields" | "map" | "entries" | "json";
+
+export function kindOf(schema: ValueSchema | null | undefined, defs: Defs): Kind {
+  if (!schema) return "json";
+  const s = resolveRef(schema, defs);
+  if (s.enum) return "enum";
+  const wanted = (types(s) ?? []).filter((type) => type !== "null");
+  const type = wanted.length === 1 ? wanted[0] : wanted.length === 0 ? inferred(s) : undefined;
+  if (type === "boolean" || type === "number" || type === "integer" || type === "string") return type;
+  if (type === "array") {
+    const item = s.items ? kindOf(s.items, defs) : "json";
+    if (item === "string" || item === "number" || item === "integer") return "list";
+    return item === "fields" ? "entries" : "json";
+  }
+  if (type === "object") {
+    if (s.properties && Object.keys(s.properties).length > 0) return "fields";
+    if (typeof s.additionalProperties === "object" || s.additionalProperties === true) return "map";
+    return "json";
+  }
+  return "json";
+}
+
+function inferred(s: ValueSchema): JsonType | undefined {
+  if (s.properties || s.additionalProperties !== undefined) return "object";
+  if (s.items) return "array";
+  return undefined;
+}
+
+/** The schema of one part of a value: a property, a map entry, or a list item. */
+export function childSchema(schema: ValueSchema | null | undefined, defs: Defs, part: string): ValueSchema | null {
+  if (!schema) return null;
+  const s = resolveRef(schema, defs);
+  if (s.items && /^\d+$/.test(part)) return s.items;
+  const declared = s.properties?.[part];
+  if (declared) return declared;
+  return typeof s.additionalProperties === "object" ? s.additionalProperties : null;
+}
+
+/** What a new part starts as: its default, else empty of its kind. */
+export function emptyOf(schema: ValueSchema | null, defs: Defs): ConfigValue {
+  const s = schema ? resolveRef(schema, defs) : {};
+  if (s.default !== undefined) return structuredClone(s.default);
+  const kind = kindOf(s, defs);
+  if (kind === "fields" || kind === "map") return {};
+  if (kind === "list" || kind === "entries") return [];
+  if (kind === "boolean") return false;
+  if (kind === "enum") return s.enum![0] ?? null;
+  return kind === "json" ? null : "";
+}

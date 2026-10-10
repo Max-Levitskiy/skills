@@ -2,6 +2,7 @@
 // secret lives.
 
 import type { Json, Setting } from '../types'
+import { kindOf, resolveRef, type Defs } from '../src/key-schema'
 
 // What each credential source needs, in the order asked. The same required fields as
 // REQUIRED_FIELDS in src/credentials.ts, which this module cannot import (it needs Node).
@@ -135,4 +136,14 @@ export function targetLayer(setting: Setting, layers: readonly string[]): string
 /** A dotted key's last part, for a breadcrumb: credentials.apiKey is apiKey. */
 export function lastPart(path: string): string {
   return path.split('.').at(-1) ?? path
+}
+
+/**
+ * The values a plain key is picked from, as typed: on and off for one that holds on/off by its
+ * schema or its value, the schema's own values for an enum. Null for a key that is typed.
+ */
+export function rootChoices(setting: Setting, defs: Defs, like: Json): string[] | null {
+  const kind = setting.schema ? kindOf(setting.schema, defs) : null
+  if (kind === 'enum') return (resolveRef(setting.schema!, defs).enum ?? []).map(option => editText(option))
+  return kind === 'boolean' || (kind === null && typeof like === 'boolean') ? ['on', 'off'] : null
 }

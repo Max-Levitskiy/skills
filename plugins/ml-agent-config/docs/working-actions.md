@@ -121,6 +121,7 @@ A `problem` is reported, not worked. Each carries a `code` and a `message` writt
 | `dependency-ambiguous` | A declared dependency uses a bare name that several installed plugins also carry. The component's author must qualify it as `<plugin>:<skill>`; nothing you install will fix it. |
 | `legacy-config-path` | A pre-rename `.agents/skill-config/` file exists, and the same layer already has a `.agents/config/` file, which is the one read. The two are never merged: tell the user, and let them say which answers they meant. A v1 file whose layer has no v2 file is not a problem: `start` emits `agent-config:adopt` for it instead, ahead of onboarding. |
 | `dirty-checkout` | A registry write would land in a repository with uncommitted changes. |
+| `invalid-value` | A merged value breaks the JSON Schema its key declares (see [What a key holds](#what-a-key-holds)). It is said, not planned for: the component may still work, and only the person knows which value was meant. Show them the message, and fix it with `write` once they say what they meant. |
 
 ## Changing an answer that is already set
 
@@ -139,7 +140,8 @@ existing answer is a three-step protocol:
    the layer, so read the current one first (`describe`, or `path --layer <layer>`) and write the
    merged whole. A partial write cannot express deleting a key. `write` stamps the schema version,
    saves the schema snapshot beside the file, gitignores the local layer, and journals the previous
-   contents.
+   contents. It refuses (exit 2) a layer whose value breaks a key's schema, naming each part:
+   `not written: projects.acme.title.include should be a list, not text`.
 3. Run the component's own `verify` action. "Configured" means a real call succeeded, and only the
    component knows what to call.
 
@@ -222,6 +224,40 @@ error, the same as one name declared by two plugins.
 
 A consumer script passes `--from <its skill folder>` to every call. It finds the declaration from a
 git checkout as well as from an install, so the script runs the same in both.
+
+## What a key holds
+
+A key entry in the declaration is a JSON Schema: `description` and `default` already are schema
+words, and a key may add `type`, `enum`, `const`, `properties`, `additionalProperties`, `items`,
+`required`, `minimum`/`maximum`, `minLength`/`maxLength`, `pattern`, `minItems`/`maxItems` and
+`title`. A shape used more than once goes in `schema.$defs` and is named with
+`"$ref": "#/$defs/<name>"`. fellow's `projects` is a map of named projects, each an object of fields:
+
+```json
+"projects": {
+  "description": "Named project scopes", "layer": "repo", "default": {},
+  "type": "object",
+  "additionalProperties": { "$ref": "#/$defs/project" }
+}
+```
+
+What reads it:
+
+- **`write`** refuses a layer whose value breaks it. A layer is checked as a part of the whole: it
+  may leave out a `required` field another layer gives, and hold null where it blocks the layers
+  under it.
+- **`start`, `load` and `describe`** check the merged value whole, and report what breaks as an
+  `invalid-value` problem.
+- **`describe`** gives each key its `schema` (null for a key with no type keyword) and the
+  declaration's `$defs` as `defs`, so an editor can draw a field for each part.
+- **The `/agent-config` pane** draws from it: text and numbers are typed, on/off and an `enum` are
+  picked, a list of text is typed as `a, b, c`, an object with `properties` opens a screen of its
+  fields, and an object with `additionalProperties` a list of named entries to add, rename and
+  remove.
+
+A key with no type keyword is typed by its default, as before, and is never refused. A declaration
+whose `$ref` names nothing, whose type is unknown, or whose default its own schema refuses is
+invalid (exit 2).
 
 ## What a consumer's SKILL.md says
 

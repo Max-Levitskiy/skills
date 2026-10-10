@@ -24,7 +24,7 @@ import {
   type Layer,
   type LoadedLayers,
 } from "./layers";
-import { findDeclaration, listDeclarations, type FoundDeclaration } from "./declaration";
+import { findDeclaration, listDeclarations, valueProblems, type FoundDeclaration } from "./declaration";
 import { effectiveConfig, unmetKeys, type Effective } from "./effective";
 import { buildPlan, guidePath } from "./actions";
 import { CredentialError, resolveCredential, type CredentialRef } from "./credentials";
@@ -361,6 +361,12 @@ function write(parsed: ParsedArgs): number {
     throw new ConfigError("write expects a JSON object — one layer, whole, not a fragment");
   }
 
+  // Checked against the schemas the keys declare, so a value no consumer could read is never written.
+  const wrong = valueProblems(found.declaration, config, true);
+  if (wrong.length > 0) {
+    throw new ConfigError(`not written: ${wrong.flatMap((one) => one.problems).join("; ")}`);
+  }
+
   const result = writeLayer(
     name,
     layer,
@@ -393,6 +399,7 @@ function describe(parsed: ParsedArgs): number {
     schemaVersion: found.schemaVersion,
     repo: repoReport(repo),
     keys: effective.keys.map((key) => withLevels(key, own)),
+    defs: found.declaration.schema?.$defs ?? {},
     layers: loaded.files.map((file) => ({ ...file, journal: readJournal(name, file.layer, repo) })),
     problems: [...effective.problems, ...legacyProblems(name, repo)],
   };

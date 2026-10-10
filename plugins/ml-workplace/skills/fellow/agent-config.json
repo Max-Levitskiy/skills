@@ -7,7 +7,9 @@
     "keys": {
       "workspace.subdomain": {
         "description": "Your Fellow workspace subdomain: the `acme` in https://acme.fellow.app",
-        "layer": "global"
+        "layer": "global",
+        "type": "string",
+        "pattern": "^[a-z0-9][a-z0-9-]*$"
       },
       "credentials.apiKey": {
         "description": "Where your Fellow API key lives (User Settings → Developer API). A reference, never the key",
@@ -16,22 +18,52 @@
       "storage.recaps.path": {
         "description": "Where recaps and note exports are written; relative paths resolve from the repo root",
         "layer": "repo",
-        "default": ".agents/fellow/export"
+        "default": ".agents/fellow/export",
+        "type": "string"
       },
       "storage.transcripts.path": {
         "description": "Where transcript exports are written. Transcripts are verbatim and often sensitive, so an absolute path outside the repo is safest",
         "layer": "global",
-        "default": ".agents/fellow/export"
+        "default": ".agents/fellow/export",
+        "type": "string"
       },
       "projects": {
         "description": "Named project scopes that filter meetings by title and attendees; see references/project-scoping.md",
         "layer": "repo",
-        "default": {}
+        "default": {},
+        "type": "object",
+        "additionalProperties": { "$ref": "#/$defs/project" }
       },
       "defaultProject": {
         "description": "The project scope applied when --project is not given; empty means no filtering",
         "layer": "repo",
-        "default": ""
+        "default": "",
+        "type": "string"
+      }
+    },
+    "$defs": {
+      "project": {
+        "type": "object",
+        "title": "project",
+        "properties": {
+          "label": { "type": "string", "description": "A readable name for the project" },
+          "title": { "$ref": "#/$defs/rules", "description": "Meeting titles that place a meeting in or out of the project" },
+          "people": { "$ref": "#/$defs/rules", "description": "Attendee emails or @domains that place a meeting in or out of the project" },
+          "fallback": {
+            "enum": ["undecided", "include", "exclude"],
+            "default": "undecided",
+            "description": "What a meeting no rule matches counts as"
+          }
+        },
+        "additionalProperties": false
+      },
+      "rules": {
+        "type": "object",
+        "properties": {
+          "include": { "type": "array", "items": { "type": "string" }, "description": "Matches that include: a plain substring, or /regex/flags" },
+          "exclude": { "type": "array", "items": { "type": "string" }, "description": "Matches that exclude, checked first" }
+        },
+        "additionalProperties": false
       }
     }
   }

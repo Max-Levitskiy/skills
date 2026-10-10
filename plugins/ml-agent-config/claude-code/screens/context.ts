@@ -1,4 +1,4 @@
-import type { Panel, Screen, Setting } from '../../types'
+import type { Json, Panel, Screen, Setting } from '../../types'
 import type { Field, Ui } from '../ui/screen'
 
 /**
@@ -34,6 +34,16 @@ export type Actions = {
   setFilter: (by: 'account' | 'vault' | 'type', value: string | null) => Promise<void>
   openItem: (id: string) => Promise<void>
   pickField: (reference: string) => Promise<void>
+  /** A structured key's parts, each a place in the draft value: open one, pick or type its value. */
+  openNode: (at: string[]) => Promise<void>
+  setPart: (at: string[], value: Json) => Promise<void>
+  typePart: (at: string[], text: string) => Promise<void>
+  /** The name typed for a new map entry, or for a rename of one. */
+  typeName: (at: string[], text: string) => Promise<void>
+  /** A new entry named so in a map, or a new item at the end of a list. */
+  addPart: (at: string[], name: string) => Promise<void>
+  renamePart: (at: string[], name: string) => Promise<void>
+  removePart: (at: string[]) => Promise<void>
 }
 
 /** What every screen draws from: the pane's state, the surface's elements, and the presses. */

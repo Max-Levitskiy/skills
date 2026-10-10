@@ -1201,3 +1201,125 @@ test('under a level shows the next level down that sets the key, a block stoppin
   expect(under(setting, 'repo', all)).toEqual({ label: 'Everywhere', value: 'g' })
   expect(under({ ...setting, default: null }, 'global', all)).toBeUndefined()
 })
+
+// A key whose schema says it holds named projects, each an object of fields: fellow's `projects`.
+const PROJECT_DEFS = {
+  project: {
+    type: 'object',
+    title: 'project',
+    properties: {
+      label: { type: 'string', description: 'A readable name' },
+      title: { $ref: '#/$defs/rules' },
+      fallback: { enum: ['undecided', 'include', 'exclude'], default: 'undecided' },
+      weight: { type: 'integer' },
+    },
+    additionalProperties: false,
+  },
+  rules: {
+    type: 'object',
+    properties: { include: { type: 'array', items: { type: 'string' } }, exclude: { type: 'array', items: { type: 'string' } } },
+    additionalProperties: false,
+  },
+}
+
+function describedProjects(w: World, projects: object | null, extra: object[] = []): void {
+  const schema = { description: 'Projects', default: {}, type: 'object', additionalProperties: { $ref: '#/$defs/project' } }
+  const levels = projects === null ? {} : { repo: projects }
+  w.layer = JSON.stringify(projects === null ? {} : { projects })
+  w.described = JSON.stringify({
+    name: 'demo',
+    keys: [{ ...SETTING, path: 'projects', description: 'Projects', layer: 'repo', default: {}, value: projects ?? {}, source: projects === null ? 'default' : 'repo', levels, schema }, ...extra],
+    defs: PROJECT_DEFS,
+    layers: w.layers.map(layer => ({ layer, path: `/home/me/${layer}.json`, exists: true })),
+    repo: { checkout: null },
+  })
+}
+
+test('a map of projects is edited a field at a time: typed, picked and opened, then saved whole', async ($, on) => {
+  const w = world(on)
+  describedProjects(w, { acme: { label: 'Acme', title: { include: ['Acme'] } }, beta: { label: 'Beta' } })
+  const ui = await open($)
+  await ui.press({ key: 'component:demo' })
+  // The settings row names the projects, not a line of JSON.
+  expect(await text(ui, 'row:setting:projects')).toContain('acme, beta · Project, shared')
+  await ui.press({ key: 'setting:projects' })
+  expect(await ui.find({ key: 'value' })).toBeUndefined()
+  expect(await text(ui, 'row:at:acme')).toContain('label: Acme')
+  await ui.press({ key: 'at:acme' })
+  await ui.input({ key: 'at:acme.label', text: 'Acme Corp', kind: 'change' })
+  // An enum is picked; its default shows picked until then.
+  expect(await text(ui, 'at:acme.fallback:undecided')).toContain('primary')
+  await ui.press({ key: 'at:acme.fallback:exclude' })
+  await ui.press({ key: 'at:acme.title' })
+  expect(await text(ui, 'at:acme.title.include')).toContain('Acme')
+  await ui.input({ key: 'at:acme.title.include', text: 'Acme, Falcon', kind: 'change' })
+  // Nothing is written until Save; Save from a part's screen closes every screen of the edit.
+  expect(w.writes).toEqual([])
+  await ui.press({ key: 'save' })
+  expect(JSON.parse(w.writes.at(-1)!)).toEqual({
+    projects: { acme: { label: 'Acme Corp', title: { include: ['Acme', 'Falcon'] }, fallback: 'exclude' }, beta: { label: 'Beta' } },
+  })
+  expect(await text(ui, 'row:setting:projects')).toBeDefined()
+  expect(JSON.stringify(await ui.find({}))).toContain('Saved projects in Project, shared.')
+  await ui.unmount()
+})
+
+test('a project is added by name, renamed and removed, and only Save writes it', async ($, on) => {
+  const w = world(on)
+  describedProjects(w, null)
+  const ui = await open($)
+  await ui.press({ key: 'component:demo' })
+  await ui.press({ key: 'setting:projects' })
+  expect(JSON.stringify(await ui.find({}))).toContain('No projects yet.')
+  await ui.input({ key: 'add:', text: 'gamma' })
+  // A new project opens on its own screen, its fields empty.
+  await ui.input({ key: 'at:gamma.label', text: 'Gamma', kind: 'change' })
+  await ui.input({ key: 'name', text: 'delta' })
+  expect(JSON.stringify(await ui.find({}))).toContain('demo › projects › delta')
+  await ui.press({ key: 'back' })
+  await ui.input({ key: 'add:', text: 'delta' })
+  expect(JSON.stringify(await ui.find({}))).toContain('delta is already there.')
+  await ui.input({ key: 'add:', text: 'gone' })
+  await ui.press({ key: 'remove' })
+  expect(await ui.find({ key: 'at:gone' })).toBeUndefined()
+  await ui.press({ key: 'save' })
+  expect(JSON.parse(w.writes.at(-1)!)).toEqual({ projects: { delta: { label: 'Gamma' } } })
+  await ui.unmount()
+})
+
+test('a field typed as something its schema refuses is not saved, and the message names it', async ($, on) => {
+  const w = world(on)
+  describedProjects(w, { acme: { label: 'Acme' } })
+  const ui = await open($)
+  await ui.press({ key: 'component:demo' })
+  await ui.press({ key: 'setting:projects' })
+  await ui.press({ key: 'at:acme' })
+  await ui.input({ key: 'at:acme.weight', text: '2.5', kind: 'change' })
+  await ui.press({ key: 'save' })
+  expect(w.writes).toEqual([])
+  expect(JSON.stringify(await ui.find({}))).toContain('Not saved: projects.acme.weight: 2.5 is not a whole number')
+  // Still on the project's screen, so it can be fixed where it was typed.
+  await ui.input({ key: 'at:acme.weight', text: '3' })
+  expect(JSON.parse(w.writes.at(-1)!).projects.acme.weight).toBe(3)
+  await ui.unmount()
+})
+
+test('a plain key is picked from its enum, and typed as its schema says rather than as its value', async ($, on) => {
+  const w = world(on)
+  describedProjects(w, null, [
+    { ...SETTING, path: 'mode', description: 'Mode', default: 'fast', value: 'fast', source: 'default', levels: {}, schema: { description: 'Mode', enum: ['fast', 'slow'] } },
+    { ...SETTING, path: 'tag', description: 'Tag', default: '', value: '', source: 'default', levels: {}, schema: { description: 'Tag', type: 'string' } },
+  ])
+  const ui = await open($)
+  await ui.press({ key: 'component:demo' })
+  await ui.press({ key: 'setting:mode' })
+  expect(await ui.find({ key: 'value' })).toBeUndefined()
+  await ui.press({ key: 'value:slow' })
+  await ui.press({ key: 'save' })
+  expect(JSON.parse(w.writes.at(-1)!).mode).toBe('slow')
+  await ui.press({ key: 'setting:tag' })
+  // Text that looks like a number stays text.
+  await ui.input({ key: 'value', text: '42' })
+  expect(JSON.parse(w.writes.at(-1)!).tag).toBe('42')
+  await ui.unmount()
+})
