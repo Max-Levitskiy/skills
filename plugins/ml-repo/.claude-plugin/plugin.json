@@ -1,7 +1,7 @@
 {
   "name": "ml-repo",
   "description": "Whole-repository maintenance. cleanup audits a repo for dead, duplicated, generated, stale and over-engineered code and docs, then removes and simplifies it without changing behaviour: evidence for every claim of dead, refactors only where a test covers the code, live-state-safe changes for infrastructure code, dry-run blind spots covered, and the result shipped as a deletions-only PR plus reviewable PRs per area.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "license": "MIT",
   "author": {
     "name": "Max Levitskiy",
