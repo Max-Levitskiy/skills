@@ -6,7 +6,8 @@ import type { Component, Edit, Json, Level, Panel, Screen, Setting, ValueSchema 
 import { isObject } from './shapes'
 import { addKey, atKey, choicesAt, getAt, isStructuredKind, isTreeSetting, nodeAt, takesEntries, type At } from './tree'
 import { ORDER, levelLabel } from './ui/levels'
-import { SOURCES, editText, isReference, rootChoices, valueAt, type Stored } from './values'
+import { SOURCES, choiceLabels, editText, isReference, rootChoices, valueAt, type Stored } from './values'
+import { enumOf, kindOf, same } from '../src/key-schema'
 
 export const PANE = 'agent-config'
 
@@ -120,15 +121,22 @@ export function inheritedFields(setting: Setting, layer: string): string[] {
   return [...fields].filter(([, isSet]) => isSet).map(([field]) => field)
 }
 
+/** A plain value as its edit field starts: an enum's value as its choice's label, else as typed. */
+function textOf(setting: Setting, from: Json, defs: Panel['defs']): string {
+  const options = setting.schema && kindOf(setting.schema, defs) === 'enum' ? enumOf(setting.schema, defs) : null
+  const index = options ? options.findIndex(option => same(option, from)) : -1
+  return options && index >= 0 ? choiceLabels(options)[index]! : editText(from)
+}
+
 /** An edit at one level starts from what that level sets, else from the value in effect. */
-export function editAt(setting: Setting, layer: string): Edit {
+export function editAt(setting: Setting, layer: string, defs: Panel['defs']): Edit {
   const from = valueAt(setting, layer)
   // Only a credential holds a reference: a plain object with a `source` is a value like any other.
   const reference = setting.credential ? referenceAt(setting, layer) : undefined
   return {
     path: setting.path,
     layer,
-    text: reference ? '' : editText(from),
+    text: reference ? '' : textOf(setting, from, defs),
     source: reference && SOURCES[reference.source] ? reference.source : '1password',
     draft: Object.fromEntries(Object.entries(reference ?? {}).filter((entry): entry is [string, string] => typeof entry[1] === 'string')),
     isDirty: false,
@@ -143,8 +151,8 @@ export function editAt(setting: Setting, layer: string): Edit {
  * The edit pointed at another level. What was typed stays, so a value can be written wherever it
  * belongs; untouched, the edit shows what that level holds.
  */
-export function switchLevel(edit: Edit, setting: Setting, layer: string): Edit {
-  return edit.isDirty ? { ...edit, layer } : editAt(setting, layer)
+export function switchLevel(edit: Edit, setting: Setting, layer: string, defs: Panel['defs']): Edit {
+  return edit.isDirty ? { ...edit, layer } : editAt(setting, layer, defs)
 }
 
 /**
@@ -170,7 +178,7 @@ export function firstKey(now: Panel, at: At, canType: boolean): string {
   for (const part of parts(now, at)) {
     const child = [...at, part]
     const node = nodeAt(setting.schema, now.defs, child)
-    if (node.kind === 'boolean' || node.kind === 'enum') return `${atKey(child)}:${editText(choicesAt(node, getAt(now.edit?.value, child), now.defs).current)}`
+    if (node.kind === 'boolean' || node.kind === 'enum') return `${atKey(child)}:${choicesAt(node, getAt(now.edit?.value, child), now.defs).currentLabel}`
     if (canType || isStructuredKind(node.kind)) return atKey(child)
   }
   const node = nodeAt(setting.schema, now.defs, at)

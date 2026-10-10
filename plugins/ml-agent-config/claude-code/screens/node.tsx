@@ -27,15 +27,15 @@ function field({ now, ui, Input, act }: Ctx, at: At): RenderNode {
   const description = resolved.description
 
   if (kind === 'boolean' || kind === 'enum') {
-    const { options, current } = choicesAt(node, value, now.defs)
+    const { options, labels, current } = choicesAt(node, value, now.defs)
     return (
       <Box key={key} flexDirection="column">
         <Box>
           <Text>{name} </Text>
-          {options.map(option => (
+          {options.map((option, index) => (
             <Button
-              key={`${key}:${editText(option)}`}
-              label={editText(option)}
+              key={`${key}:${labels[index]}`}
+              label={labels[index]!}
               variant={same(option, current) ? 'primary' : undefined}
               onPress={() => act.setPart(at, option)}
             />

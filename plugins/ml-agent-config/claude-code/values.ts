@@ -139,6 +139,15 @@ export function lastPart(path: string): string {
  */
 export function rootChoices(setting: Setting, defs: Defs, like: Json): string[] | null {
   const kind = setting.schema ? kindOf(setting.schema, defs) : null
-  if (kind === 'enum') return (resolveRef(setting.schema!, defs).enum ?? []).map(option => editText(option))
+  if (kind === 'enum') return choiceLabels(resolveRef(setting.schema!, defs).enum ?? [])
   return kind === 'boolean' || (kind === null && typeof like === 'boolean') ? ['on', 'off'] : null
+}
+
+/**
+ * Each choice's label, as typed: `on`, `off`, the value as text. Two values that would read alike
+ * (`1` and `"1"`) read as JSON instead, so each label names one value.
+ */
+export function choiceLabels(options: Json[]): string[] {
+  const plain = options.map(option => editText(option))
+  return options.map((option, index) => (plain.indexOf(plain[index]!) !== plain.lastIndexOf(plain[index]!) ? JSON.stringify(option) : plain[index]!))
 }

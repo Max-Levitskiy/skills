@@ -51,7 +51,9 @@ export function keySchema(entry: ValueSchema & { layer?: string }): ValueSchema 
 /** A `$ref`'s name in `$defs`, and the schema it names there; no name when it is not `#/$defs/<name>`. */
 function refTarget(ref: string, defs: Defs): { name?: string; target?: ValueSchema } {
   const name = REF.exec(ref)?.[1];
-  return name === undefined ? {} : { name, target: defs[decodeURIComponent(name)] };
+  if (name === undefined) return {};
+  const key = decodeURIComponent(name);
+  return { name, target: has(defs, key) ? defs[key] : undefined };
 }
 
 /** The schema a `$ref` points at, followed until it points at none. */
@@ -83,6 +85,9 @@ function fits(value: ConfigValue, type: JsonType): boolean {
   const actual = typeOf(value);
   return actual === type || (type === "number" && actual === "integer");
 }
+
+/** A member the object holds itself, never one it inherits (`toString`, `constructor`). */
+export const has = (object: object, key: string): boolean => Object.hasOwn(object, key);
 
 const isPlainObject = (value: ConfigValue | undefined): value is { [key: string]: ConfigValue } =>
   value !== null && value !== undefined && typeof value === "object" && !Array.isArray(value);
@@ -119,12 +124,13 @@ export function same(a: ConfigValue, b: ConfigValue): boolean {
  * another layer gives and holds null where it blocks the levels under it, so `partial` lets both
  * through; the merged value is checked whole.
  */
-export function check(value: ConfigValue, schema: ValueSchema, defs: Defs, at: string, partial = false): string[] {
+export function check(value: ConfigValue, schema: ValueSchema, defs: Defs, at: string, partial = false, followed: string[] = []): string[] {
   if (schema.$ref === undefined) return checkOne(value, schema, defs, at, partial);
   // Keywords beside a $ref apply as well as the schema it names, never instead of it.
   const { $ref, ...beside } = schema;
-  const { target } = refTarget($ref, defs);
-  const problems = [...(target ? check(value, target, defs, at, partial) : []), ...checkOne(value, beside, defs, at, partial)];
+  // A $ref met again on the same value is a cycle that checks nothing new.
+  const { target } = followed.includes($ref) ? {} : refTarget($ref, defs);
+  const problems = [...(target ? check(value, target, defs, at, partial, [...followed, $ref]) : []), ...checkOne(value, beside, defs, at, partial)];
   return [...new Set(problems)];
 }
 
@@ -141,8 +147,10 @@ function checkOne(value: ConfigValue, s: ValueSchema, defs: Defs, at: string, pa
     if (s.maximum !== undefined && value > s.maximum) problems.push(`${at} should be at most ${s.maximum}`);
   }
   if (typeof value === "string") {
-    if (s.minLength !== undefined && value.length < s.minLength) problems.push(`${at} should be at least ${s.minLength} characters`);
-    if (s.maxLength !== undefined && value.length > s.maxLength) problems.push(`${at} should be at most ${s.maxLength} characters`);
+    // Characters as JSON Schema counts them: code points, not UTF-16 units.
+    const length = [...value].length;
+    if (s.minLength !== undefined && length < s.minLength) problems.push(`${at} should be at least ${s.minLength} characters`);
+    if (s.maxLength !== undefined && length > s.maxLength) problems.push(`${at} should be at most ${s.maxLength} characters`);
     if (s.pattern !== undefined && !new RegExp(s.pattern, "u").test(value)) problems.push(`${at} should match ${s.pattern}`);
   }
   if (Array.isArray(value)) {
@@ -152,9 +160,9 @@ function checkOne(value: ConfigValue, s: ValueSchema, defs: Defs, at: string, pa
     if (s.items) value.forEach((item, index) => problems.push(...check(item, s.items!, defs, `${at}[${index}]`)));
   }
   if (value !== null && typeof value === "object" && !Array.isArray(value)) {
-    if (!partial) for (const name of s.required ?? []) if (value[name] === undefined) problems.push(`${at}.${name} is required`);
+    if (!partial) for (const name of s.required ?? []) if (!has(value, name)) problems.push(`${at}.${name} is required`);
     for (const [name, child] of Object.entries(value)) {
-      const declared = s.properties?.[name];
+      const declared = s.properties && has(s.properties, name) ? s.properties[name] : undefined;
       if (declared) problems.push(...check(child, declared, defs, `${at}.${name}`, partial));
       else if (s.additionalProperties === false) problems.push(`${at}.${name} is not a key it takes`);
       else if (typeof s.additionalProperties === "object") problems.push(...check(child, s.additionalProperties, defs, `${at}.${name}`, partial));
@@ -173,9 +181,21 @@ function article(type: JsonType): string {
  */
 export function keySchemaProblems(schema: ValueSchema, defs: Defs, at: string): string[] {
   const problems = schemaProblems(schema, defs, at);
-  const own = types(resolveRef(schema, defs)) ?? [];
-  if (own.includes("null")) problems.push(`${at}: a key cannot hold null, which blocks the layers under it; leave the key unset instead`);
+  const resolved = resolveRef(schema, defs);
+  const own = types(resolved) ?? [];
+  const forcesNull = resolved.const === null || (resolved.enum !== undefined && resolved.enum.every((one) => one === null));
+  if (own.includes("null") || forcesNull) problems.push(`${at}: a key cannot hold null, which blocks the layers under it; leave the key unset instead`);
   return problems;
+}
+
+/** A chain of schemas that are only a $ref each, leading back to one already met: it describes nothing. */
+function refLoops(ref: string, defs: Defs): boolean {
+  const met: string[] = [];
+  for (let next: string | undefined = ref; next !== undefined; next = refTarget(next, defs).target?.$ref) {
+    if (met.includes(next)) return true;
+    met.push(next);
+  }
+  return false;
 }
 
 /** Where a declaration's schema cannot be read: an unknown type, or a `$ref` to nothing. */
@@ -185,6 +205,7 @@ export function schemaProblems(schema: ValueSchema, defs: Defs, at: string, seen
   const problems: string[] = [];
   if (schema.$ref !== undefined) {
     const { name, target } = refTarget(schema.$ref, defs);
+    if (target && refLoops(schema.$ref, defs)) problems.push(`${at}: $ref "${schema.$ref}" leads back to itself through $refs alone`);
     if (name === undefined) problems.push(`${at}: $ref "${schema.$ref}" should be #/$defs/<name>`);
     else if (!target) problems.push(`${at}: $ref "${schema.$ref}" names no entry in schema.$defs`);
     else problems.push(...schemaProblems(target, defs, `$defs.${name}`, seen));
@@ -241,7 +262,7 @@ export function childSchema(schema: ValueSchema | null | undefined, defs: Defs, 
   if (!schema) return null;
   const s = resolveRef(schema, defs);
   if (s.items && /^\d+$/.test(part)) return s.items;
-  const declared = s.properties?.[part];
+  const declared = s.properties && has(s.properties, part) ? s.properties[part] : undefined;
   if (declared) return declared;
   return typeof s.additionalProperties === "object" ? s.additionalProperties : null;
 }
@@ -255,7 +276,8 @@ export function emptyOf(schema: ValueSchema | null, defs: Defs): ConfigValue {
   if (kind === "list" || kind === "entries") return [];
   if (kind === "boolean") return false;
   if (kind === "enum") return s.enum![0] ?? null;
-  return kind === "json" ? null : "";
+  // Never null, which in a layer removes what is beneath: an unconstrained part starts as empty text.
+  return "";
 }
 
 /** The values a part may take, when its schema names them. */

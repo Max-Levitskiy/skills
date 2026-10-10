@@ -58,6 +58,15 @@ describe("checking against the spec's own rules", () => {
     expect(check([2, 1], { enum: [[1, 2]] }, {}, "x")).toEqual(["x should be one of [1,2]"]);
   });
 
+  test("a $ref cycle checks nothing new instead of overflowing", () => {
+    expect(check("x", { $ref: "#/$defs/loop" }, { loop: { $ref: "#/$defs/loop" } }, "k")).toEqual([]);
+  });
+
+  test("length counts characters, and required counts only members the object holds", () => {
+    expect(check("😀", { type: "string", maxLength: 1 }, {}, "s")).toEqual([]);
+    expect(check({}, { type: "object", required: ["toString"] }, {}, "o")).toEqual(["o.toString is required"]);
+  });
+
   test("keywords beside a $ref apply as well as it, never instead", () => {
     expect(check(15, { $ref: "#/$defs/small", maximum: 20 }, { small: { maximum: 10 } }, "n")).toEqual(["n should be at most 10"]);
   });
@@ -140,6 +149,10 @@ describe("the CLI", () => {
     expect(missing(["describe", "demo"]).stderr).toContain('key "owner" has a default its schema refuses: owner.name is required');
     const nullable = component({ version: 1, keys: { tag: { description: "T", type: ["string", "null"] } } });
     expect(nullable(["describe", "demo"]).stderr).toContain("a key cannot hold null");
+    const constant = component({ version: 1, keys: { tag: { description: "T", const: null } } });
+    expect(constant(["describe", "demo"]).stderr).toContain("a key cannot hold null");
+    const looping = component({ version: 1, keys: { k: { description: "K", $ref: "#/$defs/loop" } }, $defs: { loop: { $ref: "#/$defs/loop" } } });
+    expect(looping(["describe", "demo"]).stderr).toContain("leads back to itself through $refs alone");
   });
 
   test("a declaration whose $ref names nothing, or whose default its schema refuses, is an error", () => {

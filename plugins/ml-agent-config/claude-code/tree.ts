@@ -3,8 +3,8 @@
 // apart, read into the draft only on Save, so a half-typed number is never lost or saved.
 
 import type { Json, Setting } from '../types'
-import { check, childSchema, enumOf, kindOf, merge, resolveRef, type Defs, type Kind, type ValueSchema } from '../src/key-schema'
-import { editText, parseText, showValue, type Names } from './values'
+import { check, childSchema, enumOf, has, kindOf, merge, resolveRef, same, type Defs, type Kind, type ValueSchema } from '../src/key-schema'
+import { choiceLabels, editText, parseText, showValue, type Names } from './values'
 
 /** Where a part sits in the value: property, entry name or item index, outermost first. */
 export type At = string[]
@@ -63,7 +63,7 @@ export function takesEntries(node: { resolved: ValueSchema; kind: Kind }): boole
 export function roleOf(root: ValueSchema | null, defs: Defs, at: At): 'item' | 'field' | 'entry' {
   const holder = nodeAt(root, defs, at.slice(0, -1))
   if (holder.kind === 'entries') return 'item'
-  return at.at(-1)! in (holder.resolved.properties ?? {}) ? 'field' : 'entry'
+  return has(holder.resolved.properties ?? {}, at.at(-1)!) ? 'field' : 'entry'
 }
 
 /** The element keys of a part, and of a map's or list's Add. */
@@ -74,9 +74,16 @@ export const addKey = (at: At) => `add:${at.join('.')}`
  * An on/off or enum part's choices, and the one in effect: its value, else its default, else the
  * first. Labels are as typed (`on`, `off`, the value as text), so a button's key and its focus agree.
  */
-export function choicesAt(node: { resolved: ValueSchema; kind: Kind }, value: Json | undefined, defs: Defs): { options: Json[]; current: Json } {
+export function choicesAt(
+  node: { resolved: ValueSchema; kind: Kind },
+  value: Json | undefined,
+  defs: Defs,
+): { options: Json[]; labels: string[]; current: Json; currentLabel: string } {
   const options: Json[] = node.kind === 'boolean' ? [true, false] : enumOf(node.resolved, defs)
-  return { options, current: value ?? node.resolved.default ?? (node.kind === 'boolean' ? false : (options[0] ?? null)) }
+  const labels = choiceLabels(options)
+  const current = value ?? node.resolved.default ?? (node.kind === 'boolean' ? false : (options[0] ?? null))
+  const at = options.findIndex(option => same(option, current))
+  return { options, labels, current, currentLabel: at >= 0 ? labels[at]! : editText(current) }
 }
 
 export function getAt(value: Json | undefined, at: At): Json | undefined {
@@ -173,9 +180,10 @@ export function parseAs(text: string, schema: ValueSchema | null, like: Json, de
   // An enum may name the empty text itself, so it is looked up before empty means removal.
   if (kind === 'enum') {
     const options = enumOf(schema, defs)
-    const picked = options.find(option => editText(option) === trimmed)
-    if (picked !== undefined) return { value: picked }
-    return trimmed === '' ? {} : { error: `pick one of ${options.map(option => editText(option)).join(', ')}` }
+    const labels = choiceLabels(options)
+    const index = labels.indexOf(trimmed)
+    if (index >= 0) return { value: options[index]! }
+    return trimmed === '' ? {} : { error: `pick one of ${labels.join(', ')}` }
   }
   if (trimmed === '') return {}
   if (kind === 'number' || kind === 'integer') {

@@ -8,6 +8,7 @@ import { editing, layerNames, selected } from '../panel'
 import { LEVELS, ORDER, effect, openAbove, under } from '../ui/levels'
 import { note, row, screen } from '../ui/screen'
 import { display, isTreeSetting } from '../tree'
+import { kindOf } from '../../src/key-schema'
 import { SOURCES, rootChoices } from '../values'
 import type { Ctx } from './context'
 import { nodeBody } from './node'
@@ -30,6 +31,7 @@ export function edit(ctx: Ctx): RenderElement {
   const isPlain = !setting.credential && !isTree
   // A plain value is picked when its schema says on/off or names the values it takes.
   const choices = isPlain ? rootChoices(setting, now.defs, draft.like) : null
+  const isText = setting.schema !== null && kindOf(setting.schema, now.defs) === 'string'
 
   const said = effect(setting, draft.layer, layers, now.names, now.defs)
   // The level sits on the title line, at the right; a press opens the level list. With one level
@@ -68,7 +70,7 @@ export function edit(ctx: Ctx): RenderElement {
         key="value"
         label="Value"
         value={draft.text}
-        placeholder={Array.isArray(setting.value ?? setting.default) ? 'a, b, c' : 'empty removes it from this level'}
+        placeholder={Array.isArray(setting.value ?? setting.default) ? 'a, b, c' : isText ? 'empty saves empty text; Remove here removes it' : 'empty removes it from this level'}
         submitLabel="save"
         onInput={text => act.typeText(text)}
         onSubmit={text => act.typeText(text).then(() => act.saveEdit())}
