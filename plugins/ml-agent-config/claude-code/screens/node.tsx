@@ -5,7 +5,6 @@
 
 import type { RenderElement, RenderNode } from 'claude-code'
 
-import { same } from '../../src/key-schema'
 import { editing, parts, selected, top } from '../panel'
 import { type At, addKey, atKey, choicesAt, getAt, isStructuredKind, itemName, nodeAt, pointer, roleOf, summary, takesEntries } from '../tree'
 import { editText } from '../values'
@@ -27,7 +26,7 @@ function field({ now, ui, Input, act }: Ctx, at: At): RenderNode {
   const description = resolved.description
 
   if (kind === 'boolean' || kind === 'enum') {
-    const { options, labels, current } = choicesAt(node, value, now.defs)
+    const { options, labels, picked, fallback } = choicesAt(node, value, now.defs)
     return (
       <Box key={key} flexDirection="column">
         <Box>
@@ -36,12 +35,13 @@ function field({ now, ui, Input, act }: Ctx, at: At): RenderNode {
             <Button
               key={`${key}:${labels[index]}`}
               label={labels[index]!}
-              variant={same(option, current) ? 'primary' : undefined}
+              variant={index === picked ? 'primary' : undefined}
               onPress={() => act.setPart(at, option)}
             />
           ))}
           {/* Set here, it can be taken out again, back to the default or the level below. */}
           {value !== undefined && <Button key={`${key}:unset`} label="unset" plain dimColor onPress={() => act.setPart(at, undefined)} />}
+          {value === undefined && <Text key={`${key}:fallback`} dimColor>{fallback === null ? ' not set' : ` not set, default ${fallback}`}</Text>}
         </Box>
         {description && <Text dimColor>{`  ${description}`}</Text>}
       </Box>
@@ -120,5 +120,7 @@ export function node(ctx: Ctx): RenderElement {
       <Button key="save" label="Save here" variant="primary" onPress={() => act.saveEdit()} />
     </Box>,
     (isEntry || isItem) && row(ui, { key: 'remove', label: `› Remove ${isEntry ? at.at(-1) : itemName(getAt(now.edit.value, at), Number(at.at(-1)))}`, onPress: () => act.removePart(at) }),
+    // A declared field is never removed from the schema, only unset here, back to what lies beneath.
+    !isEntry && !isItem && row(ui, { key: 'remove', label: `› Unset ${at.at(-1)}`, onPress: () => act.removePart(at) }),
   ])
 }

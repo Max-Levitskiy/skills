@@ -178,7 +178,7 @@ export function firstKey(now: Panel, at: At, canType: boolean): string {
   for (const part of parts(now, at)) {
     const child = [...at, part]
     const node = nodeAt(setting.schema, now.defs, child)
-    if (node.kind === 'boolean' || node.kind === 'enum') return `${atKey(child)}:${choicesAt(node, getAt(now.edit?.value, child), now.defs).currentLabel}`
+    if (node.kind === 'boolean' || node.kind === 'enum') return `${atKey(child)}:${choicesAt(node, getAt(now.edit?.value, child), now.defs).focus}`
     if (canType || isStructuredKind(node.kind)) return atKey(child)
   }
   const node = nodeAt(setting.schema, now.defs, at)

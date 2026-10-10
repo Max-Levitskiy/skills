@@ -55,8 +55,8 @@ export function nameTaken(holder: Json | undefined, name: string): boolean {
 
 /** An object that takes named entries: a map, or an object of fields whose schema allows more. */
 export function takesEntries(node: { resolved: ValueSchema; kind: Kind }): boolean {
-  const more = node.resolved.additionalProperties
-  return node.kind === 'map' || (node.kind === 'fields' && more !== undefined && more !== false)
+  // Unsaid, an object takes more members, as JSON Schema reads it; only false closes it.
+  return node.kind === 'map' || (node.kind === 'fields' && node.resolved.additionalProperties !== false)
 }
 
 /** What a part is to its holder: an item of a list, a declared field, or a named entry. */
@@ -78,12 +78,15 @@ export function choicesAt(
   node: { resolved: ValueSchema; kind: Kind },
   value: Json | undefined,
   defs: Defs,
-): { options: Json[]; labels: string[]; current: Json; currentLabel: string } {
+): { options: Json[]; labels: string[]; picked: number; focus: string; fallback: string | null } {
   const options: Json[] = node.kind === 'boolean' ? [true, false] : enumOf(node.resolved, defs)
   const labels = choiceLabels(options)
-  const current = value ?? node.resolved.default ?? (node.kind === 'boolean' ? false : (options[0] ?? null))
-  const at = options.findIndex(option => same(option, current))
-  return { options, labels, current, currentLabel: at >= 0 ? labels[at]! : editText(current) }
+  // Only a value the draft holds is shown picked; an unset one says what applies instead.
+  const picked = value === undefined ? -1 : options.findIndex(option => same(option, value))
+  const fallback = node.resolved.default === undefined ? null : editText(node.resolved.default)
+  const defaultAt = node.resolved.default === undefined ? -1 : options.findIndex(option => same(option, node.resolved.default!))
+  const focus = labels[picked >= 0 ? picked : defaultAt >= 0 ? defaultAt : 0] ?? ''
+  return { options, labels, picked, focus, fallback }
 }
 
 export function getAt(value: Json | undefined, at: At): Json | undefined {
@@ -201,8 +204,8 @@ export function parseAs(text: string, schema: ValueSchema | null, like: Json, de
     const bad = parts.find((_, index) => !Number.isFinite(numbers[index]))
     return bad === undefined ? { value: numbers } : { error: `${bad} is not a number` }
   }
-  // Nothing to read it by: JSON when it is JSON, else the text.
-  if (kind === 'json' && (like === '' || like === null)) {
+  // Nothing narrower to read it by: JSON when it is JSON, else the text, whatever it held before.
+  if (kind === 'json') {
     try {
       return { value: JSON.parse(trimmed) as Json }
     } catch {

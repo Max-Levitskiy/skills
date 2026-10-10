@@ -62,9 +62,12 @@ export function resolveRef(schema: ValueSchema, defs: Defs): ValueSchema {
   for (let hops = 0; current.$ref !== undefined; hops++) {
     const { target } = refTarget(current.$ref, defs);
     if (!target || hops > 32) return {};
-    // Keywords beside the $ref still apply; the target's fill in the rest.
+    // Keywords beside the $ref still apply; the target's fill in the rest. Both schemas' fields
+    // apply, so their properties and required names are joined rather than one replacing the other.
     const { $ref: _ref, ...beside } = current;
-    current = { ...target, ...beside };
+    const properties = target.properties && beside.properties ? { ...target.properties, ...beside.properties } : (beside.properties ?? target.properties);
+    const required = target.required && beside.required ? [...new Set([...target.required, ...beside.required])] : (beside.required ?? target.required);
+    current = { ...target, ...beside, ...(properties ? { properties } : {}), ...(required ? { required } : {}) };
   }
   return current;
 }
@@ -116,7 +119,7 @@ export function same(a: ConfigValue, b: ConfigValue): boolean {
     return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((one, index) => same(one, b[index]!));
   }
   const keys = Object.keys(a);
-  return keys.length === Object.keys(b).length && keys.every((key) => key in b && same(a[key]!, b[key]!));
+  return keys.length === Object.keys(b).length && keys.every((key) => has(b, key) && same(a[key]!, b[key]!));
 }
 
 /**
@@ -139,8 +142,11 @@ function checkOne(value: ConfigValue, s: ValueSchema, defs: Defs, at: string, pa
   const shape = inferred(s);
   const wanted = types(s) ?? (shape ? [shape] : null);
   if (wanted && !wanted.some((type) => fits(value, type))) return [`${at} should be ${wanted.map(article).join(" or ")}, not ${article(typeOf(value))}`];
-  if (s.enum && !s.enum.some((one) => same(one, value))) return [`${at} should be one of ${s.enum.map((one) => JSON.stringify(one)).join(", ")}`];
-  if (s.const !== undefined && !same(s.const, value)) return [`${at} should be ${JSON.stringify(s.const)}`];
+  // An object in a layer may be a part of the whole that the layers merge into, so enum and const
+  // are held to the merged value only.
+  const isFragment = partial && isPlainObject(value);
+  if (s.enum && !isFragment && !s.enum.some((one) => same(one, value))) return [`${at} should be one of ${s.enum.map((one) => JSON.stringify(one)).join(", ")}`];
+  if (s.const !== undefined && !isFragment && !same(s.const, value)) return [`${at} should be ${JSON.stringify(s.const)}`];
   const problems: string[] = [];
   if (typeof value === "number") {
     if (s.minimum !== undefined && value < s.minimum) problems.push(`${at} should be at least ${s.minimum}`);
@@ -164,7 +170,8 @@ function checkOne(value: ConfigValue, s: ValueSchema, defs: Defs, at: string, pa
     for (const [name, child] of Object.entries(value)) {
       const declared = s.properties && has(s.properties, name) ? s.properties[name] : undefined;
       if (declared) problems.push(...check(child, declared, defs, `${at}.${name}`, partial));
-      else if (s.additionalProperties === false) problems.push(`${at}.${name} is not a key it takes`);
+      // A null in a layer only removes a member beneath, so it may name one the schema no longer takes.
+      else if (s.additionalProperties === false && !(partial && child === null)) problems.push(`${at}.${name} is not a key it takes`);
       else if (typeof s.additionalProperties === "object") problems.push(...check(child, s.additionalProperties, defs, `${at}.${name}`, partial));
     }
   }
@@ -181,10 +188,23 @@ function article(type: JsonType): string {
  */
 export function keySchemaProblems(schema: ValueSchema, defs: Defs, at: string): string[] {
   const problems = schemaProblems(schema, defs, at);
+  if (problems.length > 0) return problems;
+  return nullProblems(schema, defs, at, new Set());
+}
+
+/**
+ * Null in a layer removes what is beneath, at a key and at every object member under it, since
+ * objects merge; so neither may hold null. A list replaces whole, so its items may.
+ */
+function nullProblems(schema: ValueSchema, defs: Defs, at: string, seen: Set<ValueSchema>): string[] {
+  if (seen.has(schema)) return [];
+  seen.add(schema);
   const resolved = resolveRef(schema, defs);
   const own = types(resolved) ?? [];
   const forcesNull = resolved.const === null || (Array.isArray(resolved.enum) && resolved.enum.includes(null));
-  if (own.includes("null") || forcesNull) problems.push(`${at}: a key cannot hold null, which blocks the layers under it; leave the key unset instead`);
+  const problems = own.includes("null") || forcesNull ? [`${at}: cannot hold null, which in a layer removes what is beneath; leave it unset instead`] : [];
+  for (const [name, child] of Object.entries(resolved.properties ?? {})) problems.push(...nullProblems(child, defs, `${at}.${name}`, seen));
+  if (typeof resolved.additionalProperties === "object") problems.push(...nullProblems(resolved.additionalProperties, defs, `${at}.*`, seen));
   return problems;
 }
 
@@ -229,7 +249,10 @@ export function schemaProblems(schema: ValueSchema, defs: Defs, at: string, seen
       problems.push(`${at}: pattern ${schema.pattern} is not a regular expression`);
     }
   }
-  for (const [name, child] of Object.entries(schema.properties ?? {})) problems.push(...schemaProblems(child, defs, `${at}.${name}`, seen));
+  for (const [name, child] of Object.entries(schema.properties ?? {})) {
+    if (!isMap(child)) problems.push(`${at}.${name}: a property's schema should be an object`);
+    else problems.push(...schemaProblems(child, defs, `${at}.${name}`, seen));
+  }
   if (typeof schema.additionalProperties === "object") problems.push(...schemaProblems(schema.additionalProperties, defs, `${at}.*`, seen));
   if (schema.items) problems.push(...schemaProblems(schema.items, defs, `${at}[]`, seen));
   return problems;

@@ -6,7 +6,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 
-import { check, emptyOf, kindOf, type Defs, type ValueSchema } from "./key-schema";
+import { check, emptyOf, kindOf, resolveRef, same, type Defs, type ValueSchema } from "./key-schema";
 
 const BIN = join(import.meta.dir, "..", "bin", "agent-config");
 
@@ -65,6 +65,22 @@ describe("checking against the spec's own rules", () => {
   test("length counts characters, and required counts only members the object holds", () => {
     expect(check("😀", { type: "string", maxLength: 1 }, {}, "s")).toEqual([]);
     expect(check({}, { type: "object", required: ["toString"] }, {}, "o")).toEqual(["o.toString is required"]);
+  });
+
+  test("a layer's object may be part of an enum or const value, and may null a member the schema no longer takes", () => {
+    expect(check({ b: 2 }, { const: { a: 1, b: 2 } }, {}, "x", true)).toEqual([]);
+    expect(check({ b: 2 }, { const: { a: 1, b: 2 } }, {}, "x")).toEqual(['x should be {"a":1,"b":2}']);
+    expect(check({ old: null }, { type: "object", additionalProperties: false }, {}, "o", true)).toEqual([]);
+  });
+
+  test("equality counts only members an object holds itself", () => {
+    expect(same(JSON.parse('{"__proto__":{}}'), { x: 1 })).toBe(false);
+  });
+
+  test("the editor sees the fields of a $ref and of its siblings together", () => {
+    const joined = resolveRef({ $ref: "#/$defs/a", properties: { b: { type: "string" } } }, { a: { type: "object", properties: { a: { type: "string" } }, required: ["a"] } });
+    expect(Object.keys(joined.properties!)).toEqual(["a", "b"]);
+    expect(joined.required).toEqual(["a"]);
   });
 
   test("keywords beside a $ref apply as well as it, never instead", () => {
@@ -148,15 +164,21 @@ describe("the CLI", () => {
     });
     expect(missing(["describe", "demo"]).stderr).toContain('key "owner" has a default its schema refuses: owner.name is required');
     const nullable = component({ version: 1, keys: { tag: { description: "T", type: ["string", "null"] } } });
-    expect(nullable(["describe", "demo"]).stderr).toContain("a key cannot hold null");
+    expect(nullable(["describe", "demo"]).stderr).toContain("cannot hold null, which in a layer removes what is beneath");
     const constant = component({ version: 1, keys: { tag: { description: "T", const: null } } });
-    expect(constant(["describe", "demo"]).stderr).toContain("a key cannot hold null");
+    expect(constant(["describe", "demo"]).stderr).toContain("cannot hold null, which in a layer removes what is beneath");
     const looping = component({ version: 1, keys: { k: { description: "K", $ref: "#/$defs/loop" } }, $defs: { loop: { $ref: "#/$defs/loop" } } });
     expect(looping(["describe", "demo"]).stderr).toContain("leads back to itself through $refs alone");
     const saying = component({ version: 1, keys: { k: { description: "K", $ref: "#/$defs/loop" } }, $defs: { loop: { $ref: "#/$defs/loop", type: "string" } } });
     expect(saying(["describe", "demo"]).code).toBe(0);
     const mixed = component({ version: 1, keys: { mode: { description: "M", enum: [null, "auto"] } } });
-    expect(mixed(["describe", "demo"]).stderr).toContain("a key cannot hold null");
+    expect(mixed(["describe", "demo"]).stderr).toContain("cannot hold null, which in a layer removes what is beneath");
+    const nested = component({ version: 1, keys: { o: { description: "O", type: "object", properties: { f: { type: ["string", "null"] } } } } });
+    expect(nested(["describe", "demo"]).stderr).toContain("o.f: cannot hold null");
+    const listed = component({ version: 1, keys: { l: { description: "L", type: "array", items: { type: ["string", "null"] } } } });
+    expect(listed(["describe", "demo"]).code).toBe(0);
+    const broken = component({ version: 1, keys: { o: { description: "O", type: "object", properties: { a: null } } } });
+    expect(broken(["describe", "demo"]).stderr).toContain("o.a: a property's schema should be an object");
     const malformed = component({ version: 1, keys: { mode: { description: "M", enum: {} } } });
     const answer = malformed(["describe", "demo"]);
     expect([answer.code, answer.stderr.includes("enum should be a list")]).toEqual([2, true]);

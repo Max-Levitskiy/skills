@@ -258,8 +258,8 @@ What reads it:
 
 A key with no type keyword is typed by its default, as before, and is never refused. A declaration
 whose `$ref` names nothing, whose type is unknown, whose default its own schema refuses (checked
-whole), or whose key may hold null (null blocks the layers under a key, so it can't be a value) is
-invalid (exit 2). A list's items are checked whole even in a layer, because a list replaces the one
+whole), or where a key or an object member under it may hold null (null in a layer removes what
+is beneath, so it can't be a value; a list's items may) is invalid (exit 2). A list's items are checked whole even in a layer, because a list replaces the one
 under it.
 
 ## What a consumer's SKILL.md says
