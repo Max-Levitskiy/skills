@@ -14,7 +14,7 @@ import { join, dirname } from "path";
 import { spawnSync } from "child_process";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { CONFIG_DIR, type RepoContext } from "./repo";
-import type { ConfigValue } from "./key-schema";
+import { merge, type ConfigValue } from "./key-schema";
 
 export type Layer = "global" | "repo" | "user-repo" | "local";
 export const LAYERS: Layer[] = ["global", "repo", "user-repo", "local"];
@@ -91,18 +91,6 @@ function readConfigFile(path: string): ConfigObject | null {
 /** A problem with a declaration or a config file — exit 2, never a crash. */
 export class ConfigError extends Error {}
 
-/** Deep merge per ACS: objects merge, arrays and scalars replace, an explicit null deletes. */
-function merge(base: ConfigValue | undefined, over: ConfigValue | undefined): ConfigValue | undefined {
-  if (over === null) return undefined;
-  if (over === undefined || !isPlainObject(over)) return over;
-  const target: ConfigObject = isPlainObject(base) ? { ...base } : {};
-  for (const [key, value] of Object.entries(over)) {
-    const merged = merge(target[key], value);
-    if (merged === undefined) delete target[key];
-    else target[key] = merged;
-  }
-  return target;
-}
 
 function leafPaths(value: ConfigValue, prefix: string, out: string[]): void {
   if (isPlainObject(value) && Object.keys(value).length > 0) {

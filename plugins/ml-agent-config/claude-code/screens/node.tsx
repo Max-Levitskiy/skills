@@ -5,23 +5,24 @@
 
 import type { RenderElement, RenderNode } from 'claude-code'
 
-import { same, type Kind } from '../../src/key-schema'
+import { same } from '../../src/key-schema'
 import { editing, parts, selected, top } from '../panel'
-import { type At, addKey, atKey, choicesAt, getAt, isStructuredKind, itemName, kindAt, nodeAt, pointer, summary } from '../tree'
+import { type At, addKey, atKey, choicesAt, getAt, isStructuredKind, itemName, nodeAt, pointer, roleOf, summary, takesEntries } from '../tree'
 import { editText } from '../values'
 import { note, row, screen } from '../ui/screen'
 import type { Ctx } from './context'
 
 /** One part: picked, typed, or opened. */
-function field({ now, ui, Input, act }: Ctx, at: At, parent: Kind): RenderNode {
+function field({ now, ui, Input, act }: Ctx, at: At): RenderNode {
   const { Box, Button, Text } = ui
   const setting = editing(now)!
   const node = nodeAt(setting.schema, now.defs, at)
   const { kind, resolved } = node
   const value = getAt(now.edit?.value, at)
   const part = at.at(-1)!
-  // An item by its label, a declared field by its schema's title, a map entry by its own name.
-  const name = parent === 'entries' ? itemName(value, Number(part)) : parent === 'fields' ? (resolved.title ?? part) : part
+  // An item by its label, a declared field by its schema's title, a named entry by its own name.
+  const role = roleOf(setting.schema, now.defs, at)
+  const name = role === 'item' ? itemName(value, Number(part)) : role === 'field' ? (resolved.title ?? part) : part
   const key = atKey(at)
   const description = resolved.description
 
@@ -66,13 +67,14 @@ function field({ now, ui, Input, act }: Ctx, at: At, parent: Kind): RenderNode {
 export function nodeBody(ctx: Ctx, at: At): (RenderNode | false | null | undefined)[] {
   const { now, ui, Input, act } = ctx
   const setting = editing(now)!
-  const kind = kindAt(setting.schema, now.defs, at)
-  const listed = parts(now, at).map(part => field(ctx, [...at, part], kind))
+  const holder = nodeAt(setting.schema, now.defs, at)
+  const { kind } = holder
+  const listed = parts(now, at).map(part => field(ctx, [...at, part]))
   const noun = nodeAt(setting.schema, now.defs, [...at, kind === 'entries' ? '0' : '*']).resolved.title ?? (kind === 'entries' ? 'item' : 'entry')
   return [
     ...listed,
     listed.length === 0 && kind !== 'fields' && note(ui, `No ${noun === 'entry' ? 'entries' : `${noun}s`} yet.`),
-    kind === 'map' && Input && (
+    takesEntries(holder) && Input && (
       <Input
         key={addKey(at)}
         label={`Add ${noun}`}
@@ -97,9 +99,9 @@ export function node(ctx: Ctx): RenderElement {
   if (!setting || !now.edit || getAt(now.edit.value, at) === undefined) {
     return screen(ui, { path, onBack: () => act.back() }, [note(ui, 'Nothing to edit.')])
   }
-  const parentKind = kindAt(setting.schema, now.defs, at.slice(0, -1))
-  const isEntry = parentKind === 'map'
-  const isItem = parentKind === 'entries'
+  const role = roleOf(setting.schema, now.defs, at)
+  const isEntry = role === 'entry'
+  const isItem = role === 'item'
   return screen(ui, { path, onBack: () => act.back(), message: now.message }, [
     isEntry && Input && (
       <Input

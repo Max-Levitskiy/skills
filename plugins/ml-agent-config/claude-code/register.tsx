@@ -20,8 +20,9 @@ import type { Component, Json, OnePassword, Panel, Screen, Setting, Unlock } fro
 import { HARNESS, OWN, blockedParent, firstLine, withValue, type Plan } from './cli'
 import { PANE, editAt, editing, inheritedFields, referenceAt, firstEdit, firstKey, firstSetting, layerNames, readDescribe, savedAt, selected, switchLevel, top } from './panel'
 import { draw } from './screens'
+import { ORDER } from './ui/levels'
 import { emptyOf } from '../src/key-schema'
-import { atKey, fold, getAt, isStructured, isTreeSetting, kindAt, moveTexts, nameTaken, parseAs, pointer, renameAt, schemaAt, setAt } from './tree'
+import { atKey, fold, getAt, isStructured, isTreeSetting, kindAt, mergedBelow, moveTexts, nameTaken, nodeAt, parseAs, pointer, renameAt, schemaAt, setAt, withRemovals, withoutPart } from './tree'
 import { readableReference } from './screens/onepassword'
 import type { Actions } from './screens/context'
 import { isObject, isPlan, listedComponents, onePasswordFields, onePasswordListing, pathLayer } from './shapes'
@@ -522,7 +523,8 @@ async function saveEdit($: EngineInterface, layer?: string, close = 1): Promise<
     // Nothing set reads as no value, which removes the key here, never as a null that blocks.
     const folded = fold(edit.value ?? undefined, edit.texts, setting.schema, now.defs, setting.path)
     if (folded.error) return refuse(folded.error)
-    return saveHere($, folded.value, at, closing)
+    const below = mergedBelow(ORDER.slice(0, ORDER.indexOf(at)).map(layer => setting.levels[layer]))
+    return saveHere($, withRemovals(folded.value, edit.like, below), at, closing)
   }
   if (!setting.credential) {
     // Typed as its schema says, else as the value the edit started from, which stays with what was
@@ -676,7 +678,8 @@ async function addPart($: EngineInterface, at: string[], typed: string, canType:
   const kind = kindAt(setting.schema, now.defs, at)
   const name = kind === 'entries' ? String(Array.isArray(holder) ? holder.length : 0) : typed.trim()
   if (!name) return say($, 'Type a name for it first.')
-  if (nameTaken(holder, name)) return say($, `${name} is already there.`)
+  const isField = kind === 'fields' && name in (nodeAt(setting.schema, now.defs, at).resolved.properties ?? {})
+  if (nameTaken(holder, name) || isField) return say($, `${name} is already there.`)
   const child = [...at, name]
   const schema = schemaAt(setting.schema, now.defs, child)
   await changeDraft($, edit => ({
@@ -715,12 +718,13 @@ async function removePart($: EngineInterface, at: string[]): Promise<void> {
   const now = await read($, panel)
   if (!now.edit) return
   const parent = at.slice(0, -1)
-  // A list closes up behind the item taken out, so the texts typed for the items after it go too.
+  // A list closes up behind the item taken out, and the texts typed for the items after it move with them.
   const isItem = Array.isArray(getAt(now.edit.value, parent))
   await changeDraft($, edit => ({
     ...edit,
     value: asDraft(setAt(edit.value, at, undefined)),
-    texts: moveTexts(edit.texts, isItem ? parent : at, null),
+    texts: withoutPart(edit.texts, at, isItem),
+    names: withoutPart(edit.names, at, isItem),
   }))
   await back($, 1, { message: `Removed ${at.at(-1)}. Save here to keep it.`, focus: parent.length === 0 ? undefined : atKey(parent) })
 }

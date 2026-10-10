@@ -48,6 +48,21 @@ describe("checking a value", () => {
   });
 });
 
+describe("checking against the spec's own rules", () => {
+  test("a list replaces the one under it, so its items are checked whole even in a layer", () => {
+    expect(check(["ok", null], { type: "array", items: { type: "string" } }, {}, "tags", true)).toEqual(["tags[1] should be text, not null"]);
+  });
+
+  test("objects in an enum are equal whatever their members' order", () => {
+    expect(check({ b: 2, a: 1 }, { enum: [{ a: 1, b: 2 }] }, {}, "x")).toEqual([]);
+    expect(check([2, 1], { enum: [[1, 2]] }, {}, "x")).toEqual(["x should be one of [1,2]"]);
+  });
+
+  test("keywords beside a $ref apply as well as it, never instead", () => {
+    expect(check(15, { $ref: "#/$defs/small", maximum: 20 }, { small: { maximum: 10 } }, "n")).toEqual(["n should be at most 10"]);
+  });
+});
+
 describe("how an editor reads a schema", () => {
   test("each shape gets its own kind of field", () => {
     expect(kindOf(PROJECTS, DEFS)).toBe("map");
@@ -115,6 +130,16 @@ describe("the CLI", () => {
     const run = component({ version: 1, keys: { mode: { description: "Mode", default: "fast" } } });
     expect(run(["describe", "demo"]).json.keys[0].schema).toBeNull();
     expect(run(["write", "demo", "--layer", "global"], JSON.stringify({ mode: 3 })).code).toBe(0);
+  });
+
+  test("a default is checked whole, and a key cannot hold null", () => {
+    const missing = component({
+      version: 1,
+      keys: { owner: { description: "O", type: "object", required: ["name"], properties: { name: { type: "string" } }, default: {} } },
+    });
+    expect(missing(["describe", "demo"]).stderr).toContain('key "owner" has a default its schema refuses: owner.name is required');
+    const nullable = component({ version: 1, keys: { tag: { description: "T", type: ["string", "null"] } } });
+    expect(nullable(["describe", "demo"]).stderr).toContain("a key cannot hold null");
   });
 
   test("a declaration whose $ref names nothing, or whose default its schema refuses, is an error", () => {

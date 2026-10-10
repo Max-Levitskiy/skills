@@ -253,11 +253,14 @@ What reads it:
 - **The `/agent-config` pane** draws from it: text and numbers are typed, on/off and an `enum` are
   picked, a list of text is typed as `a, b, c`, an object with `properties` opens a screen of its
   fields, and an object with `additionalProperties` a list of named entries to add, rename and
-  remove.
+  remove. An entry inherited from a level below and removed at a higher one is written there as
+  null, since objects merge and it would otherwise come back.
 
 A key with no type keyword is typed by its default, as before, and is never refused. A declaration
-whose `$ref` names nothing, whose type is unknown, or whose default its own schema refuses is
-invalid (exit 2).
+whose `$ref` names nothing, whose type is unknown, whose default its own schema refuses (checked
+whole), or whose key may hold null (null blocks the layers under a key, so it can't be a value) is
+invalid (exit 2). A list's items are checked whole even in a layer, because a list replaces the one
+under it.
 
 ## What a consumer's SKILL.md says
 

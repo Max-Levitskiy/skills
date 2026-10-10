@@ -3,7 +3,7 @@
 // apart, read into the draft only on Save, so a half-typed number is never lost or saved.
 
 import type { Json, Setting } from '../types'
-import { check, childSchema, enumOf, kindOf, resolveRef, type Defs, type Kind, type ValueSchema } from '../src/key-schema'
+import { check, childSchema, enumOf, kindOf, merge, resolveRef, type Defs, type Kind, type ValueSchema } from '../src/key-schema'
 import { editText, parseText, showValue, type Names } from './values'
 
 /** Where a part sits in the value: property, entry name or item index, outermost first. */
@@ -48,9 +48,22 @@ export function isTreeSetting(setting: Setting, defs: Defs): boolean {
 export const isObject = (value: Json | undefined): value is { [key: string]: Json } =>
   value !== null && value !== undefined && typeof value === 'object' && !Array.isArray(value)
 
-/** A map that already holds an entry of this name. */
+/** A map that already holds an entry of this name; a null there only removes one beneath. */
 export function nameTaken(holder: Json | undefined, name: string): boolean {
-  return isObject(holder) && name in holder
+  return isObject(holder) && holder[name] !== undefined && holder[name] !== null
+}
+
+/** An object that takes named entries: a map, or an object of fields whose schema allows more. */
+export function takesEntries(node: { resolved: ValueSchema; kind: Kind }): boolean {
+  const more = node.resolved.additionalProperties
+  return node.kind === 'map' || (node.kind === 'fields' && more !== undefined && more !== false)
+}
+
+/** What a part is to its holder: an item of a list, a declared field, or a named entry. */
+export function roleOf(root: ValueSchema | null, defs: Defs, at: At): 'item' | 'field' | 'entry' {
+  const holder = nodeAt(root, defs, at.slice(0, -1))
+  if (holder.kind === 'entries') return 'item'
+  return at.at(-1)! in (holder.resolved.properties ?? {}) ? 'field' : 'entry'
 }
 
 /** The element keys of a part, and of a map's or list's Add. */
@@ -103,6 +116,44 @@ export function renameAt(value: Json | undefined, at: At, name: string): Json | 
   return setAt(value, at.slice(0, -1), renamed)
 }
 
+/**
+ * Typed texts with one part taken out: its own go, and when it is a list item, those of the items
+ * after it move up one place, as the items do.
+ */
+export function withoutPart(texts: Record<string, string>, at: At, isItem: boolean): Record<string, string> {
+  const out: Record<string, string> = {}
+  const parent = at.slice(0, -1)
+  const index = Number(at.at(-1))
+  for (const [key, text] of Object.entries(texts)) {
+    const where = JSON.parse(key) as At
+    if (at.every((part, place) => where[place] === part)) continue
+    const isLater = isItem && where.length > parent.length && parent.every((part, place) => where[place] === part) && Number(where[parent.length]) > index
+    out[isLater ? pointer([...parent, String(Number(where[parent.length]) - 1), ...where.slice(parent.length + 1)]) : key] = text
+  }
+  return out
+}
+
+/** The value the levels under one give a key, merged as the loader merges them. */
+export function mergedBelow(levels: (Json | undefined)[]): Json | undefined {
+  return levels.reduce<Json | undefined>((merged, level) => (level === undefined ? merged : merge(merged, level)), undefined)
+}
+
+/**
+ * A draft as a level writes it over the levels under it. Objects merge, so a member the edit
+ * started with, that a level below also gives, and that was taken out (removed or renamed) would
+ * come back: it is written as null, which removes it in the merge. A member the edit never showed
+ * is left to the levels below.
+ */
+export function withRemovals(draft: Json | undefined, start: Json | undefined, below: Json | undefined): Json | undefined {
+  if (!isObject(draft) || !isObject(start) || !isObject(below)) return draft
+  const out: { [key: string]: Json } = { ...draft }
+  for (const key of Object.keys(start)) {
+    if (below[key] === undefined || below[key] === null) continue
+    out[key] = key in out ? (withRemovals(out[key], start[key], below[key]) ?? null) : null
+  }
+  return out
+}
+
 /** Typed texts under a part, moved to another place or, with no place, dropped. */
 export function moveTexts(texts: Record<string, string>, from: At, to: At | null): Record<string, string> {
   const out: Record<string, string> = {}
@@ -119,6 +170,13 @@ export function moveTexts(texts: Record<string, string>, from: At, to: At | null
 export function parseAs(text: string, schema: ValueSchema | null, like: Json, defs: Defs): { value?: Json; error?: string } {
   const kind = kindOf(schema, defs)
   const trimmed = text.trim()
+  // An enum may name the empty text itself, so it is looked up before empty means removal.
+  if (kind === 'enum') {
+    const options = enumOf(schema, defs)
+    const picked = options.find(option => editText(option) === trimmed)
+    if (picked !== undefined) return { value: picked }
+    return trimmed === '' ? {} : { error: `pick one of ${options.map(option => editText(option)).join(', ')}` }
+  }
   if (trimmed === '') return {}
   if (kind === 'number' || kind === 'integer') {
     const parsed = parseText(text, 0)
@@ -126,11 +184,6 @@ export function parseAs(text: string, schema: ValueSchema | null, like: Json, de
     return isFraction ? { error: `${trimmed} is not a whole number` } : parsed
   }
   if (kind === 'string') return { value: text }
-  if (kind === 'enum') {
-    const options = enumOf(schema, defs)
-    const picked = options.find(option => editText(option) === trimmed)
-    return picked === undefined ? { error: `pick one of ${options.map(option => editText(option)).join(', ')}` } : { value: picked }
-  }
   if (kind === 'list') {
     // Text items, or JSON: as any list of text is typed.
     if (trimmed.startsWith('[') || kindOf(schemaAt(schema, defs, ['0']), defs) === 'string') return parseText(text, [])
@@ -180,7 +233,7 @@ export function summary(value: Json | undefined, schema: ValueSchema | null, def
   if (value === undefined || value === null) return 'not set'
   const kind = kindOf(schema, defs)
   if (kind === 'map' && isObject(value)) {
-    const names = Object.keys(value)
+    const names = Object.keys(value).filter(name => value[name] !== null)
     return names.length === 0 ? 'none' : names.join(', ')
   }
   if (kind === 'entries' && Array.isArray(value)) return value.length === 1 ? '1 item' : `${value.length} items`

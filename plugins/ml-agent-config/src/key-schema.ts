@@ -84,7 +84,35 @@ function fits(value: ConfigValue, type: JsonType): boolean {
   return actual === type || (type === "number" && actual === "integer");
 }
 
-export const same = (a: ConfigValue, b: ConfigValue) => JSON.stringify(a) === JSON.stringify(b);
+const isPlainObject = (value: ConfigValue | undefined): value is { [key: string]: ConfigValue } =>
+  value !== null && value !== undefined && typeof value === "object" && !Array.isArray(value);
+
+/**
+ * Deep merge per ACS, as the loader merges layers: objects merge member by member, lists and
+ * scalars replace, and an explicit null deletes. Here so the pane merges the same way.
+ */
+export function merge(base: ConfigValue | undefined, over: ConfigValue | undefined): ConfigValue | undefined {
+  if (over === null) return undefined;
+  if (over === undefined || !isPlainObject(over)) return over;
+  const target: { [key: string]: ConfigValue } = isPlainObject(base) ? { ...base } : {};
+  for (const [key, value] of Object.entries(over)) {
+    const merged = merge(target[key], value);
+    if (merged === undefined) delete target[key];
+    else target[key] = merged;
+  }
+  return target;
+}
+
+/** JSON equality: an object's members in any order, a list's items in theirs. */
+export function same(a: ConfigValue, b: ConfigValue): boolean {
+  if (a === b) return true;
+  if (a === null || b === null || typeof a !== "object" || typeof b !== "object") return false;
+  if (Array.isArray(a) || Array.isArray(b)) {
+    return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((one, index) => same(one, b[index]!));
+  }
+  const keys = Object.keys(a);
+  return keys.length === Object.keys(b).length && keys.every((key) => key in b && same(a[key]!, b[key]!));
+}
 
 /**
  * Where a value breaks its schema, one line each, `at` naming the part. A layer may leave out what
@@ -92,7 +120,15 @@ export const same = (a: ConfigValue, b: ConfigValue) => JSON.stringify(a) === JS
  * through; the merged value is checked whole.
  */
 export function check(value: ConfigValue, schema: ValueSchema, defs: Defs, at: string, partial = false): string[] {
-  const s = resolveRef(schema, defs);
+  if (schema.$ref === undefined) return checkOne(value, schema, defs, at, partial);
+  // Keywords beside a $ref apply as well as the schema it names, never instead of it.
+  const { $ref, ...beside } = schema;
+  const { target } = refTarget($ref, defs);
+  const problems = [...(target ? check(value, target, defs, at, partial) : []), ...checkOne(value, beside, defs, at, partial)];
+  return [...new Set(problems)];
+}
+
+function checkOne(value: ConfigValue, s: ValueSchema, defs: Defs, at: string, partial: boolean): string[] {
   if (value === null && partial) return [];
   const shape = inferred(s);
   const wanted = types(s) ?? (shape ? [shape] : null);
@@ -112,7 +148,8 @@ export function check(value: ConfigValue, schema: ValueSchema, defs: Defs, at: s
   if (Array.isArray(value)) {
     if (s.minItems !== undefined && value.length < s.minItems) problems.push(`${at} should hold at least ${s.minItems} items`);
     if (s.maxItems !== undefined && value.length > s.maxItems) problems.push(`${at} should hold at most ${s.maxItems} items`);
-    if (s.items) value.forEach((item, index) => problems.push(...check(item, s.items!, defs, `${at}[${index}]`, partial)));
+    // A list replaces the one under it whole, so each item is checked complete, even in a layer.
+    if (s.items) value.forEach((item, index) => problems.push(...check(item, s.items!, defs, `${at}[${index}]`)));
   }
   if (value !== null && typeof value === "object" && !Array.isArray(value)) {
     if (!partial) for (const name of s.required ?? []) if (value[name] === undefined) problems.push(`${at}.${name} is required`);
@@ -128,6 +165,17 @@ export function check(value: ConfigValue, schema: ValueSchema, defs: Defs, at: s
 
 function article(type: JsonType): string {
   return { string: "text", number: "a number", integer: "a whole number", boolean: "true or false", object: "an object", array: "a list", null: "null" }[type];
+}
+
+/**
+ * Where a key's own schema cannot hold: besides what `schemaProblems` finds, a key cannot hold null,
+ * which in a layer blocks the layers under it and in the merged config means the key is not set.
+ */
+export function keySchemaProblems(schema: ValueSchema, defs: Defs, at: string): string[] {
+  const problems = schemaProblems(schema, defs, at);
+  const own = types(resolveRef(schema, defs)) ?? [];
+  if (own.includes("null")) problems.push(`${at}: a key cannot hold null, which blocks the layers under it; leave the key unset instead`);
+  return problems;
 }
 
 /** Where a declaration's schema cannot be read: an unknown type, or a `$ref` to nothing. */

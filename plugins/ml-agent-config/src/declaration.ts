@@ -13,7 +13,7 @@ import { join, dirname } from "path";
 import { existsSync, readFileSync, readdirSync } from "fs";
 import { ConfigError, ownValueAt, type ConfigObject, type ConfigValue, type Layer } from "./layers";
 import { pluginInstalls, type DependencyKind, type Harness } from "./harness";
-import { check, keySchema, schemaProblems, type Defs, type ValueSchema } from "./key-schema";
+import { check, keySchema, keySchemaProblems, type Defs, type ValueSchema } from "./key-schema";
 
 export const DECLARATION_FILE = "agent-config.json";
 export const DECLARATION_VERSION = 2;
@@ -136,11 +136,11 @@ function validate(declaration: Declaration, expectedName: string, path: string):
     }
     const schema = keySchema(entry);
     if (!schema) continue;
-    const problems = schemaProblems(schema, defs, keyPath);
+    const problems = keySchemaProblems(schema, defs, keyPath);
     if (problems.length > 0) fail(`key "${keyPath}" has a schema it cannot read: ${problems.join("; ")}`);
-    // A default is a value like any other: one its own schema refuses would be refused at every write.
+    // A default is the whole value when no layer sets the key, so it is checked whole.
     if (entry.default !== undefined) {
-      const wrong = check(entry.default, schema, defs, keyPath, true);
+      const wrong = check(entry.default, schema, defs, keyPath);
       if (wrong.length > 0) fail(`key "${keyPath}" has a default its schema refuses: ${wrong.join("; ")}`);
     }
   }

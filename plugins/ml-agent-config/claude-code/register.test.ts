@@ -1325,3 +1325,70 @@ test('a plain key is picked from its enum, and typed as its schema says rather t
   expect(JSON.parse(w.writes.at(-1)!).tag).toBe('42')
   await ui.unmount()
 })
+
+/** One key with this schema and these levels, beside the projects key. */
+function describedKey(w: World, path: string, schema: object, levels: Record<string, unknown>, source: string, value: unknown): void {
+  describedProjects(w, null, [{ ...SETTING, path, description: path, default: null, value, source, levels, schema: { description: path, ...schema } }])
+  w.layer = '{}'
+}
+
+test('a project inherited from a level below, removed at a higher one, is written as null so the merge does not bring it back', async ($, on) => {
+  const w = world(on)
+  const projects = { acme: { label: 'A' }, beta: { label: 'B' } }
+  describedKey(w, 'team', { type: 'object', additionalProperties: { $ref: '#/$defs/project' } }, { global: projects }, 'global', projects)
+  const ui = await open($)
+  await ui.press({ key: 'component:demo' })
+  await ui.press({ key: 'setting:team' })
+  await ui.press({ key: 'level' })
+  await ui.press({ key: 'level:repo' })
+  await ui.press({ key: 'at:beta' })
+  await ui.press({ key: 'remove' })
+  await ui.press({ key: 'save' })
+  expect(JSON.parse(w.writes.at(-1)!).team).toEqual({ acme: { label: 'A' }, beta: null })
+  await ui.unmount()
+})
+
+test('removing a list item keeps what was typed into the items after it, moved up with them', async ($, on) => {
+  const w = world(on)
+  const steps = [{ name: 'a' }, { name: 'b' }, { name: 'c' }]
+  describedKey(w, 'steps', { type: 'array', items: { type: 'object', properties: { name: { type: 'string' } } } }, { global: steps }, 'global', steps)
+  const ui = await open($)
+  await ui.press({ key: 'component:demo' })
+  await ui.press({ key: 'setting:steps' })
+  await ui.press({ key: 'at:2' })
+  await ui.input({ key: 'at:2.name', text: 'C2', kind: 'change' })
+  await ui.press({ key: 'back' })
+  await ui.press({ key: 'at:0' })
+  await ui.press({ key: 'remove' })
+  await ui.press({ key: 'save' })
+  expect(JSON.parse(w.writes.at(-1)!).steps).toEqual([{ name: 'b' }, { name: 'C2' }])
+  await ui.unmount()
+})
+
+test('an object of fields that takes more entries shows them, and adds one', async ($, on) => {
+  const w = world(on)
+  const value = { label: 'x', extra: 'y' }
+  describedKey(w, 'owner', { type: 'object', properties: { label: { type: 'string' } }, additionalProperties: { type: 'string' } }, { global: value }, 'global', value)
+  const ui = await open($)
+  await ui.press({ key: 'component:demo' })
+  await ui.press({ key: 'setting:owner' })
+  expect(await text(ui, 'at:extra')).toContain('y')
+  await ui.input({ key: 'add:', text: 'label' })
+  expect(JSON.stringify(await ui.find({}))).toContain('label is already there.')
+  await ui.input({ key: 'add:', text: 'more' })
+  await ui.input({ key: 'at:more', text: 'z' })
+  expect(JSON.parse(w.writes.at(-1)!).owner).toEqual({ label: 'x', extra: 'y', more: 'z' })
+  await ui.unmount()
+})
+
+test('an enum that names the empty text saves it, rather than removing the key', async ($, on) => {
+  const w = world(on)
+  describedKey(w, 'mode', { enum: ['', 'auto'] }, { global: 'auto' }, 'global', 'auto')
+  const ui = await open($)
+  await ui.press({ key: 'component:demo' })
+  await ui.press({ key: 'setting:mode' })
+  await ui.press({ key: 'value:' })
+  await ui.press({ key: 'save' })
+  expect(JSON.parse(w.writes.at(-1)!).mode).toBe('')
+  await ui.unmount()
+})

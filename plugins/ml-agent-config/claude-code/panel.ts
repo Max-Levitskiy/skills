@@ -4,7 +4,7 @@
 
 import type { Component, Edit, Json, Level, Panel, Screen, Setting, ValueSchema } from '../types'
 import { isObject } from './shapes'
-import { addKey, atKey, choicesAt, getAt, isStructuredKind, isTreeSetting, kindAt, nodeAt, type At } from './tree'
+import { addKey, atKey, choicesAt, getAt, isStructuredKind, isTreeSetting, nodeAt, takesEntries, type At } from './tree'
 import { ORDER, levelLabel } from './ui/levels'
 import { SOURCES, editText, isReference, rootChoices, valueAt, type Stored } from './values'
 
@@ -157,7 +157,9 @@ export function parts(now: Panel, at: At): string[] {
   const { resolved, kind } = nodeAt(setting.schema, now.defs, at)
   if (kind === 'entries') return (Array.isArray(value) ? value : []).map((_, index) => String(index))
   const declared = kind === 'fields' ? Object.keys(resolved.properties ?? {}) : []
-  const held = kind === 'map' && isObject(value) ? Object.keys(value).filter(name => !declared.includes(name)) : []
+  // Entries beyond the declared fields, where the schema allows them; a null only removes one beneath.
+  const isOpen = kind === 'map' || (kind === 'fields' && resolved.additionalProperties !== false)
+  const held = isOpen && isObject(value) ? Object.keys(value).filter(name => !declared.includes(name) && value[name] !== null) : []
   return [...declared, ...held]
 }
 
@@ -171,8 +173,8 @@ export function firstKey(now: Panel, at: At, canType: boolean): string {
     if (node.kind === 'boolean' || node.kind === 'enum') return `${atKey(child)}:${editText(choicesAt(node, getAt(now.edit?.value, child), now.defs).current)}`
     if (canType || isStructuredKind(node.kind)) return atKey(child)
   }
-  const kind = kindAt(setting.schema, now.defs, at)
-  return kind === 'entries' || (kind === 'map' && canType) ? addKey(at) : 'save'
+  const node = nodeAt(setting.schema, now.defs, at)
+  return node.kind === 'entries' || (takesEntries(node) && canType) ? addKey(at) : 'save'
 }
 
 /** The edit screen's first element: a structured key's first part, the field to type in, or the first choice. */
