@@ -6,7 +6,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 
-import { check, emptyOf, kindOf, resolveRef, same, type Defs, type ValueSchema } from "./key-schema";
+import { check, childSchema, emptyOf, kindOf, resolveRef, same, type Defs, type ValueSchema } from "./key-schema";
 
 const BIN = join(import.meta.dir, "..", "bin", "agent-config");
 
@@ -100,6 +100,12 @@ describe("how an editor reads a schema", () => {
     expect(kindOf(null, DEFS)).toBe("json");
   });
 
+  test("items apply to a list only, and a $ref that recurs keeps what it gathered", () => {
+    expect(childSchema({ type: "object", items: { type: "number" }, additionalProperties: { type: "string" } }, {}, "0")).toEqual({ type: "string" });
+    const tree = { node: { $ref: "#/$defs/node", type: "object", properties: { name: { type: "string" } } } } as Defs;
+    expect(kindOf({ $ref: "#/$defs/node" }, tree)).toBe("fields");
+  });
+
   test("a new part starts as its default, else empty of its kind", () => {
     expect(emptyOf({ $ref: "#/$defs/project" }, DEFS)).toEqual({});
     expect(emptyOf(DEFS.project!.properties!.fallback!, DEFS)).toBe("undecided");
@@ -179,6 +185,13 @@ describe("the CLI", () => {
     expect(listed(["describe", "demo"]).code).toBe(0);
     const broken = component({ version: 1, keys: { o: { description: "O", type: "object", properties: { a: null } } } });
     expect(broken(["describe", "demo"]).stderr).toContain("o.a: a property's schema should be an object");
+    const empty = component({ version: 1, keys: { mode: { description: "M", enum: [] } } });
+    expect(empty(["describe", "demo"]).stderr).toContain("enum should be a list of at least one value");
+    const scalar = component({ version: 1, keys: { s: { description: "S", type: "string", pattern: null, minLength: "2" } } });
+    expect(scalar(["describe", "demo"]).stderr).toContain("pattern should be text");
+    const escape = component({ version: 1, keys: { k: { description: "K", $ref: "#/$defs/%" } } });
+    const escaped = escape(["describe", "demo"]);
+    expect([escaped.code, escaped.stderr.includes("names no entry in schema.$defs")]).toEqual([2, true]);
     const malformed = component({ version: 1, keys: { mode: { description: "M", enum: {} } } });
     const answer = malformed(["describe", "demo"]);
     expect([answer.code, answer.stderr.includes("enum should be a list")]).toEqual([2, true]);

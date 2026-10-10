@@ -159,7 +159,7 @@ export function withRemovals(draft: Json | undefined, start: Json | undefined, b
   const out: { [key: string]: Json } = { ...draft }
   for (const key of Object.keys(start)) {
     if (below[key] === undefined || below[key] === null) continue
-    out[key] = key in out ? (withRemovals(out[key], start[key], below[key]) ?? null) : null
+    out[key] = has(out, key) ? (withRemovals(out[key], start[key], below[key]) ?? null) : null
   }
   return out
 }
@@ -229,8 +229,8 @@ export function fold(
   let out = value
   for (const [key, text] of Object.entries(texts)) {
     const at = JSON.parse(key) as At
-    // A part whose entry was removed since: its text went with it.
-    if (at.length > 1 && getAt(out, at.slice(0, -1)) === undefined) continue
+    // Removing or renaming a part moves or drops its texts, so each text left here has a place; one
+    // under a declared field not set yet creates that field.
     const parsed = parseAs(text, schemaAt(root, defs, at), getAt(out, at) ?? '', defs)
     if (parsed.error) return { error: `${[path, ...at].join('.')}: ${parsed.error}` }
     out = setAt(out, at, parsed.value)

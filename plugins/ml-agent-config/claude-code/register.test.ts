@@ -4,6 +4,7 @@ import type { On, RenderElement } from 'claude-code'
 import { editText, parseText, showValue } from './register'
 import { fuzzy, ranked } from './ui/fuzzy'
 import { under } from './ui/levels'
+import { withRemovals } from './tree'
 import { readableReference } from './screens/onepassword'
 import { SECRET_CACHE_VAR, cacheKey, parseCache } from '../src/secret-cache'
 
@@ -1517,4 +1518,34 @@ test('an object of fields with additionalProperties unsaid takes more entries', 
   await ui.input({ key: 'at:note', text: 'hi' })
   expect(JSON.parse(w.writes.at(-1)!).owner).toEqual({ label: 'x', note: 'hi' })
   await ui.unmount()
+})
+
+test('opening a project field not set yet and saving untouched writes nothing new', async ($, on) => {
+  const w = world(on)
+  describedProjects(w, { acme: { label: 'Acme' } })
+  const ui = await open($)
+  await ui.press({ key: 'component:demo' })
+  await ui.press({ key: 'setting:projects' })
+  await ui.press({ key: 'at:acme' })
+  await ui.press({ key: 'at:acme.title' })
+  await ui.press({ key: 'save' })
+  expect(JSON.parse(w.writes.at(-1)!).projects.acme).toEqual({ label: 'Acme' })
+  await ui.unmount()
+})
+
+test('a value the enum does not name shows no choice picked, and an untouched save is refused', async ($, on) => {
+  const w = world(on)
+  describedKey(w, 'level', { enum: [1] }, { global: '1' }, 'global', '1')
+  const ui = await open($)
+  await ui.press({ key: 'component:demo' })
+  await ui.press({ key: 'setting:level' })
+  expect(await text(ui, 'value:1')).not.toContain('primary')
+  await ui.press({ key: 'save' })
+  expect(w.writes).toEqual([])
+  expect(JSON.stringify(await ui.find({}))).toContain('pick one of 1')
+  await ui.unmount()
+})
+
+test('an entry named like an Object member is still written as removed', () => {
+  expect(withRemovals({}, { toString: 'x' }, { toString: 'x' })).toEqual({ toString: null })
 })

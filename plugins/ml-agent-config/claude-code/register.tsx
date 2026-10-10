@@ -672,14 +672,6 @@ async function changeDraft($: EngineInterface, change: (edit: NonNullable<Panel[
 }
 
 async function openNode($: EngineInterface, at: string[], canType: boolean): Promise<void> {
-  // A declared part not set yet starts empty of its kind, so its screen has something to fill in.
-  // Opening it is not a change: Back leaves the edit as clean as it was.
-  const now = await read($, panel)
-  const setting = editing(now)
-  if (setting && now.edit && getAt(now.edit.value, at) === undefined) {
-    const empty = emptyOf(schemaAt(setting.schema, now.defs, at), now.defs)
-    await changeDraft($, edit => ({ ...edit, value: asDraft(setAt(edit.value, at, empty)) }), false)
-  }
   await go($, { kind: 'node', at }, atKey(at))
   await refocus($, firstKey(await read($, panel), at, canType))
 }

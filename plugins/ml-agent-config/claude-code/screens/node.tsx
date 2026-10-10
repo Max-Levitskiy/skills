@@ -98,10 +98,12 @@ export function node(ctx: Ctx): RenderElement {
   const setting = editing(now)
   const at = top(now).at ?? []
   const path = [selected(now)?.name ?? '', setting?.path ?? '', ...at]
-  if (!setting || !now.edit || getAt(now.edit.value, at) === undefined) {
+  const role = setting ? roleOf(setting.schema, now.defs, at) : 'entry'
+  // A declared field not set yet opens empty, and only an edit inside it puts it in the draft. An
+  // entry or item that is gone (removed since this screen opened) has nothing to edit.
+  if (!setting || !now.edit || (role !== 'field' && getAt(now.edit.value, at) === undefined)) {
     return screen(ui, { path, onBack: () => act.back() }, [note(ui, 'Nothing to edit.')])
   }
-  const role = roleOf(setting.schema, now.defs, at)
   const isEntry = role === 'entry'
   const isItem = role === 'item'
   return screen(ui, { path, onBack: () => act.back(), message: now.message }, [

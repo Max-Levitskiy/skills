@@ -52,16 +52,29 @@ export function keySchema(entry: ValueSchema & { layer?: string }): ValueSchema 
 function refTarget(ref: string, defs: Defs): { name?: string; target?: ValueSchema } {
   const name = REF.exec(ref)?.[1];
   if (name === undefined) return {};
-  const key = decodeURIComponent(name);
+  let key: string;
+  try {
+    key = decodeURIComponent(name);
+  } catch {
+    // A malformed escape names nothing; schemaProblems says so instead of the CLI crashing.
+    return { name };
+  }
   return { name, target: has(defs, key) ? defs[key] : undefined };
 }
 
 /** The schema a `$ref` points at, followed until it points at none. */
 export function resolveRef(schema: ValueSchema, defs: Defs): ValueSchema {
   let current = schema;
-  for (let hops = 0; current.$ref !== undefined; hops++) {
+  const met: string[] = [];
+  for (; current.$ref !== undefined; ) {
+    // A $ref met again adds nothing new: what was gathered so far is the schema.
+    if (met.includes(current.$ref)) {
+      const { $ref: _again, ...gathered } = current;
+      return gathered;
+    }
+    met.push(current.$ref);
     const { target } = refTarget(current.$ref, defs);
-    if (!target || hops > 32) return {};
+    if (!target) return {};
     // Keywords beside the $ref still apply; the target's fill in the rest. Both schemas' fields
     // apply, so their properties and required names are joined rather than one replacing the other.
     const { $ref: _ref, ...beside } = current;
@@ -236,7 +249,15 @@ export function schemaProblems(schema: ValueSchema, defs: Defs, at: string, seen
   for (const type of types(schema) ?? []) if (!TYPES.includes(type)) problems.push(`${at}: unknown type "${type}"`);
   // The declaration is JSON from a plugin, so each keyword's own shape is checked before it is read.
   const isMap = (value: unknown) => value !== null && typeof value === "object" && !Array.isArray(value);
-  if (schema.enum !== undefined && !Array.isArray(schema.enum)) problems.push(`${at}: enum should be a list`);
+  if (schema.enum !== undefined && !(Array.isArray(schema.enum) && schema.enum.length > 0)) problems.push(`${at}: enum should be a list of at least one value`);
+  if (schema.pattern !== undefined && typeof schema.pattern !== "string") problems.push(`${at}: pattern should be text`);
+  for (const bound of ["minimum", "maximum"] as const) {
+    if (schema[bound] !== undefined && typeof schema[bound] !== "number") problems.push(`${at}: ${bound} should be a number`);
+  }
+  for (const bound of ["minLength", "maxLength", "minItems", "maxItems"] as const) {
+    const n = schema[bound];
+    if (n !== undefined && !(typeof n === "number" && Number.isInteger(n) && n >= 0)) problems.push(`${at}: ${bound} should be a whole number, 0 or more`);
+  }
   if (schema.required !== undefined && !(Array.isArray(schema.required) && schema.required.every((one) => typeof one === "string"))) problems.push(`${at}: required should be a list of names`);
   if (schema.properties !== undefined && !isMap(schema.properties)) problems.push(`${at}: properties should be an object`);
   if (schema.items !== undefined && !isMap(schema.items)) problems.push(`${at}: items should be a schema`);
@@ -295,7 +316,8 @@ function inferred(s: ValueSchema): JsonType | undefined {
 export function childSchema(schema: ValueSchema | null | undefined, defs: Defs, part: string): ValueSchema | null {
   if (!schema) return null;
   const s = resolveRef(schema, defs);
-  if (s.items && /^\d+$/.test(part)) return s.items;
+  const isList = (types(s) ?? (inferred(s) ? [inferred(s)!] : [])).includes("array");
+  if (s.items && isList && /^\d+$/.test(part)) return s.items;
   const declared = s.properties && has(s.properties, part) ? s.properties[part] : undefined;
   if (declared) return declared;
   return typeof s.additionalProperties === "object" ? s.additionalProperties : null;

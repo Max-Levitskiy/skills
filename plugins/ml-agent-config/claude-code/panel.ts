@@ -125,6 +125,9 @@ export function inheritedFields(setting: Setting, layer: string): string[] {
 function textOf(setting: Setting, from: Json, defs: Panel['defs']): string {
   const options = setting.schema && kindOf(setting.schema, defs) === 'enum' ? enumOf(setting.schema, defs) : null
   const index = options ? options.findIndex(option => same(option, from)) : -1
+  // A value the enum does not name reads as its JSON, so no choice shows picked and an untouched
+  // save is refused rather than turned into the choice it reads like.
+  if (options && index < 0 && from !== null) return JSON.stringify(from)
   return options && index >= 0 ? choiceLabels(options)[index]! : editText(from)
 }
 
