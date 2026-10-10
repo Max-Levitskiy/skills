@@ -7,7 +7,9 @@
 # and commit count, tracked directories that look generated, groups of identical
 # files copied across directories, CI workflows with triggers, task runners, and
 # infrastructure roots.
-set -euo pipefail
+# No pipefail: `head` closing a pipe (SIGPIPE) and `cat` on a tracked symlink to
+# a directory are expected, and a report must not stop at the first of them.
+set -eu
 
 ROOT="$(git -C "${1:-.}" rev-parse --show-toplevel)"
 cd "$ROOT"
