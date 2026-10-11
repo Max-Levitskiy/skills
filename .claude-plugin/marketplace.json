@@ -169,8 +169,8 @@
       ]
     },
     {
-      "name": "ml-interview",
-      "source": "./plugins/ml-interview",
+      "name": "ml-grilling",
+      "source": "./plugins/ml-grilling",
       "description": "Design interviews that respect the person's attention. questions decides which questions to ask at all (only ones whose answer changes the outcome; standard practice, look-up facts and routine choices are settled and shown in one line) and how to word them: plain words, two-line bodies, one-line options, a short honest recommendation.",
       "version": "0.1.0",
       "license": "MIT",
