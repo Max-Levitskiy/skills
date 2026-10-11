@@ -1,0 +1,10 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      { "hooks": [{ "type": "command", "command": "bun \"${CLAUDE_PLUGIN_ROOT}/hooks/inject-rules.ts\"" }] }
+    ],
+    "PostToolUse": [
+      { "matcher": "Skill", "hooks": [{ "type": "command", "command": "bun \"${CLAUDE_PLUGIN_ROOT}/hooks/inject-rules.ts\"" }] }
+    ]
+  }
+}

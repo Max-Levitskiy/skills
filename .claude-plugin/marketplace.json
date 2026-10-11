@@ -167,6 +167,26 @@
         "pull-request",
         "claude-skill"
       ]
+    },
+    {
+      "name": "ml-grilling",
+      "source": "./plugins/ml-grilling",
+      "description": "Design interviews that respect the person's attention. questions decides which questions to ask at all (only ones whose answer changes the outcome; standard practice, look-up facts and routine choices are settled and shown in one line) and how to word them: plain words, two-line bodies, one-line options, a short honest recommendation. Loads itself: a hook adds it to the context whenever /grilling, /grill-me, /grill-with-docs, /grill-with-ui or /wayfinder starts, typed or called by Claude (needs bun).",
+      "version": "0.1.0",
+      "license": "MIT",
+      "author": {
+        "name": "Max Levitskiy"
+      },
+      "category": "productivity",
+      "keywords": [
+        "interview",
+        "grilling",
+        "questions",
+        "design-review",
+        "wayfinder",
+        "decision-making",
+        "claude-skill"
+      ]
     }
   ]
 }
