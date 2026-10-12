@@ -18,6 +18,11 @@ Detect AI-code slop — repeated logic, filler constructs, and reviewer-repellen
 patterns — and score how dense the code is. This skill only reports; it never
 edits code.
 
+A density score is **not** a functional-correctness, security, or authorship
+verdict. Compact code can still be wrong, unsafe, or generated; verbose code can
+still be correct. Keep those judgments separate and direct the user to relevant
+tests, type checks, static analysis, and security review.
+
 ## Step 0: Determine target and mode
 
 **Diff mode** (preferred) — use when inside a git repository and any of:
@@ -83,6 +88,7 @@ Weights are provisional pending Round 0 recalibration (see workspace/).
 
 **Target:** <diff range or file list>  |  **Mode:** diff | standalone
 **Density score:** <N>/100 (<label>)
+**Scope:** Slop density only — not functional correctness, security, or authorship
 **Methods:** <k>/10 included (<excluded list with reason: n/a | failed>)
 
 ### Findings by severity

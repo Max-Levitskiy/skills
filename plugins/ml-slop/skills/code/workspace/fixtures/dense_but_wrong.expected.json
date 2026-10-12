@@ -1,0 +1,26 @@
+{
+  "fixture": "dense_but_wrong.py",
+  "purpose": "Negative control for the boundary between slop density and functional correctness.",
+  "provenance": {
+    "kind": "original synthetic example",
+    "informed_by": {
+      "title": "Characterizing Overconfident Failure in LLM-Based Code Generation",
+      "submitted": "2026-10-08",
+      "url": "https://arxiv.org/abs/2610.11300"
+    }
+  },
+  "density_expectation": {
+    "expected_findings": [],
+    "expected_label": "Dense",
+    "minimum_score": 80,
+    "rule": "Do not lower the density score merely because the implementation fails its functional oracle."
+  },
+  "functional_oracle": {
+    "command": "python -c \"import sys; sys.path.insert(0, 'plugins/ml-slop/skills/code/workspace/fixtures'); from dense_but_wrong import inclusive_sum; assert inclusive_sum(1, 3) == 6\"",
+    "expected_exit_code": 1,
+    "expected_failure": "range(start, end) excludes the documented inclusive endpoint."
+  },
+  "report_expectation": {
+    "required_scope_statement": "The density score is not a functional-correctness, security, or authorship verdict."
+  }
+}
