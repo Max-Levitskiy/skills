@@ -91,6 +91,7 @@ Conventions shared by plugins in this marketplace.
 | Standard | What it covers |
 | -------- | -------------- |
 | [Agent Config Standard](standards/agent-config.md) | How a skill or subagent stores settings across global / repo / local layers, and references secrets without ever committing one. Canonical implementation: [`ml-agent-config`](plugins/ml-agent-config). Reference implementations: [`fellow`](plugins/ml-workplace/skills/fellow) (credential-backed) and [`orchestrate`](plugins/ml-subagents/skills/orchestrate) (optional config, credential only for hosted trackers). |
+| [Upstream Modification Standard](standards/upstream.md) | How a modified copy of someone else's repo records its upstream, base commit and each modification as a prompt in `.upstream/`, so it can be updated without redoing the changes by hand. Canonical implementation: [`ml-upstream`](plugins/ml-upstream). First target: [`grill-with-ui`](plugins/ml-grilling/skills/grill-with-ui). |
 
 ## Add your own plugin
 
