@@ -6,7 +6,7 @@
 
 `grill-with-ui` (jasonku09, MIT) needed one change to work from a remote machine: serve on the
 Tailscale address and open the Mac's browser. It was installed as a symlink into a local clone
-carrying that change uncommitted. Upstream then moved 31 commits and rewrote both files the
+carrying that change uncommitted. Upstream then moved 35 commits and rewrote both files the
 change touched. Three homes were considered: the clone as a GitHub fork, a standalone folder
 under `~/.agents/skills`, or this marketplace.
 

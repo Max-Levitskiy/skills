@@ -63,9 +63,10 @@ When `<new>` or `<base>` is a shell variable, write it braced — `"${new}:<pref
 2. The target defaults to `./<repo name>`. It must not exist, or must be empty. Export the tree
    (`git archive`, above) into it.
 3. Propose excludes from what landed: `.github/`, other CI and bot config (`.gitlab-ci.yml`,
-   `.no-mistakes.yaml`, `renovate.json`, `dependabot`), any file over 200 KB, directories
-   that are plainly design records or demos (`design/`, `mockups/`, `docs/*.gif`). Show the
-   list in one line and ask the user to confirm or edit it; never propose a licence file.
+   `.no-mistakes.yaml`, `renovate.json`, `.github/dependabot.yml`), any file over 200 KB,
+   directories that are plainly design records or demos (`design/`, `mockups/`, `docs/demo.gif`).
+   Excludes are concrete paths, either a file or a directory with a trailing `/`; globs never
+   match, so name each file. Show the list in one line and ask the user to confirm or edit it; never propose a licence file.
    Delete the excluded paths from the target.
 4. Write `.upstream/upstream.json` (`version` 1, `url`, `ref`, `base` = `new`, `takenAt` =
    today, `path`, `exclude`).
@@ -104,7 +105,8 @@ files applied and the overlapping file untouched.
 1. Classify as in Check and show the user the header and the table **before** writing, in
    one message. Then, in the same turn, continue: no approval is needed for the clean part.
 2. **Clean** files — `modified` or `added` × `same`: write upstream's new version
-   (`git show "<new>:<prefix><file>" > <target>/<file>`, creating directories). `deleted` ×
+   (`git show "<new>:<prefix><file>" > <target>/<file>`, creating directories). A path upstream stores as a symlink (`git ls-tree` mode `120000`) is
+   recreated with `ln -s` from the blob's text, not with `git show >`. `deleted` ×
    `same`: delete the file and prune empty directories. `same` × `claimed` and `none` × `claimed`
    are listed in the table and left alone: upstream did not touch the file, or the modification
    created it and upstream never had it.
