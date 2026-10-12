@@ -94,16 +94,21 @@ cmd_classify() {
   cache=$(cmd_cache "$url")
   new=$(resolve "$cache" "$ref")
   git -C "$cache" cat-file -e "$base^{commit}" 2>/dev/null || die "base $base is not a commit upstream"
-  # Rule 7: the licence is never excluded.
-  local e lic treeish tree
-  if [[ -n "$path" ]]; then treeish="$base:$path"; else treeish="$base"; fi
-  tree=$(git -C "$cache" ls-tree --name-only "$treeish") || die "cannot read $treeish upstream (base/path mismatch?)"
-  while IFS= read -r lic; do
-    [[ -n "$lic" ]] || continue
-    for e in "${EXCLUDES[@]}"; do
-      [[ -n "$e" && "$e" == "$lic" ]] && die "exclude lists the licence file $lic; the licence is never excluded (rule 7)"
-    done
-  done < <(grep -iE '^(licen[cs]e|copying)' <<<"$tree" || true)
+  # Rule 7: the licence is never excluded — at base, nor at the new ref (upstream may add one).
+  local e lic rev treeish tree
+  for rev in "$base" "$new"; do
+    if [[ -n "$path" ]]; then treeish="$rev:$path"; else treeish="$rev"; fi
+    if ! tree=$(git -C "$cache" ls-tree --name-only "$treeish" 2>/dev/null); then
+      [[ "$rev" == "$base" ]] && die "cannot read $treeish upstream (base/path mismatch?)"
+      continue   # path gone at the new ref: nothing to guard there
+    fi
+    while IFS= read -r lic; do
+      [[ -n "$lic" ]] || continue
+      for e in "${EXCLUDES[@]}"; do
+        [[ -n "$e" && "$e" == "$lic" ]] && die "exclude lists the licence file $lic; the licence is never excluded (rule 7)"
+      done
+    done < <(grep -iE '^(licen[cs]e|copying)' <<<"$tree" || true)
+  done
   commits=$(git -C "$cache" rev-list --count "$base..$new")
   jq -cn --arg url "$url" --arg ref "$ref" --arg base "$base" --arg new "$new" --arg cache "$cache" --argjson commits "$commits" \
     '{type:"header",url:$url,ref:$ref,base:$base,new:$new,commits:$commits,cache:$cache}'
@@ -111,13 +116,15 @@ cmd_classify() {
   local claims; claims=$(claims_json "$target")
 
   # Every path upstream had at base or has at new (under path), plus every file in the target.
+  # Submodules (gitlinks, type `commit`) are not part of the copy: `git archive` leaves them out.
   local files
   files=$(
     {
       {
-        git -C "$cache" -c core.quotePath=false ls-tree -r --name-only "$base" ${path:+-- "$path"}
-        git -C "$cache" -c core.quotePath=false ls-tree -r --name-only "$new"  ${path:+-- "$path"}
-      } | { if [[ -n "$prefix" ]]; then sed "s#^$prefix##"; else cat; fi; }
+        git -C "$cache" -c core.quotePath=false ls-tree -r "$base" ${path:+-- "$path"}
+        git -C "$cache" -c core.quotePath=false ls-tree -r "$new"  ${path:+-- "$path"}
+      } | awk -F'\t' '$1 !~ / commit / { print $2 }' \
+        | { if [[ -n "$prefix" ]]; then sed "s#^$prefix##"; else cat; fi; }
       (cd "$target" && find . \( -type f -o -type l \) ! -path './.upstream/*' ! -path './.git/*' | sed 's#^\./##')
     } | sort -u
   )

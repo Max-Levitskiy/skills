@@ -1,10 +1,11 @@
 # Re-applying a modification on a rewritten file
 
 You have: the modification's `## Modification` (the intent), its `## Applied` (what it did
-last time, per file), upstream's change to this file (`git diff <base> <new> -- <file>`), the
-modification's current form (`git show <base>:<file> | diff -u - <target>/<file>`), and
+last time, per file), upstream's change to this file (`git diff <base> <new> -- <prefix><file>`), the
+modification's current form (`git show <base>:<prefix><file> | diff -u - <target>/<file>`), and
 upstream's new version of the file. You produce one file: upstream's new version with the
-intent satisfied.
+intent satisfied. `<prefix>` is the target's `path` plus `/` (empty for a whole-repo copy):
+upstream-side paths carry it, target-side paths do not.
 
 ## Order of work
 

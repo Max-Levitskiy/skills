@@ -116,6 +116,7 @@ exactly as upstream when nothing is configured.
 3. **Excludes are not modifications.** Dropping CI or assets is configuration in
    `upstream.json`; a new upstream file under an excluded path is skipped without comment.
    A file present in the target under an excluded path is drift unless a modification claims it.
+   Upstream's submodules are never carried: a copy holds files, not other repositories.
 4. **Updates stop only on overlap.** Clean files (changed upstream, unclaimed) are applied and
    reported. On overlap the skill shows upstream's change, the modification's current form,
    and a proposed merge, and waits for a yes before writing that file.

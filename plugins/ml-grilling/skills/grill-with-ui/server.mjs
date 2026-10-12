@@ -234,14 +234,26 @@ function cmdWait(o) {
 function bindHost() {
   const h = process.env.GRILL_HOST || "127.0.0.1";
   if (h !== "tailscale") return h;
-  // Tailscale hands out IPv4s from 100.64.0.0/10; take the first one on any interface.
-  for (const addrs of Object.values(os.networkInterfaces())) {
+  // Tailscale hands out IPv4s from 100.64.0.0/10, a range carrier NAT shares, so an address there
+  // is not proof. Prefer Tailscale's own interface (tailscale0 on Linux), then the tailscale CLI,
+  // and accept a bare 100.64.0.0/10 address only when it is the only one.
+  const shared = [];
+  for (const [name, addrs] of Object.entries(os.networkInterfaces())) {
     for (const a of addrs || []) {
       const [x, y] = a.address.split(".").map(Number);
-      if (a.family === "IPv4" && x === 100 && y >= 64 && y <= 127) return a.address;
+      if (a.family !== "IPv4" || x !== 100 || y < 64 || y > 127) continue;
+      if (name.startsWith("tailscale")) return a.address;
+      shared.push(a.address);
     }
   }
-  die("GRILL_HOST=tailscale but this machine has no Tailscale IPv4", 1);
+  try {
+    const ip = execFileSync("tailscale", ["ip", "-4"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 3000 }).trim().split("\n")[0];
+    if (ip) return ip;
+  } catch {}
+  if (shared.length === 1) return shared[0];
+  die(shared.length
+    ? `GRILL_HOST=tailscale: ${shared.join(", ")} could each be Tailscale; set GRILL_HOST to the right one`
+    : "GRILL_HOST=tailscale but this machine has no Tailscale IPv4", 1);
 }
 
 // Fire and forget: the opener's output must not reach stdout, which is the agent's event stream.

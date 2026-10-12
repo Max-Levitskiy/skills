@@ -97,6 +97,19 @@ TL="$TMP/target-lic"; mkdir -p "$TL/.upstream"
 jq '.exclude=["LICENSE"]' "$TG/.upstream/upstream.json" > "$TL/.upstream/upstream.json"
 if bash "$SUT" classify "$TL" > "$OUT" 2> "$TMP/err"; then echo "✗ excluded licence should fail"; fail=1
 else grep -q "exclude lists the licence file LICENSE" "$TMP/err" && [[ ! -s "$OUT" ]] && echo "✓ excluded licence: exit non-zero, no header" || { echo "✗ excluded licence message: $(cat "$TMP/err")"; fail=1; }; fi
+# A second upstream: a submodule (gitlink) from the start; v2 adds a LICENSE.
+U2="$TMP/upstream2"; mkdir -p "$U2"; git -C "$U2" init -q -b main; printf 'x\n' > "$U2/x.txt"
+git -C "$U2" add x.txt; git -C "$U2" update-index --add --cacheinfo "160000,$V1,sub"; git -C "$U2" commit -qm w1; W1=$(git -C "$U2" rev-parse HEAD)
+printf 'MIT\n' > "$U2/LICENSE"; git -C "$U2" add LICENSE; git -C "$U2" commit -qm w2
+TS="$TMP/target-sub"; mkdir -p "$TS/.upstream"; cp "$U2/x.txt" "$TS/x.txt"
+jq -n --arg url "$U2" --arg base "$W1" '{version:1,url:$url,ref:"main",base:$base,takenAt:"2026-10-12",path:"",exclude:[]}' > "$TS/.upstream/upstream.json"
+bash "$SUT" classify "$TS" --ref "$W1" > "$OUT"
+check "submodule (gitlink) is not part of the copy: not listed" 'select(.type!="header") | .file' ''
+TN="$TMP/target-newlic"; mkdir -p "$TN/.upstream"; cp "$U2/x.txt" "$TN/x.txt"
+jq '.exclude=["LICENSE"]' "$TS/.upstream/upstream.json" > "$TN/.upstream/upstream.json"
+if bash "$SUT" classify "$TN" > "$OUT" 2> "$TMP/err"; then echo "✗ licence added upstream and excluded should fail"; fail=1
+else grep -q "exclude lists the licence file LICENSE" "$TMP/err" && [[ ! -s "$OUT" ]] && echo "✓ licence added at the new ref: exit non-zero, no header" || { echo "✗ new-ref licence message: $(cat "$TMP/err")"; fail=1; }; fi
+
 if bash "$SUT" classify "$TG" --bogus > /dev/null 2> "$TMP/err"; then echo "✗ unknown flag should fail"; fail=1
 else grep -q "unknown option: --bogus" "$TMP/err" && echo "✓ unknown flag rejected" || { echo "✗ unknown flag message: $(cat "$TMP/err")"; fail=1; }; fi
 

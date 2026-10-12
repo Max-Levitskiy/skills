@@ -18,8 +18,10 @@ the user to open it.
 
 ## Applied
 
-- `server.mjs`: `bindHost()` reads `GRILL_HOST` (default `127.0.0.1`; `tailscale` resolves the
-  first 100.64.0.0/10 IPv4 on any interface, dying with a message when there is none) and
+- `server.mjs`: `bindHost()` reads `GRILL_HOST` (default `127.0.0.1`; `tailscale` resolves this
+  machine's Tailscale IPv4: the 100.64.0.0/10 address on an interface named `tailscale*`, else
+  `tailscale ip -4`, else the only 100.64.0.0/10 address present, since carrier NAT shares that
+  range; it dies with a message when there is none or several) and
   `serve` binds it and puts it in the url (IPv6 bracketed). The bound host is added to
   `selfOrigins`, upstream's same-origin check on `POST /send`, so the page opened on that
   address can Send; the loopback spellings stay. `openUrl()` runs `GRILL_OPEN` with the url

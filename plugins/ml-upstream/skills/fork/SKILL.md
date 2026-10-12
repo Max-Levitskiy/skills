@@ -104,22 +104,29 @@ files applied and the overlapping file untouched.
 
 1. Classify as in Check and show the user the header and the table **before** writing, in
    one message. Then, in the same turn, continue: no approval is needed for the clean part.
-2. **Clean** files — `modified` or `added` × `same`: write upstream's new version
-   (`git show "<new>:<prefix><file>" > <target>/<file>`, creating directories). A path upstream stores as a symlink (`git ls-tree` mode `120000`) is
-   recreated with `ln -s` from the blob's text, not with `git show >`. `deleted` ×
-   `same`: delete the file and prune empty directories. `same` × `claimed` and `none` × `claimed`
-   are listed in the table and left alone: upstream did not touch the file, or the modification
-   created it and upstream never had it.
+2. **Clean** files. Deletions first: `deleted` × `same` — delete the file and prune empty
+   directories, so a directory upstream replaced with a file is gone before the file is
+   written. Then `modified` or `added` × `same`: remove whatever is at `<target>/<file>`
+   (`rm -f`; a redirect into an existing symlink would write through it, outside the target),
+   then write upstream's new version (`git show "<new>:<prefix><file>" > <target>/<file>`,
+   creating directories). A path upstream stores as a symlink (`git ls-tree` mode `120000`) is
+   recreated with `ln -s` from the blob's text, not with `git show >`. `same` × `claimed` and
+   `none` × `claimed` are listed in the table and left alone: upstream did not touch the file,
+   or the modification created it and upstream never had it.
 3. **Overlap** — `modified`, `added` or `deleted` × `claimed`: for each such file, follow
    `$SKILL/references/reapply.md` to produce the proposed merge. Then stop and show the user,
-   per file: (a) upstream's change (`git diff <base> <new> -- <file>`, trimmed to the hunks
-   that matter), (b) the modification's current form (base vs target diff), (c) the proposed
+   per file: (a) upstream's change (`git diff <base> <new> -- <prefix><file>`, trimmed to the
+   hunks that matter), (b) the modification's current form (base vs target diff), (c) the proposed
    file's diff against upstream's new version. Ask one question: apply this merge? On yes,
    write the file. On no, ask what to change, in one line, and propose again. The file is
    never left half-merged: either upstream's new version with the modification re-applied, or
    untouched. Several overlapping files may be shown in one message when the proposals are
    short; otherwise one file per message.
-4. **Drift** — any × `drift`: report; do not touch those files. Offer, in one line, to record
+4. **Drift** — any × `drift`: first check whether the file already equals upstream's new
+   version (`git -C "$cache" show "${new}:<prefix><file>" | cmp -s - <target>/<file>`). If it
+   does, an earlier update was interrupted after its clean files were written and before
+   bookkeeping moved `base`: treat the file as clean and already applied, not as drift. Any
+   other drift: report; do not touch those files. Offer, in one line, to record
    the drift as a new modification (you write a prompt from the diff and the user confirms it)
    or to revert it to base. Do either only when the user says so.
 5. **Intent check**: for each modification, read its `## Modification` once more against the
