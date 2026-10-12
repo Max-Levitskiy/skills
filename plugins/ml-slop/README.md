@@ -82,7 +82,8 @@ AI-generated code"*, or *"code slop check"* — or invoke it directly:
   methods report *not applicable* rather than guessing.
 
 Score mode only in v1: it reports findings and a composite score; it never edits
-your code.
+your code. The score measures slop density, not functional correctness, security,
+or authorship; a compact implementation can still fail its tests.
 
 ### The ten methods
 
