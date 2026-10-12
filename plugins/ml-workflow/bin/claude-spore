@@ -1,0 +1,17 @@
+#!/usr/bin/env bun
+// The helper. Claude Code puts the plugin's `bin/` on the Bash tool's PATH, so steps and skills
+// run the bare name `claude-spore`; the mod runs `$.plugin.root + "/bin/claude-spore"`.
+//
+// The Bun check comes before anything else loads (docs/spec.md, p.2): the rest of the helper is
+// imported only once Bun is new enough, so an old Bun gets the message, not a parse or API error.
+import { BUN_MINIMUM, isOlder } from "../src/version.ts";
+
+// `Bun.version` by another name: the global is read-only, this one a test can set.
+const bun = process.versions.bun;
+if (isOlder(bun, BUN_MINIMUM)) {
+  console.error(`claude-spore needs Bun ${BUN_MINIMUM} or later; this is Bun ${bun}. Update it with: bun upgrade`);
+  process.exit(2);
+}
+
+const { main } = await import("../src/cli.ts");
+process.exit(await main(process.argv.slice(2)));
