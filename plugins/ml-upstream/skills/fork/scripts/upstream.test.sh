@@ -15,15 +15,15 @@ check() { # check <description> <jq filter over the classification lines> <expec
 # ---- upstream: v1 then v2 ----
 UP="$TMP/upstream"; mkdir -p "$UP/ci" "$UP/pkg"; cd "$UP"; git init -q -b main
 printf 'a1\n' > a.txt; printf 'b1\n' > b.txt; printf 'd1\n' > d.txt; printf 'MIT\n' > LICENSE
-printf 'ci1\n' > ci/x.yml; printf 'keep\n' > ci/keep.yml; printf 'p1\n' > pkg/inner.txt
+printf 'c1\n' > café.txt; printf 'ci1\n' > ci/x.yml; printf 'keep\n' > ci/keep.yml; printf 'p1\n' > pkg/inner.txt
 git add -A; git commit -qm v1; V1=$(git rev-parse HEAD); git tag v1
 printf 'a2\n' > a.txt; printf 'b2\n' > b.txt; printf 'c2\n' > c.txt; git rm -q d.txt
-printf 'ci2\n' > ci/x.yml; printf 'p2\n' > pkg/inner.txt
+printf 'c2\n' > café.txt; printf 'ci2\n' > ci/x.yml; printf 'p2\n' > pkg/inner.txt
 git add -A; git commit -qm v2; V2=$(git rev-parse HEAD)
 
 # ---- target: v1 minus ci/, with one modification claiming b.txt and d.txt, plus drift ----
 TG="$TMP/target"; mkdir -p "$TG/.upstream/modifications" "$TG/ci" "$TG/pkg"
-for f in a.txt b.txt d.txt LICENSE; do git -C "$UP" show "$V1:$f" > "$TG/$f"; done
+for f in a.txt b.txt d.txt LICENSE café.txt; do git -C "$UP" show "$V1:$f" > "$TG/$f"; done
 git -C "$UP" show "$V1:pkg/inner.txt" > "$TG/pkg/inner.txt"
 git -C "$UP" show "$V1:ci/x.yml" > "$TG/ci/x.yml"          # kept under an excluded path: drift
 printf 'b1\nmine\n' > "$TG/b.txt"; printf 'd1\nmine\n' > "$TG/d.txt"; printf 'notes\n' > "$TG/notes.md"
@@ -55,6 +55,7 @@ check "d.txt deleted but claimed" 'select(.file=="d.txt")   | [.upstream,.target
 check "ci/x.yml excluded yet present = drift" 'select(.file=="ci/x.yml") | [.upstream,.target]' '["modified","drift"]'
 check "ci/keep.yml excluded, absent, unchanged: not listed" 'select(.file=="ci/keep.yml")' ''
 check "notes.md drift"           'select(.file=="notes.md") | [.upstream,.target]'     '["none","drift"]'
+check "non-ASCII name: café.txt modified, same" 'select(.file=="café.txt") | [.upstream,.target]' '["modified","same"]'
 check "LICENSE unchanged: not listed" 'select(.file=="LICENSE")' ''
 check "pkg/inner.txt clean"      'select(.file=="pkg/inner.txt") | [.upstream,.target]' '["modified","same"]'
 

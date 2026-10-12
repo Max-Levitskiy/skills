@@ -102,8 +102,8 @@ cmd_classify() {
   files=$(
     {
       {
-        git -C "$cache" ls-tree -r --name-only "$base" ${path:+-- "$path"}
-        git -C "$cache" ls-tree -r --name-only "$new"  ${path:+-- "$path"}
+        git -C "$cache" -c core.quotePath=false ls-tree -r --name-only "$base" ${path:+-- "$path"}
+        git -C "$cache" -c core.quotePath=false ls-tree -r --name-only "$new"  ${path:+-- "$path"}
       } | { if [[ -n "$prefix" ]]; then sed "s#^$prefix##"; else cat; fi; }
       (cd "$target" && find . -type f ! -path './.upstream/*' ! -path './.git/*' | sed 's#^\./##')
     } | sort -u
