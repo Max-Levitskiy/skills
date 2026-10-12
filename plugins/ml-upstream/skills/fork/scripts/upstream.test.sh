@@ -15,6 +15,7 @@ check() { # check <description> <jq filter over the classification lines> <expec
 # ---- upstream: v1 then v2 ----
 UP="$TMP/upstream"; mkdir -p "$UP/ci" "$UP/pkg"; cd "$UP"; git init -q -b main
 printf 'a1\n' > a.txt; printf 'b1\n' > b.txt; printf 'd1\n' > d.txt; printf 'MIT\n' > LICENSE
+ln -s a.txt link.txt
 printf 'c1\n' > café.txt; printf 'ci1\n' > ci/x.yml; printf 'keep\n' > ci/keep.yml; printf 'p1\n' > pkg/inner.txt
 git add -A; git commit -qm v1; V1=$(git rev-parse HEAD); git tag v1
 printf 'a2\n' > a.txt; printf 'b2\n' > b.txt; printf 'c2\n' > c.txt; git rm -q d.txt
@@ -26,6 +27,7 @@ TG="$TMP/target"; mkdir -p "$TG/.upstream/modifications" "$TG/ci" "$TG/pkg"
 for f in a.txt b.txt d.txt LICENSE café.txt; do git -C "$UP" show "$V1:$f" > "$TG/$f"; done
 git -C "$UP" show "$V1:pkg/inner.txt" > "$TG/pkg/inner.txt"
 git -C "$UP" show "$V1:ci/x.yml" > "$TG/ci/x.yml"          # kept under an excluded path: drift
+ln -s a.txt "$TG/link.txt"                                  # same symlink as upstream: unchanged
 printf 'b1\nmine\n' > "$TG/b.txt"; printf 'd1\nmine\n' > "$TG/d.txt"; printf 'notes\n' > "$TG/notes.md"
 jq -n --arg url "$UP" --arg base "$V1" '{version:1,url:$url,ref:"main",base:$base,takenAt:"2026-10-12",path:"",exclude:["ci/"]}' > "$TG/.upstream/upstream.json"
 cat > "$TG/.upstream/modifications/01-mine.md" <<'EOF'
@@ -58,6 +60,11 @@ check "notes.md drift"           'select(.file=="notes.md") | [.upstream,.target
 check "non-ASCII name: café.txt modified, same" 'select(.file=="café.txt") | [.upstream,.target]' '["modified","same"]'
 check "LICENSE unchanged: not listed" 'select(.file=="LICENSE")' ''
 check "pkg/inner.txt clean"      'select(.file=="pkg/inner.txt") | [.upstream,.target]' '["modified","same"]'
+check "symlink unchanged on both sides: not listed" 'select(.file=="link.txt")' ''
+ln -s a.txt "$TG/extra-link.txt"
+bash "$SUT" classify "$TG" > "$OUT"
+check "symlink added by hand = drift" 'select(.file=="extra-link.txt") | [.upstream,.target]' '["none","drift"]'
+rm "$TG/extra-link.txt"
 
 # ---- --ref overrides upstream.json ----
 bash "$SUT" classify "$TG" --ref v1 > "$OUT"
@@ -77,9 +84,19 @@ else grep -q "ref not found upstream: no-such-branch" "$TMP/err" && [[ ! -s "$OU
 if bash "$SUT" classify "$TMP" > /dev/null 2> "$TMP/err"; then echo "✗ missing upstream.json should fail"; fail=1
 else grep -q "no .upstream/upstream.json" "$TMP/err" && echo "✓ missing upstream.json" || { echo "✗ missing upstream.json message: $(cat "$TMP/err")"; fail=1; }; fi
 
+# ---- licence is never excluded (rule 7); unknown flags ----
+TL="$TMP/target-lic"; mkdir -p "$TL/.upstream"
+jq '.exclude=["LICENSE"]' "$TG/.upstream/upstream.json" > "$TL/.upstream/upstream.json"
+if bash "$SUT" classify "$TL" > "$OUT" 2> "$TMP/err"; then echo "✗ excluded licence should fail"; fail=1
+else grep -q "exclude lists the licence file LICENSE" "$TMP/err" && [[ ! -s "$OUT" ]] && echo "✓ excluded licence: exit non-zero, no header" || { echo "✗ excluded licence message: $(cat "$TMP/err")"; fail=1; }; fi
+if bash "$SUT" classify "$TG" --bogus > /dev/null 2> "$TMP/err"; then echo "✗ unknown flag should fail"; fail=1
+else grep -q "unknown option: --bogus" "$TMP/err" && echo "✓ unknown flag rejected" || { echo "✗ unknown flag message: $(cat "$TMP/err")"; fail=1; }; fi
+
 # ---- cache verb ----
 C1=$(bash "$SUT" cache "$UP"); C2=$(bash "$SUT" cache "$UP")
 [[ "$C1" == "$C2" && -d "$C1" && "$C1" == "$ML_UPSTREAM_CACHE"/local/* ]] && echo "✓ cache: stable path under ML_UPSTREAM_CACHE/local" || { echo "✗ cache: $C1 / $C2"; fail=1; }
+CF=$(bash "$SUT" cache "file://$UP")
+[[ "$CF" == "$C1" ]] && echo "✓ cache: file:// URL shares the key of the plain path" || { echo "✗ cache: file:// gave $CF, want $C1"; fail=1; }
 git -C "$C1" rev-parse --verify -q refs/tags/v1 >/dev/null && echo "✓ cache: tags fetched" || { echo "✗ cache: tag v1 missing"; fail=1; }
 
 [[ $fail -eq 0 ]] && echo "all passed" || { echo "FAILED"; exit 1; }

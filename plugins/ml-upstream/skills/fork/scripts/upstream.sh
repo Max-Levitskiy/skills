@@ -8,6 +8,7 @@
 #
 # Cache root: $ML_UPSTREAM_CACHE, default ~/.cache/ml-upstream. Needs git and jq.
 set -euo pipefail
+shopt -s inherit_errexit
 
 die() { echo "upstream: $*" >&2; exit 2; }
 command -v git >/dev/null || die "git is required"
@@ -19,7 +20,8 @@ cache_dir() {
   local url="$1" key
   if   [[ "$url" =~ ^[a-z+]+://([^/@]+@)?([^/:]+)(:[0-9]+)?/(.+)$ ]]; then key="${BASH_REMATCH[2]}/${BASH_REMATCH[4]}"
   elif [[ "$url" =~ ^[^@/]+@([^:]+):(.+)$ ]]; then key="${BASH_REMATCH[1]}/${BASH_REMATCH[2]}"
-  else key="local$(realpath "$url")"; fi
+  elif [[ "$url" == file://* ]]; then key="local$(realpath "${url#file://}")" || die "cannot resolve $url"
+  else key="local$(realpath "$url")" || die "cannot resolve $url"; fi
   key="${key%/}"; key="${key%.git}"
   echo "$CACHE_ROOT/$key.git"
 }
@@ -75,11 +77,12 @@ cmd_classify() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --ref) [[ $# -ge 2 ]] || die "--ref needs a value"; ref_override="$2"; shift 2 ;;
+      --*) die "unknown option: $1" ;;
       *) target="$1"; shift ;;
     esac
   done
   [[ -n "$target" && -f "$target/.upstream/upstream.json" ]] || die "no .upstream/upstream.json in ${target:-<target>}"
-  target=$(realpath "$target")
+  target=$(realpath "$target") || die "cannot resolve $target"
   local cfg="$target/.upstream/upstream.json"
   local url ref base path prefix=""
   url=$(jq -r '.url' "$cfg"); base=$(jq -r '.base' "$cfg"); path=$(jq -r '.path // ""' "$cfg")
@@ -91,6 +94,13 @@ cmd_classify() {
   cache=$(cmd_cache "$url")
   new=$(resolve "$cache" "$ref")
   git -C "$cache" cat-file -e "$base^{commit}" 2>/dev/null || die "base $base is not a commit upstream"
+  # Rule 7: the licence is never excluded.
+  local e lic
+  while IFS= read -r lic; do
+    for e in "${EXCLUDES[@]}"; do
+      [[ -n "$e" && "$e" == "$lic" ]] && die "exclude lists the licence file $lic; the licence is never excluded (rule 7)"
+    done
+  done < <(git -C "$cache" ls-tree --name-only "${path:+$base:$path}${path:-$base}" 2>/dev/null | grep -iE '^(licen[cs]e|copying)' || true)
   commits=$(git -C "$cache" rev-list --count "$base..$new")
   jq -cn --arg url "$url" --arg ref "$ref" --arg base "$base" --arg new "$new" --arg cache "$cache" --argjson commits "$commits" \
     '{type:"header",url:$url,ref:$ref,base:$base,new:$new,commits:$commits,cache:$cache}'
@@ -105,7 +115,7 @@ cmd_classify() {
         git -C "$cache" -c core.quotePath=false ls-tree -r --name-only "$base" ${path:+-- "$path"}
         git -C "$cache" -c core.quotePath=false ls-tree -r --name-only "$new"  ${path:+-- "$path"}
       } | { if [[ -n "$prefix" ]]; then sed "s#^$prefix##"; else cat; fi; }
-      (cd "$target" && find . -type f ! -path './.upstream/*' ! -path './.git/*' | sed 's#^\./##')
+      (cd "$target" && find . \( -type f -o -type l \) ! -path './.upstream/*' ! -path './.git/*' | sed 's#^\./##')
     } | sort -u
   )
 
@@ -114,7 +124,9 @@ cmd_classify() {
     [[ -n "$f" ]] || continue
     b=$(git -C "$cache" rev-parse --verify --quiet "$base:$prefix$f" || true)
     n=$(git -C "$cache" rev-parse --verify --quiet "$new:$prefix$f"  || true)
-    if [[ -f "$target/$f" ]]; then t=$(git hash-object "$target/$f"); else t=""; fi
+    if   [[ -L "$target/$f" ]]; then t=$(printf %s "$(readlink "$target/$f")" | git hash-object --stdin)
+    elif [[ -f "$target/$f" ]]; then t=$(git hash-object --no-filters "$target/$f")
+    else t=""; fi
     if   [[ -z "$b" && -z "$n" ]]; then up=none
     elif [[ -z "$b" ]];            then up=added
     elif [[ -z "$n" ]];            then up=deleted
