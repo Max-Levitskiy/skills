@@ -97,14 +97,29 @@ TL="$TMP/target-lic"; mkdir -p "$TL/.upstream"
 jq '.exclude=["LICENSE"]' "$TG/.upstream/upstream.json" > "$TL/.upstream/upstream.json"
 if bash "$SUT" classify "$TL" > "$OUT" 2> "$TMP/err"; then echo "✗ excluded licence should fail"; fail=1
 else grep -q "exclude lists the licence file LICENSE" "$TMP/err" && [[ ! -s "$OUT" ]] && echo "✓ excluded licence: exit non-zero, no header" || { echo "✗ excluded licence message: $(cat "$TMP/err")"; fail=1; }; fi
-# A second upstream: a submodule (gitlink) from the start; v2 adds a LICENSE.
-U2="$TMP/upstream2"; mkdir -p "$U2"; git -C "$U2" init -q -b main; printf 'x\n' > "$U2/x.txt"
-git -C "$U2" add x.txt; git -C "$U2" update-index --add --cacheinfo "160000,$V1,sub"; git -C "$U2" commit -qm w1; W1=$(git -C "$U2" rev-parse HEAD)
-printf 'MIT\n' > "$U2/LICENSE"; git -C "$U2" add LICENSE; git -C "$U2" commit -qm w2
-TS="$TMP/target-sub"; mkdir -p "$TS/.upstream"; cp "$U2/x.txt" "$TS/x.txt"
+# A second upstream: a submodule (gitlink), a directory with a regex character in its name, and a
+# directory that v2 deletes; v2 also adds a LICENSE and makes x.txt executable (mode only).
+U2="$TMP/upstream2"; mkdir -p "$U2/p#q" "$U2/gone"; git -C "$U2" init -q -b main
+printf 'x\n' > "$U2/x.txt"; printf 'y\n' > "$U2/p#q/y.txt"; printf 'g\n' > "$U2/gone/g.txt"
+git -C "$U2" add -A; git -C "$U2" update-index --add --cacheinfo "160000,$V1,sub"; git -C "$U2" commit -qm w1; W1=$(git -C "$U2" rev-parse HEAD)
+printf 'MIT\n' > "$U2/LICENSE"; printf 'z\n' > "$U2/p#q/z.txt"; git -C "$U2" rm -rq gone
+git -C "$U2" add -A; git -C "$U2" update-index --chmod=+x x.txt; git -C "$U2" commit -qm w2; W2=$(git -C "$U2" rev-parse HEAD)
+TS="$TMP/target-sub"; mkdir -p "$TS/.upstream" "$TS/p#q" "$TS/gone"; cp "$U2/x.txt" "$TS/x.txt"
+git -C "$U2" show "$W1:p#q/y.txt" > "$TS/p#q/y.txt"; git -C "$U2" show "$W1:gone/g.txt" > "$TS/gone/g.txt"; chmod -x "$TS/x.txt"
+printf 'gitdir: /elsewhere\n' > "$TS/.git"                       # a linked worktree's control file
 jq -n --arg url "$U2" --arg base "$W1" '{version:1,url:$url,ref:"main",base:$base,takenAt:"2026-10-12",path:"",exclude:[]}' > "$TS/.upstream/upstream.json"
 bash "$SUT" classify "$TS" --ref "$W1" > "$OUT"
-check "submodule (gitlink) is not part of the copy: not listed" 'select(.type!="header") | .file' ''
+check "submodule (gitlink) and a worktree's .git file: not listed" 'select(.type!="header") | .file' ''
+bash "$SUT" classify "$TS" > "$OUT"
+check "mode-only upstream change (chmod +x) is modified" 'select(.file=="x.txt") | [.upstream,.target]' '["modified","same"]'
+TQ="$TMP/target-regex-path"; mkdir -p "$TQ/.upstream"; cp "$TS/p#q/y.txt" "$TQ/y.txt"
+jq '.path="p#q"' "$TS/.upstream/upstream.json" > "$TQ/.upstream/upstream.json"
+bash "$SUT" classify "$TQ" > "$OUT"
+JQS=-s check "path with a regex character: prefix stripped literally" '[.[] | select(.type!="header") | .file]' '["z.txt"]'
+TD="$TMP/target-gone"; mkdir -p "$TD/.upstream"
+jq --arg base "$W2" '.path="gone" | .base=$base' "$TS/.upstream/upstream.json" > "$TD/.upstream/upstream.json"
+bash "$SUT" classify "$TD" > "$OUT" 2> "$TMP/err" && JQS=-s check "subtree deleted upstream, base already past it: checks still work" '[.[] | select(.type!="header")]' '[]' \
+  || { echo "✗ subtree deleted upstream: $(cat "$TMP/err")"; fail=1; }
 TN="$TMP/target-newlic"; mkdir -p "$TN/.upstream"; cp "$U2/x.txt" "$TN/x.txt"
 jq '.exclude=["LICENSE"]' "$TS/.upstream/upstream.json" > "$TN/.upstream/upstream.json"
 if bash "$SUT" classify "$TN" > "$OUT" 2> "$TMP/err"; then echo "✗ licence added upstream and excluded should fail"; fail=1
@@ -119,5 +134,12 @@ C1=$(bash "$SUT" cache "$UP"); C2=$(bash "$SUT" cache "$UP")
 CF=$(bash "$SUT" cache "file://$UP")
 [[ "$CF" == "$C1" ]] && echo "✓ cache: file:// URL shares the key of the plain path" || { echo "✗ cache: file:// gave $CF, want $C1"; fail=1; }
 git -C "$C1" rev-parse --verify -q refs/tags/v1 >/dev/null && echo "✓ cache: tags fetched" || { echo "✗ cache: tag v1 missing"; fail=1; }
+U3="$TMP/upstream3"; mkdir -p "$U3"; git -C "$U3" init -q -b main; git -C "$U3" commit -q --allow-empty -m r1
+C3=$(bash "$SUT" cache "$U3"); git -C "$U3" branch -m main trunk; bash "$SUT" cache "$U3" > /dev/null
+[[ $(git -C "$C3" symbolic-ref HEAD) == refs/heads/trunk ]] && echo "✓ cache: default branch follows an upstream rename" || { echo "✗ cache: HEAD is $(git -C "$C3" symbolic-ref HEAD)"; fail=1; }
+KEY=$(sed -n '/^cache_dir() {/,/^}/p' "$SUT")
+K1=$(CACHE_ROOT=/c; eval "$KEY"; cache_dir ssh://git@h.example:2222/o/r.git); K2=$(CACHE_ROOT=/c; eval "$KEY"; cache_dir ssh://git@h.example/o/r.git)
+K3=$(CACHE_ROOT=/c; eval "$KEY"; cache_dir https://h.example:443/o/r)
+[[ "$K1" != "$K2" && "$K2" == "$K3" ]] && echo "✓ cache key: a non-default port is part of it, a default one is not" || { echo "✗ cache keys: $K1 / $K2 / $K3"; fail=1; }
 
 [[ $fail -eq 0 ]] && echo "all passed" || { echo "FAILED"; exit 1; }

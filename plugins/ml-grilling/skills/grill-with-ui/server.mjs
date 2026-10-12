@@ -199,8 +199,9 @@ function cmdServe(o) {
   srv.on("listening", () => {
     const { port } = srv.address();
     const url = `http://${hostInUrl}:${port}/`;
-    // The page is opened at `url`, so its Origin is that host; keep the loopback spellings too.
-    selfOrigins = [`http://${hostInUrl}:${port}`, `http://127.0.0.1:${port}`, `http://localhost:${port}`];
+    // The page is opened at `url`, so its Origin is that host, in the browser's canonical spelling
+    // (lower-case name, compressed IPv6); keep the loopback spellings too.
+    selfOrigins = [new URL(url).origin, `http://127.0.0.1:${port}`, `http://localhost:${port}`];
     writeJson(serverFile, { url, port, pid: process.pid, started: new Date().toISOString() });
     print({ type: "ready", url, session });
     openUrl(url);

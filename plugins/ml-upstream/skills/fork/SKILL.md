@@ -109,8 +109,10 @@ files applied and the overlapping file untouched.
    written. Then `modified` or `added` × `same`: remove whatever is at `<target>/<file>`
    (`rm -f`; a redirect into an existing symlink would write through it, outside the target),
    then write upstream's new version (`git show "<new>:<prefix><file>" > <target>/<file>`,
-   creating directories). A path upstream stores as a symlink (`git ls-tree` mode `120000`) is
-   recreated with `ln -s` from the blob's text, not with `git show >`. `same` × `claimed` and
+   creating directories), then `chmod +x` it when upstream's mode is `100755` (`git ls-tree
+   "<new>" -- "<prefix><file>"`; a redirect writes `0644`, and the classifier compares modes, so
+   a lost executable bit would read as drift). A path upstream stores as a symlink (mode
+   `120000`) is recreated with `ln -s` from the blob's text, not with `git show >`. `same` × `claimed` and
    `none` × `claimed` are listed in the table and left alone: upstream did not touch the file,
    or the modification created it and upstream never had it.
 3. **Overlap** — `modified`, `added` or `deleted` × `claimed`: for each such file, follow

@@ -22,9 +22,9 @@ the user to open it.
   machine's Tailscale IPv4: the 100.64.0.0/10 address on an interface named `tailscale*`, else
   `tailscale ip -4`, else the only 100.64.0.0/10 address present, since carrier NAT shares that
   range; it dies with a message when there is none or several) and
-  `serve` binds it and puts it in the url (IPv6 bracketed). The bound host is added to
-  `selfOrigins`, upstream's same-origin check on `POST /send`, so the page opened on that
-  address can Send; the loopback spellings stay. `openUrl()` runs `GRILL_OPEN` with the url
+  `serve` binds it and puts it in the url (IPv6 bracketed). The url's origin, as `new URL(url)`
+  canonicalises it the way a browser does, is added to `selfOrigins`, upstream's same-origin
+  check on `POST /send`, so the page opened on that address can Send; the loopback spellings stay. `openUrl()` runs `GRILL_OPEN` with the url
   as `$1` once listening, detached, stdout dropped so the agent's event stream stays clean,
   errors to stderr. A header comment documents both variables.
 - `SKILL.md`: Start step 5 adds "When `GRILL_OPEN` is set, `serve` has already opened the URL

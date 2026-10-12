@@ -18,7 +18,11 @@ CACHE_ROOT="${ML_UPSTREAM_CACHE:-$HOME/.cache/ml-upstream}"
 # <host>/<owner>/<repo>.git for a URL; local/<abs path>.git for a path.
 cache_dir() {
   local url="$1" key
-  if   [[ "$url" =~ ^[a-z+]+://([^/@]+@)?([^/:]+)(:[0-9]+)?/(.+)$ ]]; then key="${BASH_REMATCH[2]}/${BASH_REMATCH[4]}"
+  if   [[ "$url" =~ ^([a-z+]+)://([^/@]+@)?([^/:]+)(:([0-9]+))?/(.+)$ ]]; then
+    local scheme="${BASH_REMATCH[1]}" host="${BASH_REMATCH[3]}" port="${BASH_REMATCH[5]}" repo="${BASH_REMATCH[6]}"
+    # A non-default port can be a different server: keep it in the key; the scheme's default is noise.
+    case "$scheme:$port" in ssh:22|git+ssh:22|ssh+git:22|https:443|http:80|git:9418) port="" ;; esac
+    key="$host${port:+_$port}/$repo"
   elif [[ "$url" =~ ^[^@/]+@([^:]+):(.+)$ ]]; then key="${BASH_REMATCH[1]}/${BASH_REMATCH[2]}"
   elif [[ "$url" == file://* ]]; then key="local$(realpath "${url#file://}")" || die "cannot resolve $url"
   else key="local$(realpath "$url")" || die "cannot resolve $url"; fi
@@ -35,6 +39,9 @@ cmd_cache() {
   fi
   # A bare clone has no fetch refspec, so name the refs; tags too, so a tag can be a ref.
   git -C "$dir" fetch --quiet --prune "$url" '+refs/heads/*:refs/heads/*' '+refs/tags/*:refs/tags/*' >&2 || die "fetch failed: $url"
+  # Fetch does not move HEAD; follow upstream's default branch so a rename is picked up.
+  local head; head=$(git -C "$dir" ls-remote --symref "$url" HEAD 2>/dev/null | awk '/^ref:/ { print $2; exit }' || true)
+  if [[ -n "$head" ]]; then git -C "$dir" symbolic-ref HEAD "$head"; fi
   echo "$dir"
 }
 
@@ -98,10 +105,8 @@ cmd_classify() {
   local e lic rev treeish tree
   for rev in "$base" "$new"; do
     if [[ -n "$path" ]]; then treeish="$rev:$path"; else treeish="$rev"; fi
-    if ! tree=$(git -C "$cache" ls-tree --name-only "$treeish" 2>/dev/null); then
-      [[ "$rev" == "$base" ]] && die "cannot read $treeish upstream (base/path mismatch?)"
-      continue   # path gone at the new ref: nothing to guard there
-    fi
+    # The subtree may not exist at a rev (upstream deleted it, and base can already be past that).
+    tree=$(git -C "$cache" ls-tree --name-only "$treeish" 2>/dev/null) || continue
     while IFS= read -r lic; do
       [[ -n "$lic" ]] || continue
       for e in "${EXCLUDES[@]}"; do
@@ -115,27 +120,37 @@ cmd_classify() {
 
   local claims; claims=$(claims_json "$target")
 
-  # Every path upstream had at base or has at new (under path), plus every file in the target.
-  # Submodules (gitlinks, type `commit`) are not part of the copy: `git archive` leaves them out.
+  # "<mode>:<blob>" for every path upstream has at base and at new (under path, prefix stripped
+  # literally). Mode counts: a chmod +x upstream is a change. Submodules (gitlinks, type `commit`)
+  # are not part of the copy: `git archive` leaves them out.
+  local -A B=() N=()
+  local meta p m o
+  while IFS=$'\t' read -r meta p; do
+    read -r m o _ <<<"$meta"; [[ "$o" == commit ]] && continue
+    read -r m _ o <<<"$meta"; B["${p#"$prefix"}"]="$m:$o"
+  done < <(git -C "$cache" -c core.quotePath=false ls-tree -r "$base" ${path:+-- "$path"})
+  while IFS=$'\t' read -r meta p; do
+    read -r m o _ <<<"$meta"; [[ "$o" == commit ]] && continue
+    read -r m _ o <<<"$meta"; N["${p#"$prefix"}"]="$m:$o"
+  done < <(git -C "$cache" -c core.quotePath=false ls-tree -r "$new" ${path:+-- "$path"})
+
+  # Every such path, plus every file and symlink in the target (not .upstream/, not git's own .git).
   local files
   files=$(
     {
-      {
-        git -C "$cache" -c core.quotePath=false ls-tree -r "$base" ${path:+-- "$path"}
-        git -C "$cache" -c core.quotePath=false ls-tree -r "$new"  ${path:+-- "$path"}
-      } | awk -F'\t' '$1 !~ / commit / { print $2 }' \
-        | { if [[ -n "$prefix" ]]; then sed "s#^$prefix##"; else cat; fi; }
-      (cd "$target" && find . \( -type f -o -type l \) ! -path './.upstream/*' ! -path './.git/*' | sed 's#^\./##')
+      printf '%s\n' "${!B[@]}" "${!N[@]}"
+      (cd "$target" && find . \( -type f -o -type l \) ! -path './.upstream/*' ! -path './.git' ! -path './.git/*' | sed 's#^\./##')
     } | sort -u
   )
 
   local f b n t up tg by
   while IFS= read -r f; do
     [[ -n "$f" ]] || continue
-    b=$(git -C "$cache" rev-parse --verify --quiet "$base:$prefix$f" || true)
-    n=$(git -C "$cache" rev-parse --verify --quiet "$new:$prefix$f"  || true)
-    if   [[ -L "$target/$f" ]]; then t=$(printf %s "$(readlink "$target/$f")" | git hash-object --stdin)
-    elif [[ -f "$target/$f" ]]; then t=$(git hash-object --no-filters "$target/$f")
+    b="${B[$f]:-}"; n="${N[$f]:-}"
+    if   [[ -L "$target/$f" ]]; then t="120000:$(printf %s "$(readlink "$target/$f")" | git hash-object --stdin)"
+    elif [[ -f "$target/$f" ]]; then
+      if [[ -x "$target/$f" ]]; then m=100755; else m=100644; fi
+      t="$m:$(git hash-object --no-filters "$target/$f")"
     else t=""; fi
     if   [[ -z "$b" && -z "$n" ]]; then up=none
     elif [[ -z "$b" ]];            then up=added
