@@ -23,9 +23,13 @@
   #banner { grid-row: 1; grid-column: 1 / -1; display: none; padding: 9px 24px; font-size: 14px; background: var(--warn-soft); color: var(--accent); border-bottom: 1px solid var(--rule); }
   #banner.show { display: block; } #banner.done { background: var(--ok-soft); color: var(--ok); }
 
-  header { grid-row: 2; grid-column: 1 / -1; display: flex; align-items: center; gap: 14px; padding: 12px 24px; border-bottom: 1px solid var(--rule); background: var(--panel); position: relative; }
+  header { grid-row: 2; grid-column: 1 / -1; display: flex; align-items: center; flex-wrap: wrap; gap: 4px 14px; padding: 12px 24px; border-bottom: 1px solid var(--rule); background: var(--panel); position: relative; }
   header h1 { font-family: var(--serif); font-weight: 500; font-size: 20px; margin: 0; }
   header .path { color: var(--ink-3); font-size: 13px; }
+  #intent { display: none; flex-basis: 100%; order: 10; font-size: 14px; font-weight: 500; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #intent.show { display: block; }
+  #intent.show.open { white-space: normal; }
+  #intent.show.clamped { cursor: pointer; }
   header .status { margin-left: auto; display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink-2); } header .status .spin { color: var(--stage); }
   .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); }
   .dot.working { background: var(--stage); animation: pulse 1.2s ease-in-out infinite; }
@@ -40,6 +44,14 @@
   #terms-toggle, #visualize { font-size: 12px; padding: 4px 10px; }
   #visualize .spin { width: 9px; height: 9px; margin-right: 4px; }
   #visualize:disabled { background: var(--panel); border-color: var(--rule); color: var(--ink-3); }
+  #subagent-opt { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--ink-2); white-space: nowrap; }
+  #subagent-opt[hidden] { display: none; }
+  #subagent-opt input { margin: 0; accent-color: var(--accent); }
+  #subagent-opt label { cursor: pointer; }
+  .info { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; border-radius: 50%; border: 1px solid var(--ink-3); color: var(--ink-3); font: italic 600 10px/1 var(--serif); cursor: help; }
+  .info:hover, .info:focus { color: var(--ink); border-color: var(--ink); outline: none; }
+  .info::after { content: attr(data-tip); display: none; position: absolute; top: calc(100% + 8px); right: -8px; width: 260px; padding: 8px 10px; background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; box-shadow: 0 8px 24px rgba(0,0,0,.08); color: var(--ink-2); font: 12px/1.45 system-ui, sans-serif; font-style: normal; white-space: normal; text-align: left; z-index: 6; }
+  .info:hover::after, .info:focus::after { display: block; }
   #terms { display: none; position: absolute; right: 24px; top: 100%; width: 420px; max-height: 60vh; overflow-y: auto; background: var(--panel); border: 1px solid var(--rule); border-radius: 8px; padding: 10px 16px; box-shadow: 0 8px 24px rgba(0,0,0,.08); z-index: 5; }
   #terms.show { display: block; }
   .term { padding: 8px 0; border-bottom: 1px solid var(--rule); font-size: 14px; } .term:last-child { border-bottom: 0; }
@@ -98,6 +110,8 @@
   .opt.staged { border-color: var(--stage); box-shadow: 0 0 0 1px var(--stage); background: var(--stage-soft); }
   .opt.pending { border-color: var(--stage); border-style: dashed; } .opt.pending .k { color: var(--stage); } .opt .check.pending { visibility: visible; color: var(--stage); display: flex; align-items: center; justify-content: center; }
   .locked .opt { cursor: default; } .locked .opt:hover { border-color: var(--rule); }
+  .multi-hint { margin: 16px 0 0; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); }
+  .multi-hint + .opts { margin-top: 8px; }
   .why { margin: 14px 0 0; font-size: 14px; color: var(--ink-2); white-space: pre-line; } .why b { color: var(--accent); font-weight: 600; }
   .staged-line { margin-top: 10px; font-size: 14px; color: var(--stage); } .staged-line a { color: var(--ink-3); font-size: 12px; margin-left: 8px; }
   .pending-line { margin-top: 10px; font-size: 14px; color: var(--stage); display: flex; align-items: center; gap: 8px; }
@@ -139,6 +153,10 @@
   footer .staged-list { font-size: 13px; color: var(--ink-2); flex: 1; } footer .staged-list b { color: var(--stage); } footer .staged-list .sent { color: var(--stage); display: inline-flex; align-items: center; gap: 6px; }
   #finish.ready { background: var(--ok); border-color: var(--ok); color: #fff; font-weight: 600; animation: ready 1.2s ease-in-out infinite; }
   #finish.ready:hover { background: #2f5a3b; border-color: #2f5a3b; }
+  /* The inline confirm keeps the green so the eye stays on it, but stops blinking:
+     blinking means "you can act", solid green means "confirm here". */
+  #finish-yes.ready { background: var(--ok); border-color: var(--ok); color: #fff; font-weight: 600; }
+  #finish-yes.ready:hover { background: #2f5a3b; border-color: #2f5a3b; }
   @keyframes ready { 0%, 100% { background-color: var(--ok); border-color: var(--ok); } 50% { background-color: #7fb08d; border-color: #7fb08d; } }
   footer .hint { font-size: 12px; color: var(--ink-3); } footer .warn { font-size: 12px; color: var(--accent); }
   footer .confirm { font-size: 13px; color: var(--ink-2); display: flex; gap: 8px; align-items: center; }
@@ -210,9 +228,11 @@
 <header>
   <h1 id="topic">grill</h1>
   <span class="path" id="doc-path"></span>
+  <span id="intent"></span>
   <button id="terms-toggle" type="button">Terms</button>
   <div id="terms"></div>
   <button id="visualize" type="button" hidden>Visualize</button>
+  <span id="subagent-opt" hidden><input type="checkbox" id="use-subagent" checked><label for="use-subagent">Use subagent</label><span id="subagent-info" class="info" tabindex="0" role="img" aria-label="Using subagents frees up your main context for grilling. You can switch this off once you are done grilling to make the visualization build faster." data-tip="Using subagents frees up your main context for grilling. You can switch this off once you are done grilling to make the visualization build faster.">i</span></span>
   <span class="status"><span class="dot" id="agent-dot"></span><span id="agent-status">connecting…</span></span>
   <div id="progress"></div>
 </header>
@@ -238,9 +258,9 @@ const GONE_AFTER_MS = 3000;
 const CHECK = '<svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="10" fill="currentColor"/><path d="M6 10.4l2.6 2.6L14 7.4" stroke="#fff" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
 let S = null, raw = null, selected = null, storeKey = null;
-let lastOk = Date.now(), gone = false, confirmFinish = false;
+let lastOk = Date.now(), gone = false, confirmFinish = false, intentOpen = false;
 let local = fresh();
-function fresh() { return { staged: {}, pending: [], drafts: {}, view: "questions", vfeedback: [] }; }
+function fresh() { return { staged: {}, pending: [], drafts: {}, view: "questions", vfeedback: [], subagent: true }; }
 function load() { local = fresh(); try { const v = localStorage.getItem(storeKey); if (v) local = Object.assign(fresh(), JSON.parse(v)); } catch {} }
 function save() { try { localStorage.setItem(storeKey, JSON.stringify(local)); } catch {} }
 
@@ -257,6 +277,13 @@ const hasVisual = () => { const v = visual(); return !!v && (Number(v.version) |
 const drawing = () => { const v = visual(); return v && v.drawing && typeof v.drawing === "object" ? v.drawing : null; };
 const drawStuck = () => { const d = drawing(); return !!d && Date.now() - Date.parse(d.since || 0) > DRAW_GRACE_MS; };
 const activeView = () => (local.view === "visualize" && hasVisual() ? "visualize" : "questions");
+// A multi question takes a set of options: rec.options and answer.options. A single one
+// takes rec.option and answer.option. keysOf reads either shape, so callers need not care.
+const isMulti = (q) => !!(q && q.multi);
+const keysOf = (x) => (x && Array.isArray(x.options) ? x.options : x && x.option ? [x.option] : []);
+const recKeys = (q) => keysOf(q && q.rec);
+const sameKeys = (a, b) => a.length === b.length && a.every((k) => b.includes(k));
+const keyLabel = (x) => keysOf(x).join(" + ");
 const timeOf = (iso) => { const d = new Date(iso); return isNaN(d) ? "" : d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }); };
 const fmtMs = (ms) => { const s = Math.max(0, Math.floor(ms / 1000)); return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`; };
 
@@ -291,6 +318,21 @@ function onState() {
 const st = (id) => (local.staged[id] = local.staged[id] || {});
 const prune = (id) => { const s = local.staged[id]; if (s && !s.answer && !s.defer && !s.reopen && !(s.thread && s.thread.length)) delete local.staged[id]; };
 function stageAnswer(id, answer) { const s = st(id); s.answer = answer; delete s.defer; delete s.reopen; commit(); }
+// Clicking an option of a multi question toggles it in the staged set. The set starts from
+// what is staged, else from the recorded answer, so changing an answer edits it instead of
+// starting over. An emptied set unstages the answer.
+function toggleOption(q, k) {
+  const s = local.staged[q.id];
+  const base = s && s.answer && s.answer.kind !== "text" ? keysOf(s.answer) : q.status === "answered" && !(s && s.answer) ? keysOf(q.answer) : [];
+  const next = base.includes(k) ? base.filter((x) => x !== k) : base.concat(k);
+  if (!next.length) return clearStaged(q.id);
+  stageKeys(q, next);
+}
+function stageKeys(q, keys) {
+  const order = (q.options || []).map((o) => o.k);
+  const sorted = keys.slice().sort((a, b) => order.indexOf(a) - order.indexOf(b));
+  stageAnswer(q.id, { kind: sameKeys(sorted, recKeys(q)) ? "accept" : "option", options: sorted });
+}
 function stageThread(id, text) { const s = st(id); (s.thread = s.thread || []).push(text); if (local.drafts[id]) delete local.drafts[id].thread; commit(); }
 function stageDefer(id) { const s = st(id); s.defer = true; delete s.answer; delete s.reopen; commit(); }
 function stageReopen(id) { const s = st(id); s.reopen = true; delete s.answer; delete s.defer; commit(); }
@@ -303,6 +345,10 @@ const lastPending = () => local.pending[local.pending.length - 1] || null;
 const isExploring = (id) => pendingActions(id).some((a) => a.type === "explore");
 const pendingOfType = (t) => local.pending.flatMap((p) => p.actions.filter((a) => a.type === t));
 const isVisualizing = () => pendingOfType("visualize").length > 0 || (!!drawing() && !drawStuck());
+// Every draw request says whether the agent should hand the drawing to a subagent (the default,
+// which keeps the markup out of the interview's context) or draw it inline, which is faster once
+// the grilling is done.
+const useSubagent = () => local.subagent !== false;
 const isFinishing = () => pendingOfType("finish").length > 0;
 const allSettled = () => qs().length > 0 && !qs().some(isOpen);
 function stagedCount() {
@@ -317,10 +363,10 @@ function buildActions() {
   for (const [q, s] of Object.entries(local.staged)) {
     if (s.reopen) out.push({ q, type: "reopen" });
     if (s.defer) out.push({ q, type: "defer" });
-    if (s.answer) { const a = { q, type: "answer", kind: s.answer.kind }; if (s.answer.option) a.option = s.answer.option; if (s.answer.text) a.text = s.answer.text; out.push(a); }
+    if (s.answer) { const a = { q, type: "answer", kind: s.answer.kind }; if (s.answer.option) a.option = s.answer.option; if (s.answer.options) a.options = s.answer.options; if (s.answer.text) a.text = s.answer.text; out.push(a); }
     for (const t of s.thread || []) out.push({ q, type: "thread", text: t });
   }
-  for (const t of local.vfeedback) out.push({ type: "visual-feedback", text: t });
+  for (const t of local.vfeedback) out.push({ type: "visual-feedback", text: t, subagent: useSubagent() });
   return out;
 }
 function sendState(needStaged = true) {
@@ -356,14 +402,14 @@ async function send() {
 // Finish is not staged: confirming ships everything staged plus the finish action in one event, right away.
 async function finishNow() {
   if (sendState(false).disabled || isFinishing()) return;
-  const actions = buildActions().concat([{ type: "finish" }]);
+  const actions = buildActions().concat([visual() ? { type: "finish", subagent: useSubagent() } : { type: "finish" }]);
   const j = await post(actions);
   if (j) { local.pending.push({ seq: j.seq, at: new Date().toISOString(), actions }); local.staged = {}; local.vfeedback = []; confirmFinish = false; commit(); }
 }
 // Visualize is not staged either: the first click (and Regenerate) is a generate request, like Explore deeper.
 async function visualize() {
   if (sendState(false).disabled || isVisualizing()) return;
-  const actions = [{ type: "visualize" }];
+  const actions = [{ type: "visualize", subagent: useSubagent() }];
   const j = await post(actions);
   if (j) { local.pending.push({ seq: j.seq, at: new Date().toISOString(), actions }); local.view = "visualize"; commit(); }
 }
@@ -376,12 +422,33 @@ async function explore(id) {
 }
 
 // ---- rendering ----
-function render() { withInputs(() => { document.body.classList.toggle("visualize", activeView() === "visualize"); renderBanner(); renderHeader(); renderNav(); renderMain(); renderVisual(); renderAside(); renderFooter(); }); }
+function render() { withThreadScroll(() => withInputs(() => { document.body.classList.toggle("visualize", activeView() === "visualize"); renderBanner(); renderHeader(); renderNav(); renderMain(); renderVisual(); renderAside(); renderFooter(); })); }
 function tick() { renderStatus(); renderSend(); }
 function withInputs(fn) {
   const act = document.activeElement; const keep = act && act.tagName === "TEXTAREA" ? { id: act.id, s: act.selectionStart, e: act.selectionEnd } : null;
   fn();
   if (keep) { const el = $(keep.id); if (el) { el.focus(); try { el.setSelectionRange(keep.s, keep.e); } catch {} } }
+}
+// Every render replaces the discussion panel with a fresh element, and a fresh element starts
+// at scrollTop 0: a send, or the agent's reply landing, used to throw you back to the top of a
+// long thread. Put the panel back where it was. One that could scroll and sat at the bottom
+// stays at the bottom so new messages arrive in view; a panel now showing another question, the
+// visual's feedback, or a pros and cons table it did not have before starts at the top, as
+// something you have not read yet should.
+const BOTTOM_SLACK = 32; // px from the bottom that still counts as following the thread
+const threadKey = () => {
+  if (activeView() === "visualize") return "visual";
+  const q = byId(selected);
+  return "q:" + (selected || "") + (q && q.explore ? "|x" + (q.explore.at || "") : "");
+};
+let shownThread = null;
+function withThreadScroll(fn) {
+  const el = $("aside").querySelector(".msgs");
+  const was = el && { key: shownThread, top: el.scrollTop, bottom: el.scrollHeight > el.clientHeight + BOTTOM_SLACK && el.scrollHeight - el.scrollTop - el.clientHeight <= BOTTOM_SLACK };
+  fn();
+  shownThread = threadKey();
+  const now = $("aside").querySelector(".msgs");
+  if (now && was && was.key === shownThread) now.scrollTop = was.bottom ? now.scrollHeight : was.top;
 }
 function renderBanner() {
   const b = $("banner");
@@ -391,9 +458,17 @@ function renderBanner() {
 }
 function renderHeader() {
   if (!S) return;
-  document.title = "grill · " + (S.topic || "");
+  const intent = typeof S.intent === "string" ? S.intent.trim() : "";
+  document.title = intent ? "grill · " + (S.topic || "") + " — " + intent.slice(0, 80) : "grill · " + (S.topic || "");
   $("topic").textContent = S.topic || "grill";
   $("doc-path").textContent = S.doc || "";
+  const intentEl = $("intent");
+  if (intent) {
+    intentEl.textContent = intent; intentEl.title = intent; intentEl.classList.add("show");
+    intentEl.classList.toggle("open", intentOpen);
+    intentEl.classList.toggle("clamped", !intentOpen && intentEl.scrollWidth > intentEl.clientWidth);
+  }
+  else { intentEl.textContent = ""; intentEl.title = ""; intentEl.classList.remove("show", "open", "clamped"); intentOpen = false; }
   const terms = Array.isArray(S.terms) ? S.terms : [];
   $("terms-toggle").textContent = `Terms${terms.length ? " · " + terms.length : ""}`;
   $("terms").innerHTML = terms.length
@@ -404,6 +479,7 @@ function renderHeader() {
 }
 function renderVisualizeButton() {
   const b = $("visualize"); const v = visual(); const lk = locked();
+  $("subagent-opt").hidden = lk; $("use-subagent").checked = useSubagent();
   if (hasVisual()) { b.hidden = false; b.disabled = false; b.title = ""; b.textContent = activeView() === "visualize" ? "Questions" : `Visual · v${esc(v.version)}`; return; }
   if (lk) { b.hidden = true; return; }
   b.hidden = false;
@@ -459,7 +535,7 @@ function renderNav() {
       el.className = "item" + (q.id === selected ? " selected" : "") + (q.updated ? " updated" : "");
       const mark = s ? `<span class="mark staged">staged</span>`
         : pendingActions(q.id).some((a) => a.type !== "explore") ? `<span class="mark pending"><span class="spin"></span>sent</span>`
-        : `<span class="mark ${esc(q.status)}">${q.status === "answered" ? CHECK + esc((q.answer && q.answer.option) || "text") : esc(q.status)}</span>`;
+        : `<span class="mark ${esc(q.status)}">${q.status === "answered" ? CHECK + esc(keyLabel(q.answer) || "text") : esc(q.status)}</span>`;
       el.innerHTML = `<span class="id">${esc(q.id).toUpperCase()}</span><span class="t">${esc(q.title)}</span>${mark}`;
       el.onclick = () => { selected = q.id; render(); };
       nav.appendChild(el);
@@ -481,27 +557,29 @@ function renderMain() {
   const pend = pendingActions(q.id);
   const pendAnswer = pend.filter((a) => a.type === "answer").pop() || null;
   const opts = (q.options || []).map((o) => {
-    const isRec = rec.option === o.k, chosen = q.answer && q.answer.option === o.k, staged = s.answer && s.answer.option === o.k, pending = !staged && pendAnswer && pendAnswer.option === o.k;
+    // A multi question shows one set at a time: the staged set, else the one in flight, else the recorded one.
+    const shadow = isMulti(q) && (s.answer || pendAnswer);
+    const isRec = recKeys(q).includes(o.k), chosen = !shadow && keysOf(q.answer).includes(o.k), staged = keysOf(s.answer).includes(o.k), pending = !staged && !(isMulti(q) && s.answer) && keysOf(pendAnswer).includes(o.k);
     return `<li class="opt${isRec ? " rec" : ""}${chosen ? " chosen" : ""}${staged ? " staged" : ""}${pending ? " pending" : ""}" data-opt="${esc(o.k)}"><span class="k">${esc(o.k)}</span><span>${isRec ? `<div class="tag">Recommended</div>` : ""}${esc(o.text)}</span>${pending ? `<span class="check pending"><span class="spin"></span></span>` : `<span class="check">${CHECK}</span>`}</li>`;
   }).join("") + (q.status === "answered" && q.answer && q.answer.kind === "text" && q.answer.text
     ? `<li class="opt chosen text-answer"><span class="k"></span><span><div class="tag">Your answer</div>${esc(q.answer.text)}</span><span class="check">${CHECK}</span></li>` : "")
     + (pendAnswer && pendAnswer.kind === "text" && pendAnswer.text
     ? `<li class="opt pending text-answer"><span class="k"></span><span><div class="tag">Your answer · sending</div>${esc(pendAnswer.text)}</span><span class="check pending"><span class="spin"></span></span></li>` : "");
-  const why = rec.option ? `<p class="why"><b>Why ${esc(rec.option)}.</b> ${esc(rec.why)}</p>`
+  const why = recKeys(q).length ? `<p class="why"><b>Why ${esc(keyLabel(rec))}.</b> ${esc(rec.why)}</p>`
     : rec.text ? `<p class="why"><b>Suggested.</b> ${esc(rec.text)}${rec.why ? " — " + esc(rec.why) : ""}</p>` : rec.why ? `<p class="why">${esc(rec.why)}</p>` : "";
   let stagedLine = "";
   if (s.defer) stagedLine = "Staged: defer this question";
   else if (s.reopen) stagedLine = "Staged: reopen this question";
-  else if (s.answer) stagedLine = s.answer.kind === "accept" ? `Staged: accept ${esc(s.answer.option)}` : s.answer.option ? `Staged: option ${esc(s.answer.option)}` : `Staged text: “${esc(s.answer.text)}”`;
+  else if (s.answer) stagedLine = s.answer.kind === "accept" ? `Staged: accept ${esc(keyLabel(s.answer))}` : keysOf(s.answer).length > 1 ? `Staged: options ${esc(keyLabel(s.answer))}` : keysOf(s.answer).length ? `Staged: option ${esc(keyLabel(s.answer))}` : `Staged text: “${esc(s.answer.text)}”`;
   if (stagedLine) stagedLine = `<div class="staged-line">${stagedLine}<a href="#" id="clear-staged">clear</a></div>`;
   const pendBits = pend.filter((a) => a.type === "defer" || a.type === "reopen").map((a) => a.type);
   if (pendBits.length) stagedLine += `<div class="pending-line"><span class="spin"></span>Sent: ${pendBits.join(", ")} this question · waiting for the agent</div>`;
   const controls = lk ? "" : `
       <div class="answer-row">
         <textarea id="free" placeholder="${q.status === "answered" ? "Change your answer, or add nuance…" : (q.options || []).length ? "Free-text answer, if none of the options fit…" : "Your answer…"}">${esc(d.free || "")}</textarea>
-        <button id="stage-text" type="button">Stage text</button>
+        <button id="stage-text" type="button" title="Stage text (⌘↩)">Stage text</button>
       </div>
-      <div class="links">${isOpen(q) ? `<a href="#" id="defer">Defer this question</a>` : `<a href="#" id="reopen">Reopen this question</a>`}</div>`;
+      <div class="links">${isMulti(q) && recKeys(q).length > 1 ? `<a href="#" id="accept-rec">Accept the recommended ${esc(keyLabel(rec))}</a>` : ""}${isOpen(q) ? `<a href="#" id="defer">Defer this question</a>` : `<a href="#" id="reopen">Reopen this question</a>`}</div>`;
   const exploring = isExploring(q.id);
   const gate = sendState(false);
   const exploreBtn = (q.options || []).length && !lk
@@ -511,12 +589,14 @@ function renderMain() {
       <div class="crumb">${crumb.join("")}</div>
       <div class="title-row"><h2>${esc(q.title)}</h2>${exploreBtn}</div>
       <p class="body">${esc(q.body)}</p>
+      ${opts && isMulti(q) ? `<p class="multi-hint">Pick one or more</p>` : ""}
       ${opts ? `<ul class="opts">${opts}</ul>` : ""}
       ${why}${stagedLine}${controls}
     </article>`;
   main.querySelectorAll("[data-go]").forEach((a) => (a.onclick = (e) => { e.preventDefault(); if (byId(a.dataset.go)) { selected = a.dataset.go; render(); } }));
   if (lk) return;
-  main.querySelectorAll(".opt:not(.text-answer)").forEach((o) => (o.onclick = () => stageAnswer(q.id, { kind: o.dataset.opt === rec.option ? "accept" : "option", option: o.dataset.opt })));
+  main.querySelectorAll(".opt:not(.text-answer)").forEach((o) => (o.onclick = () => isMulti(q) ? toggleOption(q, o.dataset.opt) : stageAnswer(q.id, { kind: o.dataset.opt === rec.option ? "accept" : "option", option: o.dataset.opt })));
+  const ar = $("accept-rec"); if (ar) ar.onclick = (e) => { e.preventDefault(); stageKeys(q, recKeys(q)); };
   const ex = $("explore"); if (ex) ex.onclick = () => explore(q.id);
   $("stage-text").onclick = () => { const t = $("free").value.trim(); if (t) { (local.drafts[q.id] = local.drafts[q.id] || {}).free = ""; stageAnswer(q.id, { kind: "text", text: t }); } };
   $("free").oninput = (e) => { (local.drafts[q.id] = local.drafts[q.id] || {}).free = e.target.value; save(); };
@@ -540,13 +620,13 @@ function renderAside() {
     const li = (xs) => `<ul>${(Array.isArray(xs) ? xs : []).map((x) => `<li>${esc(x)}</li>`).join("")}</ul>`;
     explore = `<div class="explore-head">Pros and cons${q.explore.at ? " · " + timeOf(q.explore.at) : ""}</div>
       <table class="procon"><thead><tr><th></th><th>Pros</th><th>Cons</th></tr></thead><tbody>${q.explore.rows.map((r) =>
-        `<tr><td class="k${rec.option === r.option ? " rec" : ""}">${esc(r.option)}</td><td class="pro">${li(r.pros)}</td><td class="con">${li(r.cons)}</td></tr>`).join("")}</tbody></table>`;
+        `<tr><td class="k${recKeys(q).includes(r.option) ? " rec" : ""}">${esc(r.option)}</td><td class="pro">${li(r.pros)}</td><td class="con">${li(r.cons)}</td></tr>`).join("")}</tbody></table>`;
   }
   if (isExploring(q.id)) explore += `<div class="explore-wait"><span class="spin"></span> Exploring: the agent is writing a pros and cons table for this question.</div>`;
   aside.innerHTML = `
     <div class="head"><h3>Discussion</h3><div class="sub">${esc(q.id).toUpperCase()} · ${esc(q.title)}<span class="count">${thread.length} message${thread.length === 1 ? "" : "s"}</span></div></div>
     <div class="msgs">${explore}${msgs || (explore ? "" : `<div class="empty-thread">Nothing yet. Ask anything about this question; the agent answers here on the next send.</div>`)}</div>
-    ${lk ? "" : `<div class="compose"><textarea id="thread-in" placeholder="Dig deeper on ${esc(q.id).toUpperCase()}…">${esc(d.thread || "")}</textarea><button id="stage-thread" type="button">Add to discussion</button></div>`}`;
+    ${lk ? "" : `<div class="compose"><textarea id="thread-in" placeholder="Dig deeper on ${esc(q.id).toUpperCase()}…">${esc(d.thread || "")}</textarea><button id="stage-thread" type="button" title="Stage message (⌘↩)">Add to discussion</button></div>`}`;
   aside.querySelectorAll("[data-rm]").forEach((a) => (a.onclick = (e) => { e.preventDefault(); removeThread(q.id, Number(a.dataset.rm)); }));
   if (lk) return;
   $("stage-thread").onclick = () => { const t = $("thread-in").value.trim(); if (t) stageThread(q.id, t); };
@@ -561,7 +641,7 @@ function renderFeedback(aside) {
   aside.innerHTML = `
     <div class="head"><h3>Visual feedback</h3><div class="sub">${v.kind === "diagram" ? "Diagram" : "Prototype"} · v${esc(v.version)}<span class="count">${thread.length} message${thread.length === 1 ? "" : "s"}</span></div></div>
     <div class="msgs">${msgs || `<div class="empty-thread">Nothing yet. Say what is wrong or missing in the visual; the agent redraws it on the next send. If a note contradicts an answered question, that question is reopened for you.</div>`}</div>
-    ${lk ? "" : `<div class="compose"><textarea id="feedback-in" placeholder="Feedback on the visual…">${esc(d.thread || "")}</textarea><button id="stage-feedback" type="button">Add feedback</button></div>`}`;
+    ${lk ? "" : `<div class="compose"><textarea id="feedback-in" placeholder="Feedback on the visual…">${esc(d.thread || "")}</textarea><button id="stage-feedback" type="button" title="Stage feedback (⌘↩)">Add feedback</button></div>`}`;
   aside.querySelectorAll("[data-rmf]").forEach((a) => (a.onclick = (e) => { e.preventDefault(); removeFeedback(Number(a.dataset.rmf)); }));
   if (lk) return;
   $("stage-feedback").onclick = () => { const t = $("feedback-in").value.trim(); if (t) stageFeedback(t); };
@@ -572,7 +652,7 @@ function renderFooter() {
   const parts = Object.entries(local.staged).map(([id, s]) => {
     const bits = [];
     if (s.reopen) bits.push("reopen"); if (s.defer) bits.push("defer");
-    if (s.answer) bits.push(s.answer.option ? "→ " + s.answer.option : "→ text");
+    if (s.answer) bits.push(keysOf(s.answer).length ? "→ " + keyLabel(s.answer) : "→ text");
     if (s.thread && s.thread.length) bits.push(`+${s.thread.length} msg`);
     return `${esc(id).toUpperCase()} ${bits.join(" ")}`;
   });
@@ -583,7 +663,7 @@ function renderFooter() {
   const fa = $("finish-area");
   if (locked()) fa.innerHTML = "";
   else if (isFinishing()) fa.innerHTML = `<button id="finish" type="button" disabled><span class="spin"></span>Finishing…</button>`;
-  else if (confirmFinish) fa.innerHTML = `<span class="confirm">Finish this grill? Everything staged goes with it; the agent writes the design doc and stops. <button id="finish-yes" type="button">Finish</button><button id="finish-no" type="button">Cancel</button></span>`;
+  else if (confirmFinish) fa.innerHTML = `<span class="confirm">Finish this grill? Everything staged goes with it; the agent writes the design doc and stops. <button id="finish-yes" class="ready" type="button">Finish grill</button><button id="finish-no" type="button">Cancel</button></span>`;
   else {
     const a = (S && S.agent) || {}; const gate = sendState(false);
     const ready = allSettled() && a.status !== "working" && !lp && !gone;
@@ -601,10 +681,25 @@ function renderSend() {
 }
 
 $("send").onclick = send;
+$("intent").onclick = () => { if ($("intent").classList.contains("show")) { intentOpen = !intentOpen; render(); } };
+$("use-subagent").onchange = (e) => { local.subagent = e.target.checked; commit(); };
 $("visualize").onclick = () => { if (hasVisual()) { local.view = activeView() === "visualize" ? "questions" : "visualize"; commit(); } else visualize(); };
 $("terms-toggle").onclick = () => $("terms").classList.toggle("show");
 document.addEventListener("click", (e) => { if (!e.target.closest("#terms") && !e.target.closest("#terms-toggle")) $("terms").classList.remove("show"); });
-document.addEventListener("keydown", (e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") send(); });
+document.addEventListener("keydown", (e) => {
+  if (!((e.metaKey || e.ctrlKey) && e.key === "Enter")) return;
+  // First press in a compose box stages the draft so a second press can send it.
+  if (!locked()) {
+    const act = document.activeElement;
+    const t = act && typeof act.value === "string" ? act.value.trim() : "";
+    if (t) {
+      if (act.id === "thread-in") { const q = byId(selected); if (q) { e.preventDefault(); stageThread(q.id, t); return; } }
+      if (act.id === "free") { const q = byId(selected); if (q) { e.preventDefault(); (local.drafts[q.id] = local.drafts[q.id] || {}).free = ""; stageAnswer(q.id, { kind: "text", text: t }); return; } }
+      if (act.id === "feedback-in") { e.preventDefault(); stageFeedback(t); return; }
+    }
+  }
+  send();
+});
 poll();
 </script>
 </body>

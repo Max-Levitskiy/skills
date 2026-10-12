@@ -7,10 +7,26 @@ any single one in its own thread without losing the rest of the session, and pre
 button, **Send to Agent**, to ship everything you staged as a single turn. At the end the
 agent writes an exhaustive design doc for the topic.
 
+![A grill in progress: the recommended option accepted on one question, a question asked in
+another one's discussion thread, both shipped with one Send, the agent's reply and next round
+of questions arriving, a pros and cons table from Explore deeper, a prototype of the design
+from Visualize, and that prototype redrawn after one note of feedback](docs/demo.gif)
+
+Above: a recommendation accepted on Q3 and a question asked on Q4 go to the agent as one Send,
+and its reply opens the next round. Then one click on **Explore deeper** lays out the pros and
+cons of Q6's options, **Visualize** draws the design so far as a prototype, and one note in its
+feedback thread redraws it as v2 with the change asked for. Recorded against a real session by
+[`design/record-demo.mjs`](design/record-demo.mjs).
+
 Under the hood it is small on purpose: one Node script and one HTML file, no dependencies,
-no build step. The agent owns `state.json`; the page appends one line per Send to
-`events.jsonl`; the server that serves the page is also the process whose output wakes the
-agent. Nothing runs after the agent session ends.
+no build step. The agent owns `state.json` and changes it only through
+`node server.mjs patch`, sending just what changed as a small JSON patch that the script
+merges, validates, and writes atomically; a whole-file rewrite would put the entire state
+(60 KB by the end of a long grill) into the agent's context on every turn. The page appends
+one line per Send to `events.jsonl`; the server that serves the page is also the process
+whose output a persistent Monitor delivers to the agent. In wait mode the agent must keep
+its foreground listener active; a page server alone cannot wake an ended agent turn.
+Submissions made while the agent is not listening remain queued for resume.
 
 ## Install
 
@@ -44,12 +60,12 @@ What the agent needs at run time:
 
 - **A shell tool and Node 20+.** Claude Code is woken per Send by its persistent Monitor
   tool. Every other agent uses **wait mode**, spelled out in `SKILL.md`: it starts the
-  server detached and blocks on `node server.mjs wait` in the foreground, which returns on
-  the next Send or after eight minutes, then loops. Any agent that can run a shell command
-  for several minutes can do this.
-- **Optionally a subagent tool**, for Visualize. With one, the visual is drawn in the
-  background while you keep answering. Without one, the agent draws it inline and that
-  turn takes longer.
+  server detached (or in a harness-managed shell session) and keeps `node server.mjs wait`
+  active in the foreground. It returns on the next Send or after a bounded timeout, then
+  loops. The agent keeps listening after replies and completed visuals, until the user
+  finishes or explicitly pauses; a running server is not a substitute for that listener.
+- **Optionally a subagent tool**, for Visualize. See [Use](#use) for the drawing modes;
+  without a subagent tool, the agent draws inline.
 
 ## Use
 
@@ -60,7 +76,8 @@ In any project:
 ```
 
 The agent prints a URL. Open it. Answer by clicking an option (the recommended one is
-outlined) or writing free text; start a discussion in the right-hand panel; use **Defer** and **Reopen** on a card when
+outlined) or writing free text. A card marked "Pick one or more" takes any number of
+options, and each click toggles one. Start a discussion in the right-hand panel; use **Defer** and **Reopen** on a card when
 you want to. Everything you do is staged (and survives a reload) until you press **Send N to
 Agent** (⌘↩). The one exception is **Explore deeper** next to a question's title: it goes to
 the agent the moment you click it, and the pros and cons table for that question's options
@@ -78,12 +95,18 @@ redraws it; a note that contradicts an answered question reopens that question r
 silently changing your answer. Ordinary answers and question discussions do not regenerate
 the visual or delay the next round. When decisions change what it shows, it is marked
 **Out of date**; click **Regenerate** to include the latest decisions. Each requested redraw
-has a version number and a one-line change note. The agent never writes the file in the
-grill conversation itself: it briefs a subagent (rules in `visual-brief.md`) so hundreds of
-lines of markup stay out of the interview's context. The draw runs in the background, so
-Send keeps working and the interview goes on while it is drawn; the header says
-Visualizing… (or the strip says regenerating…) until the new version lands. Finish
-reconciles and copies the final visual next to the design doc as
+has a version number and a one-line change note. **Use subagent** is checked by default:
+the agent briefs a subagent so hundreds of lines of markup stay out of the interview's
+context. The draw runs in the background, so Send keeps working and the interview goes
+on while it is drawn; the header says
+Visualizing… (or the strip says regenerating…) until the new version lands. Once the
+grilling is done, untick **Use subagent** beside Visualize: the agent then draws inline in
+its own turn, which is faster, at the cost of the markup landing in its context and Send
+waiting until the draw is done. The choice is remembered per grill across reloads and
+is read when the request is sent, including for staged feedback. It applies to Visualize,
+Regenerate, feedback, and Finish reconciliation when a visual exists.
+The checkbox hides when the grill is finished. Finish reconciles and copies the final
+visual next to the design doc as
 `docs/<topic>-visual.html`.
 
 **Finish grill** sends at once (after an inline confirm), together with anything you had
@@ -105,10 +128,10 @@ Session state lives outside your repo, so there is nothing to gitignore:
 
 ```
 ~/.grill-with-ui/sessions/<project-key>/<YYYYMMDD-HHMMSS>/
-  state.json     written only by the agent (questions, recommendations, threads, status)
+  state.json     written only by the agent, through `patch` (questions, recommendations, threads, status)
   events.jsonl   appended only by the page, one line per Send
   server.json    url, port and pid of the running server
-  visual.html    the prototype or diagram, drawn by the agent's subagent, served at /visual
+  visual.html    the prototype or diagram, served at /visual
 ```
 
 `<project-key>` is the git common root of the project with slashes turned into dashes, so
@@ -116,6 +139,8 @@ every worktree of a repo sees the same sessions; outside git it is the working d
 
 In this repo: `server.mjs` (the server and CLI), `page.html` (the page), `SKILL.md` (the
 prompt the agent follows), `test/`, and `design/` + `docs/design.md` (how it was designed).
+`design/record-demo.mjs` re-records the GIF above by driving the real page; it needs
+Playwright and `ffmpeg`.
 
 ## Server commands
 
@@ -126,7 +151,12 @@ node server.mjs sessions [--all]                               list this project
 node server.mjs pending  --session DIR                         print sends past agent.handled
 node server.mjs wait     --session DIR [--after N] [--timeout S]  block until the next send (exit 3 on timeout)
 node server.mjs url      --session DIR [--timeout S]           print the running server's url
+node server.mjs patch    --session DIR [--file P]              apply a JSON patch (stdin or P) to state.json
 ```
+
+`patch` merges by the rules in `SKILL.md` ("Patching state.json"). A bad patch exits
+non-zero and leaves the file untouched; a good one prints one short summary line, never the
+state.
 
 `GRILL_HOME` overrides `~/.grill-with-ui`.
 
@@ -154,9 +184,12 @@ export GRILL_OPEN="ssh -o BatchMode=yes mac open"
 ```sh
 node --test test/server.test.mjs
 PLAYWRIGHT_PKG=/path/to/node_modules/@playwright/test/index.mjs node test/page.e2e.mjs
+PLAYWRIGHT_PKG=/path/to/node_modules/@playwright/test/index.mjs node test/subagent-toggle.e2e.mjs
 ```
 
 The page check needs Playwright with Chromium; point `PLAYWRIGHT_PKG` at an existing install
 or run it with `@playwright/test` installed next to the repo. It starts a real server on a
 throwaway session and drives the page end to end (staging, reload, send, working state,
 server restart, finished state).
+The focused toggle check covers both drawing modes, the choice at Send time, and per-grill
+persistence. Set `GRILL_EVIDENCE_DIR` to save screenshots and sent events from either check.

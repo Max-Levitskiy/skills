@@ -20,10 +20,16 @@ the user to open it.
 
 - `server.mjs`: `bindHost()` reads `GRILL_HOST` (default `127.0.0.1`; `tailscale` resolves the
   first 100.64.0.0/10 IPv4 on any interface, dying with a message when there is none) and
-  `serve` binds it and puts it in the url (IPv6 bracketed). `openUrl()` runs `GRILL_OPEN` with
-  the url as `$1` once listening, detached, stdout dropped so the agent's event stream stays
-  clean, errors to stderr. A header comment documents both variables.
+  `serve` binds it and puts it in the url (IPv6 bracketed). The bound host is added to
+  `selfOrigins`, upstream's same-origin check on `POST /send`, so the page opened on that
+  address can Send; the loopback spellings stay. `openUrl()` runs `GRILL_OPEN` with the url
+  as `$1` once listening, detached, stdout dropped so the agent's event stream stays clean,
+  errors to stderr. A header comment documents both variables.
 - `SKILL.md`: Start step 5 adds "When `GRILL_OPEN` is set, `serve` has already opened the URL
-  in the user's browser; say "opened" rather than asking them to open it."
+  in the user's browser; say "opened" rather than asking them to open it." before upstream's
+  closing "Return to listening."
 - `README.md`: section "Running the agent on a remote machine" after the `GRILL_HOME` line,
   with the Tailscale + `ssh mac open` example and the warning against `0.0.0.0`.
+
+Run upstream's tests with `GRILL_HOST` and `GRILL_OPEN` unset: its suite spreads `process.env`
+into the server it starts and expects `127.0.0.1`.
