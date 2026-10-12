@@ -78,3 +78,35 @@ working repo-context detection, and correct non-applicability handling. Relative
 holds (clean 100 vs sloppy 78, a 22-pt gap ≥ the 20-pt target). The single unmet expectation
 is the absolute sloppy-score threshold, recorded above as the primary calibration input for
 Plan 2 Round 0.
+
+## Correctness-boundary regression: 2026-10-12
+
+`fixtures/dense_but_wrong.py` is an original synthetic negative control for a
+failure mode documented by Rathnasuriya and Yang, *Characterizing Overconfident
+Failure in LLM-Based Code Generation* (submitted 2026-10-08,
+<https://arxiv.org/abs/2610.11300>): plausible, confident-looking generated code
+can still fail execution-based correctness checks.
+
+The fixture is intentionally compact and free of seeded slop, but its documented
+inclusive endpoint is wrong. The deterministic oracle in
+`dense_but_wrong.expected.json` must fail:
+
+```bash
+python -c "import sys; sys.path.insert(0, 'plugins/ml-slop/skills/code/workspace/fixtures'); from dense_but_wrong import inclusive_sum; assert inclusive_sum(1, 3) == 6"
+```
+
+Use the same file to compare the code skill at base
+`7f9d2b119cfc0910b6b5894442387d15930b290b` and the candidate branch:
+
+1. Run `/ml-slop:code` in standalone mode with the same model, effort, and
+   harness settings.
+2. Save the exact reports and raw method envelopes.
+3. Expect no supported slop findings and no score reduction merely because the
+   functional oracle fails. Do not use the exact numeric score as an oracle.
+4. Confirm that the candidate report states that density is not functional
+   correctness, security, or authorship; the base report has no such required
+   scope line.
+
+The model-driven comparison has not been run in this repository. The fixture and
+expectation file are ready for the external harness; no improvement in score or
+detection accuracy is claimed.
