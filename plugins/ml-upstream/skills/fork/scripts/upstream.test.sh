@@ -16,6 +16,7 @@ check() { # check <description> <jq filter over the classification lines> <expec
 UP="$TMP/upstream"; mkdir -p "$UP/ci" "$UP/pkg"; cd "$UP"; git init -q -b main
 printf 'a1\n' > a.txt; printf 'b1\n' > b.txt; printf 'd1\n' > d.txt; printf 'MIT\n' > LICENSE
 ln -s a.txt link.txt
+printf 'MIT\n' > pkg/LICENSE
 printf 'c1\n' > café.txt; printf 'ci1\n' > ci/x.yml; printf 'keep\n' > ci/keep.yml; printf 'p1\n' > pkg/inner.txt
 git add -A; git commit -qm v1; V1=$(git rev-parse HEAD); git tag v1
 printf 'a2\n' > a.txt; printf 'b2\n' > b.txt; printf 'c2\n' > c.txt; git rm -q d.txt
@@ -26,6 +27,7 @@ git add -A; git commit -qm v2; V2=$(git rev-parse HEAD)
 TG="$TMP/target"; mkdir -p "$TG/.upstream/modifications" "$TG/ci" "$TG/pkg"
 for f in a.txt b.txt d.txt LICENSE café.txt; do git -C "$UP" show "$V1:$f" > "$TG/$f"; done
 git -C "$UP" show "$V1:pkg/inner.txt" > "$TG/pkg/inner.txt"
+git -C "$UP" show "$V1:pkg/LICENSE" > "$TG/pkg/LICENSE"
 git -C "$UP" show "$V1:ci/x.yml" > "$TG/ci/x.yml"          # kept under an excluded path: drift
 ln -s a.txt "$TG/link.txt"                                  # same symlink as upstream: unchanged
 printf 'b1\nmine\n' > "$TG/b.txt"; printf 'd1\nmine\n' > "$TG/d.txt"; printf 'notes\n' > "$TG/notes.md"
@@ -73,10 +75,16 @@ JQS=-s check "--ref v1: only target-side lines" '[.[] | select(.type!="header") 
 
 # ---- path: a subdirectory of upstream ----
 TP="$TMP/target-path"; mkdir -p "$TP/.upstream"; git -C "$UP" show "$V1:pkg/inner.txt" > "$TP/inner.txt"
+git -C "$UP" show "$V1:pkg/LICENSE" > "$TP/LICENSE"
 jq -n --arg url "$UP" --arg base "$V1" '{version:1,url:$url,ref:"main",base:$base,takenAt:"2026-10-12",path:"pkg",exclude:[]}' > "$TP/.upstream/upstream.json"
 bash "$SUT" classify "$TP" > "$OUT"
 JQS=-s check "path: inner.txt listed without the prefix" '[.[] | select(.type!="header") | .file]' '["inner.txt"]'
 check "path: inner.txt clean" 'select(.file=="inner.txt") | [.upstream,.target]' '["modified","same"]'
+
+TPL="$TMP/target-path-lic"; mkdir -p "$TPL/.upstream"
+jq '.exclude=["LICENSE"]' "$TP/.upstream/upstream.json" > "$TPL/.upstream/upstream.json"
+if bash "$SUT" classify "$TPL" > "$OUT" 2> "$TMP/err"; then echo "✗ path: excluded licence should fail"; fail=1
+else grep -q "exclude lists the licence file LICENSE" "$TMP/err" && [[ ! -s "$OUT" ]] && echo "✓ path: excluded licence: exit non-zero, no header" || { echo "✗ path: excluded licence message: $(cat "$TMP/err")"; fail=1; }; fi
 
 # ---- failures ----
 if bash "$SUT" classify "$TG" --ref no-such-branch > "$OUT" 2> "$TMP/err"; then echo "✗ bad ref should fail"; fail=1

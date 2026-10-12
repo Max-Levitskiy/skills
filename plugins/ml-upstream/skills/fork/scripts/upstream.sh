@@ -95,12 +95,15 @@ cmd_classify() {
   new=$(resolve "$cache" "$ref")
   git -C "$cache" cat-file -e "$base^{commit}" 2>/dev/null || die "base $base is not a commit upstream"
   # Rule 7: the licence is never excluded.
-  local e lic
+  local e lic treeish tree
+  if [[ -n "$path" ]]; then treeish="$base:$path"; else treeish="$base"; fi
+  tree=$(git -C "$cache" ls-tree --name-only "$treeish") || die "cannot read $treeish upstream (base/path mismatch?)"
   while IFS= read -r lic; do
+    [[ -n "$lic" ]] || continue
     for e in "${EXCLUDES[@]}"; do
       [[ -n "$e" && "$e" == "$lic" ]] && die "exclude lists the licence file $lic; the licence is never excluded (rule 7)"
     done
-  done < <(git -C "$cache" ls-tree --name-only "${path:+$base:$path}${path:-$base}" 2>/dev/null | grep -iE '^(licen[cs]e|copying)' || true)
+  done < <(grep -iE '^(licen[cs]e|copying)' <<<"$tree" || true)
   commits=$(git -C "$cache" rev-list --count "$base..$new")
   jq -cn --arg url "$url" --arg ref "$ref" --arg base "$base" --arg new "$new" --arg cache "$cache" --argjson commits "$commits" \
     '{type:"header",url:$url,ref:$ref,base:$base,new:$new,commits:$commits,cache:$cache}'
