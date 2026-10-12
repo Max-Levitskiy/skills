@@ -30,7 +30,7 @@ change, what did we change) plus a judgment call only where the two meet.
 | **Base** | The upstream commit the target currently reflects. Every modification is applied on top of it. | Pinned version, snapshot |
 | **Modification** | One intent, in the user's words, applied to the target. Numbered; a later one may depend on an earlier one. | Patch, override, customisation |
 | **Claimed file** | A file a modification lists in its `files`. The modification owns the difference between upstream and target there. | Modified file, touched file |
-| **Overlap** | Upstream changed a claimed file between base and the new ref. | Conflict (the git state is never reached) |
+| **Overlap** | Upstream changed, added or deleted a claimed file between base and the new ref. | Conflict (the git state is never reached) |
 | **Drift** | A target file that differs from base and that no modification claims. | Dirty, uncommitted |
 
 ## Layout
@@ -115,7 +115,7 @@ exactly as upstream when nothing is configured.
    never silently absorbed into an update, and a drifted file is not updated until resolved.
 3. **Excludes are not modifications.** Dropping CI or assets is configuration in
    `upstream.json`; a new upstream file under an excluded path is skipped without comment.
-   A file present in the target under an excluded path is drift.
+   A file present in the target under an excluded path is drift unless a modification claims it.
 4. **Updates stop only on overlap.** Clean files (changed upstream, unclaimed) are applied and
    reported. On overlap the skill shows upstream's change, the modification's current form,
    and a proposed merge, and waits for a yes before writing that file.
@@ -131,18 +131,22 @@ exactly as upstream when nothing is configured.
 
 ## What a check reports
 
-For every file whose state is not unchanged: what upstream did between base and ref
-(`modified`, `added`, `deleted`, or `none` when upstream never had it) and what the target
-holds (`same` as base, `claimed` by named modifications, `drift`, or `excluded` and absent).
+For every file the check prints: what upstream did between base and ref (`same`, `modified`,
+`added`, `deleted`, or `none` when upstream never had it) and what the target holds (`same` as
+base, `claimed` by named modifications, `drift`, or `excluded` and absent). A file is not
+printed only when upstream is `same` and the target is `same` or `excluded`. So a claimed or
+drifted file is printed even when upstream did not touch it.
 The combinations and what an update does with them:
 
 | upstream × target | Meaning | Update |
 | --- | --- | --- |
+| `same` × `claimed` | upstream did not touch a claimed file | nothing; listed so claimed files are visible |
 | `modified`/`added` × `same` | clean | copy upstream's new version |
 | `deleted` × `same` | clean | delete |
-| `modified`/`deleted` × `claimed` | overlap | re-apply the modification on upstream's new version; show; wait |
+| `modified`/`added`/`deleted` × `claimed` | overlap | re-apply the modification on upstream's new version; show; wait |
 | any × `drift` | drift | report; leave the file |
 | any × `excluded` | skipped | nothing |
+| `none` × `claimed` | a file a modification created, which upstream never had | nothing |
 | `none` × `drift` | a file upstream never had | report as drift |
 
 ## Relation to other standards
