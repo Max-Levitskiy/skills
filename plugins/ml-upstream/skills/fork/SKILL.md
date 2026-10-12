@@ -103,8 +103,10 @@ files applied and the overlapping file untouched.
    one message. Then, in the same turn, continue: no approval is needed for the clean part.
 2. **Clean** files — `modified` or `added` × `same`: write upstream's new version
    (`git show "<new>:<prefix><file>" > <target>/<file>`, creating directories). `deleted` ×
-   `same`: delete the file and prune empty directories.
-3. **Overlap** — `modified` or `deleted` × `claimed`: for each such file, follow
+   `same`: delete the file and prune empty directories. `same` × `claimed` and `none` × `claimed`
+   are listed in the table and left alone: upstream did not touch the file, or the modification
+   created it and upstream never had it.
+3. **Overlap** — `modified`, `added` or `deleted` × `claimed`: for each such file, follow
    `$SKILL/references/reapply.md` to produce the proposed merge. Then stop and show the user,
    per file: (a) upstream's change (`git diff <base> <new> -- <file>`, trimmed to the hunks
    that matter), (b) the modification's current form (base vs target diff), (c) the proposed

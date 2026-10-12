@@ -13,6 +13,12 @@ intent satisfied.
    against code that no longer exists.
 2. **Start from upstream's new version, whole.** Never start from the target's current file and
    try to pull upstream's hunks in; upstream's version is the one with 31 commits of fixes.
+   Two cases have one side missing. If upstream newly added a file a modification already
+   claims, there is no base version: start from upstream's new version and treat the target's
+   current file as the modification's current form. If upstream deleted a claimed file, there
+   is no new version: decide from the intent whether the modification's file still has a
+   purpose, and propose either keeping the target's file (now wholly the modification's) or
+   deleting it, showing the user the diff and the reason before writing.
 3. **Port each point of `## Applied` by meaning, not by line.** "`GRILL_HOST` selects the bind
    address" means: find where the new file chooses the address — possibly in a new helper,
    possibly in two places now — and make each one consult `GRILL_HOST`. If a hunk from the old
