@@ -101,15 +101,25 @@ else grep -q "exclude lists the licence file LICENSE" "$TMP/err" && [[ ! -s "$OU
 # directory that v2 deletes; v2 also adds a LICENSE and makes x.txt executable (mode only).
 U2="$TMP/upstream2"; mkdir -p "$U2/p#q" "$U2/gone"; git -C "$U2" init -q -b main
 printf 'x\n' > "$U2/x.txt"; printf 'y\n' > "$U2/p#q/y.txt"; printf 'g\n' > "$U2/gone/g.txt"
+printf 't\n' > "$U2/"$'tab\tand\\back.txt'; mkdir -p "$U2/LICENSES"; printf 'MIT\n' > "$U2/LICENSES/MIT.txt"
 git -C "$U2" add -A; git -C "$U2" update-index --add --cacheinfo "160000,$V1,sub"; git -C "$U2" commit -qm w1; W1=$(git -C "$U2" rev-parse HEAD)
 printf 'MIT\n' > "$U2/LICENSE"; printf 'z\n' > "$U2/p#q/z.txt"; git -C "$U2" rm -rq gone
 git -C "$U2" add -A; git -C "$U2" update-index --chmod=+x x.txt; git -C "$U2" commit -qm w2; W2=$(git -C "$U2" rev-parse HEAD)
 TS="$TMP/target-sub"; mkdir -p "$TS/.upstream" "$TS/p#q" "$TS/gone"; cp "$U2/x.txt" "$TS/x.txt"
 git -C "$U2" show "$W1:p#q/y.txt" > "$TS/p#q/y.txt"; git -C "$U2" show "$W1:gone/g.txt" > "$TS/gone/g.txt"; chmod -x "$TS/x.txt"
+cp "$U2/"$'tab\tand\\back.txt' "$TS/"; mkdir -p "$TS/LICENSES"; cp "$U2/LICENSES/MIT.txt" "$TS/LICENSES/"
 printf 'gitdir: /elsewhere\n' > "$TS/.git"                       # a linked worktree's control file
 jq -n --arg url "$U2" --arg base "$W1" '{version:1,url:$url,ref:"main",base:$base,takenAt:"2026-10-12",path:"",exclude:[]}' > "$TS/.upstream/upstream.json"
 bash "$SUT" classify "$TS" --ref "$W1" > "$OUT"
-check "submodule (gitlink) and a worktree's .git file: not listed" 'select(.type!="header") | .file' ''
+check "submodule, a worktree's .git file, a tab-and-backslash name: not listed" 'select(.type!="header") | .file' ''
+git -C "$(jq -r 'select(.type=="header") | .cache' "$OUT")" rev-parse -q --verify "refs/ml-upstream/bases/$W1" >/dev/null && echo "✓ base pinned under refs/ml-upstream/bases" || { echo "✗ base not pinned"; fail=1; }
+TLD="$TMP/target-licdir"; mkdir -p "$TLD/.upstream"; jq '.exclude=["LICENSES/"]' "$TS/.upstream/upstream.json" > "$TLD/.upstream/upstream.json"
+if bash "$SUT" classify "$TLD" --ref "$W1" > "$OUT" 2> "$TMP/err"; then echo "✗ excluded LICENSES/ should fail"; fail=1
+else grep -q "licence file LICENSES" "$TMP/err" && echo "✓ an excluded licence directory is refused" || { echo "✗ LICENSES/ message: $(cat "$TMP/err")"; fail=1; }; fi
+TSL="$TMP/target-symparent"; cp -a "$TS" "$TSL"; mkdir -p "$TMP/outside"; mv "$TSL/p#q" "$TMP/outside/pq"; ln -s "$TMP/outside/pq" "$TSL/p#q"
+bash "$SUT" classify "$TSL" --ref "$W1" > "$OUT"
+check "a file under a symlinked parent directory is drift" 'select(.file=="p#q/y.txt") | .target' '"drift"'
+bash "$SUT" classify "$TS" --ref "$W1" > "$OUT"
 bash "$SUT" classify "$TS" > "$OUT"
 check "mode-only upstream change (chmod +x) is modified" 'select(.file=="x.txt") | [.upstream,.target]' '["modified","same"]'
 TQ="$TMP/target-regex-path"; mkdir -p "$TQ/.upstream"; cp "$TS/p#q/y.txt" "$TQ/y.txt"
@@ -139,7 +149,9 @@ C3=$(bash "$SUT" cache "$U3"); git -C "$U3" branch -m main trunk; bash "$SUT" ca
 [[ $(git -C "$C3" symbolic-ref HEAD) == refs/heads/trunk ]] && echo "✓ cache: default branch follows an upstream rename" || { echo "✗ cache: HEAD is $(git -C "$C3" symbolic-ref HEAD)"; fail=1; }
 KEY=$(sed -n '/^cache_dir() {/,/^}/p' "$SUT")
 K1=$(CACHE_ROOT=/c; eval "$KEY"; cache_dir ssh://git@h.example:2222/o/r.git); K2=$(CACHE_ROOT=/c; eval "$KEY"; cache_dir ssh://git@h.example/o/r.git)
-K3=$(CACHE_ROOT=/c; eval "$KEY"; cache_dir https://h.example:443/o/r)
-[[ "$K1" != "$K2" && "$K2" == "$K3" ]] && echo "✓ cache key: a non-default port is part of it, a default one is not" || { echo "✗ cache keys: $K1 / $K2 / $K3"; fail=1; }
+K3=$(CACHE_ROOT=/c; eval "$KEY"; cache_dir https://h.example/o/r.git); K4=$(CACHE_ROOT=/c; eval "$KEY"; cache_dir ssh://git@h.example/o/r.git)
+[[ "$K1" != "$K2" && "$K2" != "$K3" && "$K2" == "$K4" && "$K2" == /c/h.example/o/r-*.git ]] && echo "✓ cache key: port and scheme are part of it, the same URL is stable" || { echo "✗ cache keys: $K1 / $K2 / $K3 / $K4"; fail=1; }
+if bash "$SUT" cache "https://user:tok@h.example/o/r" > /dev/null 2> "$TMP/err"; then echo "✗ credential url should fail"; fail=1
+else grep -q "url carries credentials" "$TMP/err" && echo "✓ cache: a url with credentials is refused" || { echo "✗ credential message: $(cat "$TMP/err")"; fail=1; }; fi
 
 [[ $fail -eq 0 ]] && echo "all passed" || { echo "FAILED"; exit 1; }

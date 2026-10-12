@@ -8,25 +8,26 @@
 #
 # Cache root: $ML_UPSTREAM_CACHE, default ~/.cache/ml-upstream. Needs git and jq.
 set -euo pipefail
-shopt -s inherit_errexit
+shopt -s inherit_errexit 2>/dev/null || true   # bash 4.4+; the `|| die` guards cover older bash
 
 die() { echo "upstream: $*" >&2; exit 2; }
 command -v git >/dev/null || die "git is required"
 command -v jq  >/dev/null || die "jq is required"
 CACHE_ROOT="${ML_UPSTREAM_CACHE:-$HOME/.cache/ml-upstream}"
 
-# <host>/<owner>/<repo>.git for a URL; local/<abs path>.git for a path.
+# <host>/<owner>/<repo>-<hash>.git for a URL (the hash covers the whole URL, so another scheme,
+# user or port is another cache); local/<abs path>.git for a path.
 cache_dir() {
   local url="$1" key
-  if   [[ "$url" =~ ^([a-z+]+)://([^/@]+@)?([^/:]+)(:([0-9]+))?/(.+)$ ]]; then
-    local scheme="${BASH_REMATCH[1]}" host="${BASH_REMATCH[3]}" port="${BASH_REMATCH[5]}" repo="${BASH_REMATCH[6]}"
-    # A non-default port can be a different server: keep it in the key; the scheme's default is noise.
-    case "$scheme:$port" in ssh:22|git+ssh:22|ssh+git:22|https:443|http:80|git:9418) port="" ;; esac
-    key="$host${port:+_$port}/$repo"
+  if [[ "$url" =~ ^https?://[^/]*@ ]]; then
+    die "url carries credentials; record it without them and let git's credential helper authenticate"
+  fi
+  if   [[ "$url" =~ ^[a-z+]+://([^/@]+@)?([^/:]+)(:[0-9]+)?/(.+)$ ]]; then key="${BASH_REMATCH[2]}/${BASH_REMATCH[4]}"
   elif [[ "$url" =~ ^[^@/]+@([^:]+):(.+)$ ]]; then key="${BASH_REMATCH[1]}/${BASH_REMATCH[2]}"
   elif [[ "$url" == file://* ]]; then key="local$(realpath "${url#file://}")" || die "cannot resolve $url"
   else key="local$(realpath "$url")" || die "cannot resolve $url"; fi
   key="${key%/}"; key="${key%.git}"
+  if [[ "$key" != local/* ]]; then key="$key-$(printf %s "$url" | git hash-object --stdin | cut -c1-8)"; fi
   echo "$CACHE_ROOT/$key.git"
 }
 
@@ -101,6 +102,8 @@ cmd_classify() {
   cache=$(cmd_cache "$url")
   new=$(resolve "$cache" "$ref")
   git -C "$cache" cat-file -e "$base^{commit}" 2>/dev/null || die "base $base is not a commit upstream"
+  # Keep base reachable: a force-push upstream would otherwise leave it to git's garbage collection.
+  git -C "$cache" update-ref "refs/ml-upstream/bases/$base" "$base"
   # Rule 7: the licence is never excluded — at base, nor at the new ref (upstream may add one).
   local e lic rev treeish tree
   for rev in "$base" "$new"; do
@@ -110,7 +113,7 @@ cmd_classify() {
     while IFS= read -r lic; do
       [[ -n "$lic" ]] || continue
       for e in "${EXCLUDES[@]}"; do
-        [[ -n "$e" && "$e" == "$lic" ]] && die "exclude lists the licence file $lic; the licence is never excluded (rule 7)"
+        [[ -n "$e" && ( "$e" == "$lic" || "$e" == "$lic/" ) ]] && die "exclude lists the licence file $lic; the licence is never excluded (rule 7)"
       done
     done < <(grep -iE '^(licen[cs]e|copying)' <<<"$tree" || true)
   done
@@ -124,33 +127,29 @@ cmd_classify() {
   # literally). Mode counts: a chmod +x upstream is a change. Submodules (gitlinks, type `commit`)
   # are not part of the copy: `git archive` leaves them out.
   local -A B=() N=()
-  local meta p m o
-  while IFS=$'\t' read -r meta p; do
+  local rec meta p m o
+  while IFS= read -r -d '' rec; do
+    meta="${rec%%$'\t'*}"; p="${rec#*$'\t'}"
     read -r m o _ <<<"$meta"; [[ "$o" == commit ]] && continue
     read -r m _ o <<<"$meta"; B["${p#"$prefix"}"]="$m:$o"
-  done < <(git -C "$cache" -c core.quotePath=false ls-tree -r "$base" ${path:+-- "$path"})
-  while IFS=$'\t' read -r meta p; do
+  done < <(git -C "$cache" ls-tree -r -z "$base" ${path:+-- "$path"})
+  while IFS= read -r -d '' rec; do
+    meta="${rec%%$'\t'*}"; p="${rec#*$'\t'}"
     read -r m o _ <<<"$meta"; [[ "$o" == commit ]] && continue
     read -r m _ o <<<"$meta"; N["${p#"$prefix"}"]="$m:$o"
-  done < <(git -C "$cache" -c core.quotePath=false ls-tree -r "$new" ${path:+-- "$path"})
+  done < <(git -C "$cache" ls-tree -r -z "$new" ${path:+-- "$path"})
 
-  # Every such path, plus every file and symlink in the target (not .upstream/, not git's own .git).
-  local files
-  files=$(
-    {
-      printf '%s\n' "${!B[@]}" "${!N[@]}"
-      (cd "$target" && find . \( -type f -o -type l \) ! -path './.upstream/*' ! -path './.git' ! -path './.git/*' | sed 's#^\./##')
-    } | sort -u
-  )
-
-  local f b n t up tg by
-  while IFS= read -r f; do
+  # Every such path, plus every file and symlink in the target (not .upstream/, not git's own .git),
+  # NUL-delimited so a name with a tab, newline or quote survives.
+  local f b n t up tg by d
+  while IFS= read -r -d '' f; do
     [[ -n "$f" ]] || continue
     b="${B[$f]:-}"; n="${N[$f]:-}"
-    if   [[ -L "$target/$f" ]]; then t="120000:$(printf %s "$(readlink "$target/$f")" | git hash-object --stdin)"
+    # Hash in the cache repo, so a SHA-256 upstream gets SHA-256 ids.
+    if   [[ -L "$target/$f" ]]; then t="120000:$(printf %s "$(readlink "$target/$f")" | git -C "$cache" hash-object --stdin)"
     elif [[ -f "$target/$f" ]]; then
       if [[ -x "$target/$f" ]]; then m=100755; else m=100644; fi
-      t="$m:$(git hash-object --no-filters "$target/$f")"
+      t="$m:$(git -C "$cache" hash-object --no-filters --stdin < "$target/$f")"
     else t=""; fi
     if   [[ -z "$b" && -z "$n" ]]; then up=none
     elif [[ -z "$b" ]];            then up=added
@@ -161,6 +160,8 @@ cmd_classify() {
     if   [[ "$t" == "$b" ]];  then tg=same       # equal content, or absent on both sides
     elif [[ "$by" != "[]" ]]; then tg=claimed
     else                           tg=drift; fi
+    # A parent directory that is a symlink in the target: anything written there lands outside it.
+    d="$f"; while [[ "$d" == */* ]]; do d="${d%/*}"; if [[ -L "$target/$d" ]]; then tg=drift; break; fi; done
     # Under an excluded path: absent is the expected state; present is drift unless claimed (rule 3).
     if excluded "$f"; then
       if [[ -z "$t" ]]; then tg=excluded; elif [[ "$by" == "[]" ]]; then tg=drift; fi
@@ -168,7 +169,12 @@ cmd_classify() {
     [[ "$up" == same && ( "$tg" == same || "$tg" == excluded ) ]] && continue
     jq -cn --arg f "$f" --arg up "$up" --arg tg "$tg" --argjson by "$by" \
       '{file:$f, upstream:$up, target:$tg} + (if $by != [] then {by:$by} else {} end)'
-  done <<<"$files"
+  done < <(
+    {
+      printf '%s\0' "${!B[@]}" "${!N[@]}"
+      (cd "$target" && find . \( -type f -o -type l \) ! -path './.upstream/*' ! -path './.git' ! -path './.git/*' -print0 | sed -z 's#^\./##')
+    } | sort -zu
+  )
 }
 
 case "${1:-}" in

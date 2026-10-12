@@ -69,7 +69,8 @@ When `<new>` or `<base>` is a shell variable, write it braced — `"${new}:<pref
    match, so name each file. Show the list in one line and ask the user to confirm or edit it; never propose a licence file.
    Delete the excluded paths from the target.
 4. Write `.upstream/upstream.json` (`version` 1, `url`, `ref`, `base` = `new`, `takenAt` =
-   today, `path`, `exclude`).
+   today, `path`, `exclude`). The `url` is committed: never record one with a token or password
+   in it (the helper refuses `https://user:token@…`); git's credential helper authenticates.
 5. If a modification was given: apply it as [Applying a modification](#applying-a-modification)
    describes, then write `.upstream/modifications/01-<slug>.md` with the user's text under
    `## Modification`, your per-file notes under `## Applied`, and `files` = every file you
@@ -124,10 +125,11 @@ files applied and the overlapping file untouched.
    never left half-merged: either upstream's new version with the modification re-applied, or
    untouched. Several overlapping files may be shown in one message when the proposals are
    short; otherwise one file per message.
-4. **Drift** — any × `drift`: first check whether the file already equals upstream's new
-   version (`git -C "$cache" show "${new}:<prefix><file>" | cmp -s - <target>/<file>`). If it
-   does, an earlier update was interrupted after its clean files were written and before
-   bookkeeping moved `base`: treat the file as clean and already applied, not as drift. Any
+4. **Drift** — any × `drift`: first check whether the file already matches upstream's new
+   tree: equal to `git -C "$cache" show "${new}:<prefix><file>"` (`cmp -s`), or absent where
+   upstream deleted it (`deleted` × `drift` with no file in the target). Either way an earlier
+   update was interrupted after its clean files were written and before bookkeeping moved
+   `base`: treat the file as clean and already applied, not as drift. Any
    other drift: report; do not touch those files. Offer, in one line, to record
    the drift as a new modification (you write a prompt from the diff and the user confirms it)
    or to revert it to base. Do either only when the user says so.
@@ -155,7 +157,8 @@ the diff is not the record — the prompt is.
 ## Tests
 
 Detect the target's own test command and run it from the target directory: `package.json`
-with a `test` script → `npm test` (or `bun test` when a `bun.lock` exists); `test/*.test.mjs`
+with a `test` script → `npm test` (or `bun run test` when a `bun.lock` exists; plain `bun test` would run Bun's own
+runner instead of the declared script); `test/*.test.mjs`
 or `*.test.js` with no package manager → `node --test <files>`; a `Makefile` with a `test`
 target → `make test`; `pyproject.toml`/`pytest.ini` → `pytest`; `Cargo.toml` → `cargo test`;
 `go.mod` → `go test ./...`. No command found: say so in the report. Report pass/fail with the

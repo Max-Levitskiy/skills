@@ -27,4 +27,4 @@ shown to you before it is written, only where you both touched the same one.
 - *"What did we change in this copy compared to upstream?"*
 
 The format and the rules are the [Upstream Modification Standard](../../standards/upstream.md).
-Needs `git`, `jq`, and bash 4 or newer (the script uses `mapfile` and `inherit_errexit`; stock macOS bash is 3.2). Upstream clones are cached under `~/.cache/ml-upstream/`.
+Needs `git`, `jq`, and bash 4 or newer (the script uses `mapfile`; stock macOS bash is 3.2). Upstream clones are cached under `~/.cache/ml-upstream/`.
