@@ -1,0 +1,21 @@
+{
+  "name": "ml-upstream",
+  "description": "Keep a modified copy of someone else's repo current. fork vendors an upstream repo, or a directory of it, into a target with your changes recorded as prompts in .upstream/, reports what upstream changed since the base commit, applies the changes that touch nothing of yours, and re-applies your modifications where they overlap, stopping only there.",
+  "version": "0.1.0",
+  "license": "MIT",
+  "author": {
+    "name": "Max Levitskiy",
+    "url": "https://github.com/Max-Levitskiy"
+  },
+  "homepage": "https://github.com/Max-Levitskiy/skills/tree/main/plugins/ml-upstream",
+  "keywords": [
+    "fork",
+    "vendoring",
+    "upstream",
+    "sync",
+    "patch",
+    "maintenance",
+    "skills",
+    "claude-skill"
+  ]
+}

@@ -171,8 +171,8 @@
     {
       "name": "ml-grilling",
       "source": "./plugins/ml-grilling",
-      "description": "Design interviews that respect the person's attention. questions decides which questions to ask at all (only ones whose answer changes the outcome; standard practice, look-up facts and routine choices are settled and shown in one line) and how to word them: plain words, two-line bodies, one-line options, a short honest recommendation. Loads itself: a hook adds it to the context whenever /grilling, /grill-me, /grill-with-docs, /grill-with-ui or /wayfinder starts, typed or called by Claude (needs bun).",
-      "version": "0.1.0",
+      "description": "Design interviews that respect the person's attention. questions decides which questions to ask at all (only ones whose answer changes the outcome; standard practice, look-up facts and routine choices are settled and shown in one line) and how to word them: plain words, two-line bodies, one-line options, a short honest recommendation. grill-with-ui runs the interview on a browser page instead of the terminal — every question laid out with its recommendation, answerable in any order, with a discussion thread and one Send button — vendored from jasonku09/grill-with-ui (MIT) with one modification: on a remote machine it serves on the Tailscale address and opens the page in your Mac's browser (GRILL_HOST, GRILL_OPEN). A hook adds the questions rules to the context whenever /grilling, /grill-me, /grill-with-docs, /grill-with-ui or /wayfinder starts, typed or called by Claude (needs bun).",
+      "version": "0.2.0",
       "license": "MIT",
       "author": {
         "name": "Max Levitskiy"
@@ -185,6 +185,31 @@
         "design-review",
         "wayfinder",
         "decision-making",
+        "claude-skill",
+        "grill-with-ui",
+        "browser",
+        "remote",
+        "tailscale"
+      ]
+    },
+    {
+      "name": "ml-upstream",
+      "source": "./plugins/ml-upstream",
+      "description": "Keep a modified copy of someone else's repo current. fork vendors an upstream repo, or a directory of it, into a target with your changes recorded as prompts in .upstream/, reports what upstream changed since the base commit, applies the changes that touch nothing of yours, and re-applies your modifications where they overlap, stopping only there.",
+      "version": "0.1.0",
+      "license": "MIT",
+      "author": {
+        "name": "Max Levitskiy"
+      },
+      "category": "development",
+      "keywords": [
+        "fork",
+        "vendoring",
+        "upstream",
+        "sync",
+        "patch",
+        "maintenance",
+        "skills",
         "claude-skill"
       ]
     },
