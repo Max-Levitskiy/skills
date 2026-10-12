@@ -1,0 +1,66 @@
+name: ml-workflow
+
+on:
+  pull_request:
+    paths:
+      - plugins/ml-workflow/**
+      - .claude-plugin/marketplace.json
+      - .github/workflows/ml-workflow.yml
+  push:
+    branches: [main]
+    paths:
+      - plugins/ml-workflow/**
+      - .claude-plugin/marketplace.json
+      - .github/workflows/ml-workflow.yml
+
+permissions:
+  contents: read
+
+jobs:
+  helper:
+    name: claude-spore (bun test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun test plugins/ml-workflow/test
+
+  old-bun:
+    name: claude-spore refuses Bun 1.1
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.1.38
+      - name: exits 2 naming the version needed
+        run: |
+          set +e
+          out=$(plugins/ml-workflow/bin/claude-spore --version 2>&1)
+          code=$?
+          set -e
+          echo "$out"
+          test "$code" -eq 2
+          grep -q 'needs Bun 1.2.0 or later; this is Bun 1.1.38' <<<"$out"
+
+  mod:
+    name: mod registration (claude plugin test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Claude Code
+        run: |
+          curl -fsSL https://claude.ai/install.sh | bash
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - run: claude --version
+      - run: claude plugin validate plugins/ml-workflow
+      - run: claude plugin test plugins/ml-workflow
+
+  naming:
+    name: plugin naming
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash scripts/validate-naming.sh

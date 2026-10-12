@@ -1,6 +1,6 @@
 {
   "name": "max-skills",
-  "description": "Max Levitskiy's Claude Code plugins: AI-slop scoring, PR shipping gates, subagent orchestration, workplace tools, and layered agent config with secret-free credentials.",
+  "description": "Max Levitskiy's Claude Code plugins: AI-slop scoring, PR shipping gates, subagent orchestration, workplace tools, layered agent config with secret-free credentials, and Runspore workflows (ml-workflow needs Claude Code 2.1.290+ and Bun 1.2.0+).",
   "owner": {
     "name": "Max Levitskiy",
     "email": "max.dstu@gmail.com"
@@ -185,6 +185,25 @@
         "design-review",
         "wayfinder",
         "decision-making",
+        "claude-skill"
+      ]
+    },
+    {
+      "name": "ml-workflow",
+      "source": "./plugins/ml-workflow",
+      "description": "Run Runspore workflows from inside Claude Code: start, follow, decide and resume durable runs that survive a closed session, with Claude steps that keep one conversation per run. Needs terminal Claude Code 2.1.290 or later and Bun 1.2.0 or later. This release is the skeleton: the claude-spore helper, the mod and the sub-skills are in place, the workflow features arrive next.",
+      "version": "0.1.0",
+      "license": "MIT",
+      "author": {
+        "name": "Max Levitskiy"
+      },
+      "category": "development",
+      "keywords": [
+        "workflow",
+        "runspore",
+        "spore",
+        "durable-execution",
+        "human-in-the-loop",
         "claude-skill"
       ]
     }
