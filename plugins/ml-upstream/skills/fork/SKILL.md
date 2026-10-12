@@ -51,6 +51,8 @@ git -C "$cache" show "<base>:<prefix><file>" | diff -u - "<target>/<file>"   # t
 git -C "$cache" archive "<new>" <path> | tar -x -C <dir> [--strip-components=<depth of path>]   # export a tree
 ```
 
+When `<new>` or `<base>` is a shell variable, write it braced — `"${new}:<prefix><file>"` — because zsh reads `$new:s…` as a history modifier and `git show` then prints the commit instead of the file.
+
 `<prefix>` is `path` + `/`, or empty when `path` is `""`.
 
 ## Fork
@@ -91,8 +93,8 @@ git -C "$cache" archive "<new>" <path> | tar -x -C <dir> [--strip-components=<de
    `same|claimed|drift|excluded`, `by` = the claiming modifications.
 2. Print: the commit range and count, `git -C "$cache" log --oneline <base>..<new>` when it
    is twenty lines or fewer (otherwise the first ten and "… and N more"), then the per-file
-   table in the [report format](#report), then drift as its own list. `commits` 0 and no lines:
-   "up to date, no drift". Write nothing.
+   table in the [report format](#report), then drift as its own list. `commits` 0 and no lines
+   other than `same` × `claimed`: "up to date, no drift". Write nothing.
 
 ## Update
 
