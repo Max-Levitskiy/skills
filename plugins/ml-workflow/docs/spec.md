@@ -149,7 +149,7 @@ The set is closed: `format`, `schema`, `outcome`, `model`, `tools`, `skill` and 
 | `schema` | outcome → JSON Schema; in `settings.json` `{"$outputSchemas": {}}` or a `$literal` map | an error when `format` is `json` |
 | `outcome` | the one outcome a `text` step ends with | an error when `format` is `text` |
 | `model` | a model name for `--model` | no `--model` |
-| `tools` | a list of Claude Code tool names: a built-in tool such as `Read` or `Bash`, or an MCP tool `mcp__<server>__<tool>` | no `--tools`/`--allowedTools`: Claude has its default tools and every one asks, so in the background each is denied |
+| `tools` | a list of Claude Code tool names: a built-in tool such as `Read` or `Bash`, or an MCP tool `mcp__<server>__<tool>` | no `--tools`/`--allowedTools`: Claude has its default tools, and in the background every call that needs permission is denied |
 | `skill` | a skill name, `name` or `plugin:name` | no slash command |
 | `context` | any mapping: the data Claude sees as the step's input | `null` |
 
