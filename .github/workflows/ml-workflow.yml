@@ -16,16 +16,37 @@ on:
 permissions:
   contents: read
 
+env:
+  # runspore has published no 0.2 release yet, so the helper's specs run against spore built
+  # from this commit (docs/spec.md, Testing). Replace with the newest release and 0.2.0 once
+  # they exist.
+  RUNSPORE_REF: 808b84de4c99dc2ee0513a21485b9450b0092d17
+
 jobs:
   helper:
     name: claude-spore (bun test)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: Web-tree/runspore
+          ref: ${{ env.RUNSPORE_REF }}
+          path: runspore
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: runspore
+      # The first cargo call installs the toolchain runspore's rust-toolchain.toml pins.
+      - name: Build spore
+        working-directory: runspore
+        run: cargo build --release --locked -p runspore-cli
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
       - run: bun test plugins/ml-workflow/test
+        env:
+          SPORE: ${{ github.workspace }}/runspore/target/release/spore
+          REQUIRE_SPORE: "1"
 
   old-bun:
     name: claude-spore refuses Bun 1.1

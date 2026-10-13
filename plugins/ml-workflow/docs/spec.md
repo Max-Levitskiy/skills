@@ -13,8 +13,9 @@ Each part is built by one ticket of skills#59. This table says what exists in th
 | Skeleton: packaging, minimum versions, `claude-spore --version`, the mod registering, sub-skill stubs, README rules, CI | p.1, p.2, p.6 | built (skills#60) |
 | Getting and checking `spore`, the launcher, helper/mod version match | p.3, p.4, p.5 | not built |
 | Entry points, menu, session-start line, following a run | p.7–p.12 | stubs only: each sub-skill checks the host version and says it is not built |
-| Profile kinds, node parameters, `claude-spore check` | p.13–p.15 | not built |
-| Claude steps | p.16–p.20 | not built |
+| Profile kinds, node parameters, `claude-spore check` | p.13–p.15 | built (skills#62), except the herdr check |
+| Background Claude step: `claude-spore run`, session table, repair, facts | p.16, p.18, p.19, p.20 | built (skills#62) |
+| Interactive Claude step: `start`, `probe`, `watch`, `report`, `stop` | p.17 | not built |
 | Authoring interview | p.21–p.23 | not built |
 | Run line and live view | p.24 | not built |
 | Reference loop as the end-to-end check | p.25 | not built |
@@ -142,6 +143,16 @@ The plugin recognises a step by the program it runs, or by its actor label.
 
 The set is closed: `format`, `schema`, `outcome`, `model`, `tools`, `skill` and `context`. They are `$literal` values in the node's `input`; `schema` is `{"$outputSchemas": {}}`. Only `context` carries data to Claude. The instructions file is plain prose that explains what each outcome means ([C10][c10] R7, [C14][c14]).
 
+| Parameter | Value | Absent |
+|---|---|---|
+| `format` | `"json"` or `"text"` | `"json"`: a Claude step's output is its checked answer ([C12][c12] R5) |
+| `schema` | outcome → JSON Schema; in `settings.json` `{"$outputSchemas": {}}` or a `$literal` map | an error when `format` is `json` |
+| `outcome` | the one outcome a `text` step ends with | an error when `format` is `text` |
+| `model` | a model name for `--model` | no `--model` |
+| `tools` | a list of Claude Code tool names: a built-in tool such as `Read` or `Bash`, or an MCP tool `mcp__<server>__<tool>` | no `--tools`/`--allowedTools`: Claude has its default tools, and in the background every call that needs permission is denied |
+| `skill` | a skill name, `name` or `plugin:name` | no slash command |
+| `context` | any mapping: the data Claude sees as the step's input | `null` |
+
 ## What `claude-spore check <folder>` checks (p.15)
 
 - No parameter key outside the closed set.
@@ -153,6 +164,12 @@ The set is closed: `format`, `schema`, `outcome`, `model`, `tools`, `skill` and 
 
 The interview and every start run the check; the helper checks the same again when a step starts.
 
+A Claude step is a `command` action whose `argv` runs `claude-spore run` or `claude-spore start` (by name or by a path ending in `/claude-spore`). Its outcomes are the action's `outcomes`, `["ok"]` when it declares none. The check reads the folder's `settings.json` and builds nothing; `spore validate` checks the rest.
+
+- **Strict form.** A schema fits Claude Code's strict form when it uses only `$schema`, `type`, `description`, `title`, `properties`, `required`, `additionalProperties`, `items`, `enum`, `const` and `anyOf`; every object declares `properties`; `additionalProperties` is absent or `false`; `anyOf` stands alone (beside `description` or `title` at most); and it is at most 32 levels deep ([C12][c12] W02).
+- **Output.** One line per problem, `error: <node>: <message>` or `warning: <node>: <message>`, and exit 2 when there is an error, else 0. With `--json`, one object `{"ok", "errors", "warnings"}`, each problem `{"node", "code", "message"}`, with the same exit codes.
+- **Codes.** `params.unknown`, `params.not-literal`, `params.format`, `params.schema-missing`, `params.schema-outcome`, `params.outcome`, `params.model`, `params.tools`, `params.skill`; the warning `schema.not-strict`; and `workflow.unreadable` for a folder without a readable `settings.json`.
+
 ## Background step, `claude-spore run` (p.16)
 
 - Reads its parameters from stdin and the prose from `RUNSPORE_INSTRUCTIONS`.
@@ -161,6 +178,17 @@ The interview and every start run the check; the helper checks the same again wh
 - Prints result mode (`{"outcome", "output"}`), turning integral floats into integers.
 - Writes run facts (session, turns, duration, cost in integer micro-dollars, denied tools) to `$RUNSPORE_WORK_DIR/<attempt>.facts.json`, never into the answer. Denied tools are reported, never failed.
 - Claude runs in the process's working folder, the action's `cwd`, including a `fromInput` worktree.
+
+How it does this:
+
+- **Its environment.** It needs `RUNSPORE_RUN_ID`, `RUNSPORE_NODE_ID`, `RUNSPORE_VISIT` and `RUNSPORE_ATTEMPT`; without them it exits 2, since it only runs as a spore step. `RUNSPORE_INSTRUCTIONS`, `RUNSPORE_STEP_FILES` and `RUNSPORE_WORK_DIR` are used when set.
+- **The parameters are checked again** with the rules of `check` that need no workflow folder. A parameter that does not pass is the non-retryable `params.invalid`, with one problem per line in the message: the same input would fail every try. A non-strict schema is a warning on stderr.
+- **The message goes on stdin**, never in `argv`, so an instructions file that starts with `-` cannot read as a flag. Lists go as one comma-joined argument each (`--tools Read,Grep --allowedTools Read,Grep`). The start message is the instructions, then where the step files are, then the input (`context`) as JSON; with `skill` set it starts with `/<skill> `.
+- **Its stdout** is always one result-mode object on exit 0. Exit 2 is a usage error; any other exit is a bug, which spore records as the retryable `command.exit`.
+- **A `claude` that fails** for another reason (a limit, an API error, a crash; a non-zero exit or `is_error`) is the retryable `claude.failed`, with Claude's `errors` or the end of its stderr. The next try resumes the conversation.
+- **Text.** With `format: "text"` it prints `{"outcome": <outcome>, "output": {"text": <Claude's last reply>}}`. A reply too long for 63 KiB keeps its end, after a line saying how much was cut, the way spore's text mode keeps the end of a log.
+- **Numbers.** An integral float in the answer (`2.0`) is printed as an integer. A number with a fraction has no place in spore's data; it is the non-retryable `output.invalid`, naming its JSON Pointer.
+- **Facts.** `<attempt>.facts.json` is `{"session", "turns", "durationMs", "costMicroUsd", "deniedTools"}`, summed over the `claude` calls of the try (a nudge is a second call). `deniedTools` lists `{"tool", "input"}` from Claude's `permission_denials`. The file is written for every try that got an answer from `claude`, success or not; without `RUNSPORE_WORK_DIR` nothing is written.
 
 ## Interactive step (p.17)
 
@@ -182,9 +210,31 @@ A name-based UUID over `RUNSPORE_RUN_ID` and `RUNSPORE_NODE_ID`, under a namespa
 | yes | any | >1 | Resume, saying "you were cut off, finish the step", with the current input |
 | yes | 1 | 1 | Non-retryable failure: the ID belongs to another run |
 
+The name is `<RUNSPORE_RUN_ID>/<RUNSPORE_NODE_ID>` and the namespace `40c82ef1-afd2-4dda-b095-47327517b1dc`, giving a version 5 UUID. Changing either would cut every unfinished run off from its conversations.
+
+**Whether the session exists** is learned from `claude` itself, not from its transcript files, whose folder depends on where the session started ([C04][c04]): `--session-id` on an existing session exits 1 with `Session ID <uuid> is already in use`, and `--resume` on a missing one exits 1 with `No conversation found with session ID: <uuid>`. So the step tries the row it expects and falls to the other on that answer:
+
+- visit 1, attempt 1: start; "already in use" is the non-retryable `session.foreign`;
+- attempt above 1: resume; "no conversation" on visit 1 starts instead (the first try died before Claude made the session), and on a later visit is the non-retryable `session.lost`;
+- visit above 1, attempt 1: resume; "no conversation" is `session.lost`.
+
+Each resume message carries the current input. "The run came back" names the visit; "you were cut off" asks Claude to check what it already did before it goes on.
+
 ## Repair (p.19)
 
 `MAX_STRUCTURED_OUTPUT_RETRIES=3` gives Claude two repairs in the same conversation. When they run out, the step prints the non-retryable `output.invalid`. A null `structured_output` gets one nudge by resume, then the non-retryable `output.missing`. A conversation that cannot be resumed is non-retryable ([C12][c12]).
+
+The answer schema, built from `schema`, with one branch per outcome in the map's order:
+
+```json
+{"type": "object", "additionalProperties": false, "required": ["answer"],
+ "properties": {"answer": {"anyOf": [
+   {"type": "object", "additionalProperties": false, "required": ["outcome", "output"],
+    "properties": {"outcome": {"const": "<o>"}, "output": <schema of o>}}
+ ]}}}
+```
+
+Claude Code reports used-up repairs as `terminal_reason: "structured_output_retry_exhausted"`; the step's `output.invalid` carries Claude Code's last errors as its message. An answer whose `outcome` is not a key of `schema` is also `output.invalid`.
 
 ## The work folder (p.20)
 
@@ -253,7 +303,9 @@ A SIGKILL of the Claude process alone leaves its `continue --wait` running as an
 - **A good test drives a public surface** and checks what a person or `spore` would see: the helper's stdout, exit code and files in the work folder; the `spore` run state after it; which processes are alive. It never tests private functions.
 - **Seam 1, the `claude-spore` executable,** run as a subprocess, with the real `spore` binary and fake `claude` and `herdr` programs first on PATH. Its specs are `test/*.spec.ts`, run by `bun test`.
 - **Seam 2, mod registration,** tested the way `ml-agent-config`'s register test is, under `claude plugin test`: the hooks, commands, tool and panes are registered, and each hook passes the helper's JSON through to the UI unchanged. No logic is tested there.
-- **CI** runs both seams; once the helper drives `spore`, against the newest `spore` release and against 0.2.0. It also runs the helper under Bun 1.1 and expects exit 2.
+- **The fake `claude`** (`test/fixtures/bin/claude`) keeps sessions the way the real one answers `--session-id` and `--resume`, records each call's arguments, stdin, working folder and environment, and plays back a scripted list of envelopes, raw stdout included, so a test can send `2.0`.
+- **The real `spore`** is the one the `SPORE` variable names, else `spore` on PATH. A spec that needs it is skipped, with the reason printed, when that `spore` is not 0.2, unless `REQUIRE_SPORE=1`, which CI sets.
+- **CI** runs both seams; once the helper drives `spore`, against the newest `spore` release and against 0.2.0. Until runspore publishes 0.2.0, CI builds `spore` from a pinned runspore commit instead. It also runs the helper under Bun 1.1 and expects exit 2.
 - **The end-to-end check** is p.25, gated, before a release.
 
 ## Out of scope
@@ -267,6 +319,7 @@ The Desktop app, claude.ai, Cowork, and `claude -p` as a surface for the menu; r
 - herdr's state output as a contract.
 - Process start times and boot IDs must be read the same way by the launcher and the probe on macOS and Linux.
 
+[c04]: https://github.com/Web-tree/runspore/blob/main/docs/research/c04-headless-agent-step.md
 [c05]: https://github.com/Web-tree/runspore/tree/main/docs/research
 [c06]: https://github.com/Web-tree/runspore/blob/main/docs/design/c06-loop-owner.md
 [c07]: https://github.com/Web-tree/runspore/blob/main/docs/design/c07-four-kinds.md
