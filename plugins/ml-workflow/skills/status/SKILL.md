@@ -27,12 +27,12 @@ This step only reads. It sends no signal, resolution or run.
 
 **No run ID given.** Run `spore list`, which prints one row per run: run ID, status, node, how long it has been there, start key; and `spore --json list`, whose `db` is the database it read. A run is unfinished when its status is not `completed`, `failed` or `cancelled`. Name the database, then one line per unfinished run with its status in words, e.g. `run_edcfc217…  waiting at approve for 2 h (key coding-loop-3f9a1c2e)`. With none, say there are no unfinished runs in that database.
 
-**A run ID given.** Run `spore --json status <runId>`. A `run.not-found` error means the run is not in this database: say so, naming the database spore read (`$RUNSPORE_DB`, else the nearest `.spore/runspore.db` at or above the current folder). Otherwise say in plain words, naming `db`:
+**A run ID given.** Run `spore --json status <runId>`. A `run.not-found` error means the run is not in this database: say so, naming the database spore read (`$RUNSPORE_DB`, else the nearest `.spore/runspore.db` at or above the current folder, else `./runspore.db`). Otherwise say in plain words, naming `db`:
 
 - where the run is: `position.nodeId`, its visit, and the arrow into it (`position.from`: which node, on which outcome);
 - what it waits for and since when (`sinceMs`, `forMs`), from whichever is set:
   - `waiting`: a decision, signal `waiting.signal`, with the outcomes `waiting.outcomes`, noting each one that needs data (`waiting.outputSchemas`);
-  - `intervention`: a stuck step, its `error.code` and `error.message`, after `attempt` of `maxAttempts` tries;
+  - `intervention`: a stuck step, its `error.code` and `error.message`, after `attempt` of `maxAttempts` tries; when `intervention.reason` is `unknown`, that its last try may have done its work without reporting it;
   - `quarantine`: the reason, and that `spore release` lifts it;
   - `step`: an external step, waiting for its actor;
   - `running` or status `running`: a step is working;

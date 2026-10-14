@@ -130,7 +130,7 @@ Until spore has `continue --wait` and `cancel` (Web-tree/runspore#74), the three
 
 **Before anything**, after the Claude Code check, each runs `spore --version`. A missing `spore`, or one below 0.2.0, gets one line with the install command, `cargo install --git https://github.com/Web-tree/runspore --locked runspore-cli`, and the skill stops. Installing it for the person is p.3, skills#61.
 
-**The database.** The skills pass no `--db`: spore takes `$RUNSPORE_DB`, else the nearest `.spore/runspore.db` at or above the current folder. Every `--json` answer carries the database path as `db`, and the skills name it whenever they report runs.
+**The database.** The skills pass no `--db`: spore takes `$RUNSPORE_DB`, else the nearest `.spore/runspore.db` at or above the current folder, else `./runspore.db`. Every `--json` answer carries the database path as `db`, and the skills name it whenever they report runs.
 
 **Exit codes** of `spore run` and `spore worker --run <id> --until-parked`, checked against 0.2.0:
 
@@ -142,27 +142,29 @@ Until spore has `continue --wait` and `cancel` (Web-tree/runspore#74), the three
 | 4 | `needs-intervention` | the node and the kept error |
 | other | — | the last lines spore printed |
 
-Every line but the end states names `/ml-workflow:continue <runId>`.
+The lines for 3 and 4 name `/ml-workflow:continue <runId>`.
 
-**`status [<runId>]`.** Without an ID it runs `spore --json list` and lists the unfinished runs (status not `completed`, `failed` or `cancelled`): ID, node, status, how long. With an ID it runs `spore --json status <runId>` and says in words where the run is (`position`), what it waits for and since when (`waiting`, `intervention`, `quarantine`, `step`), or how it ended (`end`, `result`), then gives the commands `waiting.commands` or `intervention.commands` hold. It runs nothing else.
+**`status [<runId>]`.** Without an ID it runs `spore list`, whose rows say how long each run has been where it is, and `spore --json list` for `db`, and lists the unfinished runs (status not `completed`, `failed` or `cancelled`): ID, node, status, how long. With an ID it runs `spore --json status <runId>` and says in words where the run is (`position`), what it waits for and since when (`waiting`, `intervention`, `quarantine`, `step`), or how it ended (`end`, `result`), then gives the commands `waiting.commands` or `intervention.commands` hold. It runs nothing else.
 
 **`start <workflow> [--key <key>]`.**
 
 1. `spore validate <workflow>`. On a non-zero exit it shows spore's report and starts nothing.
-2. Reads `inputSchema` from the workflow's `settings.json`: a name means `.spore/workflows/<name>/` beside the database. It asks for every property in one message, the `description` as the question and a value drafted from the conversation as the answer to confirm.
+2. Reads `inputSchema` from the workflow's `settings.json`. spore finds a named workflow by its graph ID, so a name means the folder under `.spore/workflows/` whose `workflow.dot` declares `digraph "<name>"`, usually the folder of that name. Without a workflow, `start` lists the workflows there and asks which. It asks for every property in one message, the `description` as the question and a value drafted from the conversation as the answer to confirm.
 3. Without `--key` it makes a fresh key, `<workflow>-<8 hex>`, so a repeated start is a new run and never `request.digest-mismatch`.
 4. Runs `spore run <workflow> --key <key> --input '<json>'` as a background shell command, ends the turn, and gives the one line from the table when it returns.
 
-**`continue [<runId>]`.** Without an ID, `spore --json list`: no unfinished run says so; one is taken; several are asked about. Then `spore --json status <runId>`, and by what it holds:
+**`continue [<runId>]`.** Without an ID, `spore list` and `spore --json list`: no unfinished run says so; one is taken; several are asked about. Then `spore --json status <runId>`, and by what it holds:
 
 - **`waiting`, a signal.** It offers exactly `waiting.outcomes`, never free text: spore 0.2.0 stores an outcome the node does not route and drops it without an error (`signal.outcome-unrouted`). An outcome with an entry in `waiting.outputSchemas` also needs data fitting that schema. It sends `spore signal <run> <signal> --outcome <o> --id <activationId> [--data '<json>']`. The ID is `position.activationId`, so one wait takes one decision: the same decision again is a no-op, and a different one fails with `request.digest-mismatch`, which the skill reports as "a decision was already sent" before going on. A sent signal leaves the run `waiting` until a worker consumes it.
-- **`needs-intervention`.** It shows the node, `intervention.error` and the tries, and offers Retry (`spore resolve <run> --retry`), Mark done (`--complete <o>` with `o` from `intervention.outcomes`, plus `--output '<json>'` when `intervention.outputSchemas` has one) and Fail (`--fail <message>`).
+- **`needs-intervention`.** It shows the node, `intervention.error` and the tries, and offers Retry (`spore resolve <run> --retry`; when `intervention.reason` is `unknown` the last try may have done its work, and the skill says that Retry runs it again), Mark done (`--complete <o>` with `o` from `intervention.outcomes`, plus `--output '<json>'` when `intervention.outputSchemas` has one) and Fail (`--fail <message>`).
 - **`running`.** It says which step runs and sends nothing.
 - **Quarantined, an external step, or ended.** It says so, with the commands status gives, sends nothing and stops.
 
 After a decision, a resolution, or a `running` run, it runs `spore worker --run <runId> --until-parked` in the background and reports as `start` does.
 
 **Continuing by `worker`, not by `spore run` again.** Running `spore run <workflow> --key <key> --input <same>` again also continues a run, but needs the workflow's name, the key and the original input, and neither `status` nor `list` gives the name. `worker --run` needs only the run ID, the run already holds its own input and artifact, and a changed input can never reach it.
+
+**Claude may load these three on its own**, unlike the stubs, which stay typed only: each asks the person before it sends a decision, a resolution or starts a run.
 
 **Closing Claude** stops the background command; the run stays where it was, and `continue` picks it up.
 

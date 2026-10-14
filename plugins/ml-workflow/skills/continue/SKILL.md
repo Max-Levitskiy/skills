@@ -27,7 +27,7 @@ With a run ID given, take it. Otherwise run `spore list` and `spore --json list`
 
 ## 4. Read where it is
 
-Run `spore --json status <runId>`. A `run.not-found` error means the run is not in this database: say so, naming the database (`$RUNSPORE_DB`, else the nearest `.spore/runspore.db` at or above the current folder), and stop.
+Run `spore --json status <runId>`. A `run.not-found` error means the run is not in this database: say so, naming the database (`$RUNSPORE_DB`, else the nearest `.spore/runspore.db` at or above the current folder, else `./runspore.db`), and stop.
 
 Every value you offer in step 5 comes from this status. The outcome a signal or resolution sends is always one listed here, never typed or guessed: spore 0.2.0 stores a signal outcome its node does not route and drops it without an error, so a near miss such as `approve` for `approved` loses the decision. This is a hard limit of the skill, for any reason the person gives, a test included: when they name or insist on another outcome, say the node does not route it and offer the listed outcomes as the only choices. `spore signal` and `spore resolve` run only with a listed outcome.
 
@@ -43,7 +43,7 @@ spore signal <runId> <waiting.signal> --outcome <outcome> --id <position.activat
 
 The message ID is the activation, so one wait takes one decision. If spore answers `request.digest-mismatch`, a different decision was already sent for this wait: say so, and go on to step 6, which acts on that one. After a signal the status stays `waiting` until step 6 runs the run on.
 
-**`needs-intervention`, with `intervention` set: a stuck step.** Say which step (`intervention.nodeId`), its error (`error.code`, `error.message`), after `attempt` of `maxAttempts` tries, and since when. Offer:
+**`needs-intervention`, with `intervention` set: a stuck step.** Say which step (`intervention.nodeId`), its error (`error.code`, `error.message`), after `attempt` of `maxAttempts` tries, and since when. When `intervention.reason` is `unknown`, the last try may have done its work without reporting it (its lease ran out, or its result was lost): say so, and that Retry runs the step again, so the person checks what the step does before choosing it. Offer:
 
 - **Retry**: `spore resolve <runId> --retry`;
 - **Mark done**: `spore resolve <runId> --complete <outcome>`, the outcome one of `intervention.outcomes`; when it has a schema in `intervention.outputSchemas`, also `--output '<output JSON>'` fitting it;
