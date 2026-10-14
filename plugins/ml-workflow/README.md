@@ -6,7 +6,7 @@ Run [Runspore](https://github.com/Web-tree/runspore) workflows from inside Claud
 /plugin install ml-workflow@max-skills
 ```
 
-**This release is the skeleton and the background Claude step.** The helper, the mod and the sub-skills are in place and check their versions, and a workflow step can be done by Claude in the background. Starting, following and writing workflows arrive in the next releases; [docs/spec.md](docs/spec.md) is the whole design and says what is built.
+**This release starts, shows and continues runs, and does background Claude steps.** `start`, `status` and `continue` are a basic tier over the commands `spore` 0.2.0 has; the menu, cancelling, the run line and writing workflows arrive in the next releases. [docs/spec.md](docs/spec.md) is the whole design and says what is built.
 
 ## Requirements
 
@@ -14,7 +14,7 @@ Run [Runspore](https://github.com/Web-tree/runspore) workflows from inside Claud
 |---|---|---|
 | Claude Code, in a terminal | **2.1.290** | every sub-skill, before anything else; the mod at session start. Older: `claude update` |
 | Bun | **1.2.0** | `claude-spore`, before anything else; it exits 2 naming the version. Older: `bun upgrade` |
-| [`spore`](https://github.com/Web-tree/runspore) | 0.2.0 | not yet; the plugin will offer the install line and run it only on a yes |
+| [`spore`](https://github.com/Web-tree/runspore) | **0.2.0** | `start`, `status` and `continue`, after the Claude Code check; they print the install line and stop: `cargo install --git https://github.com/Web-tree/runspore --locked runspore-cli` |
 
 claude.ai and Cowork refuse a plugin with a top-level `bin/`, so this plugin is for terminal Claude Code only.
 
@@ -35,13 +35,13 @@ Each sub-skill approves `spore` and `claude-spore` for the turn it runs in. To s
 | Typed | Does | Built |
 |---|---|---|
 | `/ml-workflow:menu` | the unfinished runs and what each needs, the workflows to start, writing or changing one | stub |
-| `/ml-workflow:start <workflow>` | checks the workflow, drafts its inputs, starts and follows the run | stub |
-| `/ml-workflow:status [<runId>]` | the unfinished runs, or one run's state in words | stub |
-| `/ml-workflow:continue [<runId>]` | follows a run in the background | stub |
+| `/ml-workflow:start <workflow> [--key <key>]` | validates the workflow, drafts its inputs, starts the run in the background, says when it parks or ends | basic |
+| `/ml-workflow:status [<runId>]` | the unfinished runs, or one run's state in words | basic |
+| `/ml-workflow:continue [<runId>]` | sends the decision a run waits for, or resolves its stuck step, then works it on in the background | basic |
 | `/ml-workflow:cancel <runId>` | cancels a run after a one-line confirmation | stub |
 | `/ml-workflow:author [<workflow>]` | writes or changes a workflow through a short interview | stub |
 
-A stub checks the Claude Code version and says it is not built yet. The stubs are typed only: Claude does not load them on its own until they do something.
+A stub checks the Claude Code version and says it is not built yet; stubs are typed only. The basic sub-skills Claude may also load on its own. They read the database spore finds itself, `$RUNSPORE_DB` or the nearest `.spore/runspore.db` above the current folder, and name it. `continue` offers only the outcomes the run's status lists, since spore 0.2.0 drops an unknown outcome without an error. Following a run with `spore continue --wait` replaces this tier later ([docs/spec.md](docs/spec.md), "Basic tier").
 
 ## Background Claude steps
 
