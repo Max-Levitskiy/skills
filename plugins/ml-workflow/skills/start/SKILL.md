@@ -21,19 +21,24 @@ Run `spore --version`. It prints `spore <major>.<minor>.<patch>`. If the command
 
 > ml-workflow needs spore 0.2.0 or later; this is <the version, or "not installed">. Install it with `cargo install --git https://github.com/Web-tree/runspore --locked runspore-cli`, then try again.
 
-## 3. Validate
+## 3. Find and check the workflow
 
-The arguments are `<workflow>`, then optionally `--key <key>`. `<workflow>` is a workflow's name in the project folder, a workflow folder, or its `workflow.dot`. With no `<workflow>`, list the folders under `.spore/workflows/` and ask which to start.
+The arguments are `<workflow>`, then optionally `--key <key>`. `<workflow>` is a workflow's name in the project folder, a workflow folder, or its `workflow.dot`.
 
-Run `spore validate <workflow>`. On a non-zero exit, show its report as spore printed it, say nothing was started, and stop.
+The project's workflows live in `workflows/` inside the `.spore` folder that holds the database; `spore --json list` gives the database's path as `db`. Find the workflow's folder: for a name, the folder there whose `workflow.dot` declares `digraph "<name>"`, usually the folder of that name; for a folder, itself; for a `workflow.dot`, the folder holding it. With no `<workflow>`, list the workflows in that `workflows/` folder and ask which to start.
+
+Run both checks, and show each one's report as it printed it:
+
+1. `spore validate <workflow>`: the workflow and its actions.
+2. `claude-spore check <workflow folder>`: the parameters of its Claude steps. Warnings are shown and do not stop the start.
+
+If either exits non-zero, say nothing was started, and stop.
 
 ## 4. Draft the input
 
-Read `inputSchema` from the workflow's `settings.json`: for a name, the folder under `workflows/` in the `.spore` folder that holds the database (`spore --json list` gives the database's path as `db`) whose `workflow.dot` declares `digraph "<name>"`, usually the folder of that name; for a folder, its `settings.json`; for a `workflow.dot`, the `settings.json` beside it.
+Read `inputSchema` from the folder's `settings.json`. Ask for every property in one message, then end the turn. For each: its `description` as the question, and a value drafted from this conversation as the answer to confirm, marking which properties are required. Leave a property with no grounded draft blank for the person to fill. Without an `inputSchema`, the input is `{}`: ask the person to confirm starting the workflow with no input, and end the turn.
 
-Ask for every property in one message, then end the turn. For each: its `description` as the question, and a value drafted from this conversation as the answer to confirm, marking which properties are required. Leave a property with no grounded draft blank for the person to fill. Without an `inputSchema`, the input is `{}` and nothing is asked.
-
-When the person answers, build the input object from the confirmed values. It must fit the schema: each property's type, `enum`, `minLength`, and no property the schema does not declare when `additionalProperties` is `false`. Ask again about any value that does not fit.
+When the person answers, build the input object from the confirmed values. It must fit the whole schema: types, `required`, `enum`, `const`, lengths, patterns, bounds, nested objects and arrays, and no undeclared property when `additionalProperties` is `false`. Ask again about any value that does not fit.
 
 ## 5. Start the run
 
@@ -45,7 +50,7 @@ Run this with the Bash tool in the background (`run_in_background`), from the cu
 spore run <workflow> --key <key> --input '<input JSON>'
 ```
 
-Write the input JSON on one line; inside the single quotes, write each `'` as `'\''`. Then end the turn with one line: the workflow, the key, the database it runs in, and that you will say when the run parks or ends.
+Write the input JSON on one line; inside the single quotes, write each `'` as `'\''`. If spore answers `input.invalid`, it created no run: show its message, ask again about the values it names, and start again with the same key. Then end the turn with one line: the workflow, the key, the database it runs in, and that you will say when the run parks or ends.
 
 ## 6. Report when it returns
 
@@ -57,6 +62,6 @@ When the background command finishes, read its output. The status block at its e
 | 1 | failed | the end node and the error |
 | 3 | waits for a decision | the node, the signal, its outcomes, and `/ml-workflow:continue <runId>` |
 | 4 | is stuck | the node, the error, and `/ml-workflow:continue <runId>` |
-| other | did not start or was cut off | the last lines spore printed |
+| other | did not start (`input.invalid` as above) or was cut off | the last lines spore printed |
 
 The run does not need this session: if Claude closes first, the run stays where it was and `/ml-workflow:continue` picks it up.

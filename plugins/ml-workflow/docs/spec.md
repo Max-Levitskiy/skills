@@ -148,8 +148,8 @@ The lines for 3 and 4 name `/ml-workflow:continue <runId>`.
 
 **`start <workflow> [--key <key>]`.**
 
-1. `spore validate <workflow>`. On a non-zero exit it shows spore's report and starts nothing.
-2. Reads `inputSchema` from the workflow's `settings.json`. spore finds a named workflow by its graph ID, so a name means the folder under `.spore/workflows/` whose `workflow.dot` declares `digraph "<name>"`, usually the folder of that name. Without a workflow, `start` lists the workflows there and asks which. It asks for every property in one message, the `description` as the question and a value drafted from the conversation as the answer to confirm.
+1. `spore validate <workflow>`, then `claude-spore check <folder>` (p.15). On a non-zero exit from either it shows the report and starts nothing.
+2. Reads `inputSchema` from the workflow's `settings.json`. spore finds a named workflow by its graph ID, so a name means the folder under `.spore/workflows/` whose `workflow.dot` declares `digraph "<name>"`, usually the folder of that name. Without a workflow, `start` lists the workflows in that `.spore/workflows/` and asks which. It asks for every property in one message, the `description` as the question and a value drafted from the conversation as the answer to confirm. A workflow without inputs still gets one confirmation before it starts. An input spore rejects (`input.invalid`, exit 2) creates no run; the skill asks again and retries with the same key.
 3. Without `--key` it makes a fresh key, `<workflow>-<8 hex>`, so a repeated start is a new run and never `request.digest-mismatch`.
 4. Runs `spore run <workflow> --key <key> --input '<json>'` as a background shell command, ends the turn, and gives the one line from the table when it returns.
 

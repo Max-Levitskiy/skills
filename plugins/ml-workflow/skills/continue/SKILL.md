@@ -33,7 +33,7 @@ Every value you offer in step 5 comes from this status. The outcome a signal or 
 
 ## 5. Act on what it holds
 
-Go by `status` and whichever field is set. Name the database (`db`) when you describe the run.
+Go by `status` and whichever field is set. Name the database (`db`) when you describe the run. Every JSON or text value below goes on the command line in single quotes, on one line, with each `'` inside written as `'\''`.
 
 **`waiting`, with `waiting` set: a decision.** Say which node waits (`waiting.nodeId`), for which signal, since when (`forMs`). Ask the person to choose one of `waiting.outcomes`, each as its own option. When the chosen outcome has a schema in `waiting.outputSchemas`, also ask for its data, drafted from the conversation, and check it fits the schema. Then send:
 
