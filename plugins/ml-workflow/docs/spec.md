@@ -12,7 +12,7 @@ Each part is built by one ticket of skills#59. This table says what exists in th
 |---|---|---|
 | Skeleton: packaging, minimum versions, `claude-spore --version`, the mod registering, sub-skill stubs, README rules, CI | p.1, p.2, p.6 | built (skills#60) |
 | Getting and checking `spore`, the launcher, helper/mod version match | p.3, p.4, p.5 | not built |
-| Entry points, menu, session-start line, following a run | p.7–p.12 | stubs only: each sub-skill checks the host version and says it is not built |
+| Entry points, menu, session-start line, following a run | p.7–p.12 | the basic tier of `start`, `status` and `continue` (skills#74); `menu` and `cancel` are stubs that check the host version and say they are not built |
 | Profile kinds, node parameters, `claude-spore check` | p.13–p.15 | built (skills#62), except the herdr check |
 | Background Claude step: `claude-spore run`, session table, repair, facts | p.16, p.18, p.19, p.20 | built (skills#62) |
 | Interactive Claude step: `start`, `probe`, `watch`, `report`, `stop` | p.17 | not built |
@@ -123,6 +123,48 @@ Unfinished runs come first, newest first. Workflows under `.spore/workflows/` (b
 ## The start flow (p.12)
 
 Choosing a workflow runs `claude-spore check` first and shows any errors without starting. The flow then asks for each declared input, using the property's `description` as the question and Claude's draft from the conversation as the answer to confirm. It runs `spore start` and ends by following the new run ([C08][c08] R5, R9).
+
+## Basic tier: `start`, `status`, `continue` on spore 0.2.0 (skills#74)
+
+Until spore has `continue --wait` and `cancel` (Web-tree/runspore#74), the three sub-skills are thin prose over commands spore 0.2.0 has. This section is what they do now. p.10–p.12 replace it in skills#64.
+
+**Before anything**, after the Claude Code check, each runs `spore --version`. A missing `spore`, or one below 0.2.0, gets one line with the install command, `cargo install --git https://github.com/Web-tree/runspore --locked runspore-cli`, and the skill stops. Installing it for the person is p.3, skills#61.
+
+**The database.** The skills pass no `--db`: spore takes `$RUNSPORE_DB`, else the nearest `.spore/runspore.db` at or above the current folder. Every `--json` answer carries the database path as `db`, and the skills name it whenever they report runs.
+
+**Exit codes** of `spore run` and `spore worker --run <id> --until-parked`, checked against 0.2.0:
+
+| Exit | Run | One line |
+|---|---|---|
+| 0 | `completed` | the end node and the result |
+| 1 | `failed` | the end node and the error |
+| 3 | `waiting` for a signal | the node, the signal and its outcomes |
+| 4 | `needs-intervention` | the node and the kept error |
+| other | — | the last lines spore printed |
+
+Every line but the end states names `/ml-workflow:continue <runId>`.
+
+**`status [<runId>]`.** Without an ID it runs `spore --json list` and lists the unfinished runs (status not `completed`, `failed` or `cancelled`): ID, node, status, how long. With an ID it runs `spore --json status <runId>` and says in words where the run is (`position`), what it waits for and since when (`waiting`, `intervention`, `quarantine`, `step`), or how it ended (`end`, `result`), then gives the commands `waiting.commands` or `intervention.commands` hold. It runs nothing else.
+
+**`start <workflow> [--key <key>]`.**
+
+1. `spore validate <workflow>`. On a non-zero exit it shows spore's report and starts nothing.
+2. Reads `inputSchema` from the workflow's `settings.json`: a name means `.spore/workflows/<name>/` beside the database. It asks for every property in one message, the `description` as the question and a value drafted from the conversation as the answer to confirm.
+3. Without `--key` it makes a fresh key, `<workflow>-<8 hex>`, so a repeated start is a new run and never `request.digest-mismatch`.
+4. Runs `spore run <workflow> --key <key> --input '<json>'` as a background shell command, ends the turn, and gives the one line from the table when it returns.
+
+**`continue [<runId>]`.** Without an ID, `spore --json list`: no unfinished run says so; one is taken; several are asked about. Then `spore --json status <runId>`, and by what it holds:
+
+- **`waiting`, a signal.** It offers exactly `waiting.outcomes`, never free text: spore 0.2.0 stores an outcome the node does not route and drops it without an error (`signal.outcome-unrouted`). An outcome with an entry in `waiting.outputSchemas` also needs data fitting that schema. It sends `spore signal <run> <signal> --outcome <o> --id <activationId> [--data '<json>']`. The ID is `position.activationId`, so one wait takes one decision: the same decision again is a no-op, and a different one fails with `request.digest-mismatch`, which the skill reports as "a decision was already sent" before going on. A sent signal leaves the run `waiting` until a worker consumes it.
+- **`needs-intervention`.** It shows the node, `intervention.error` and the tries, and offers Retry (`spore resolve <run> --retry`), Mark done (`--complete <o>` with `o` from `intervention.outcomes`, plus `--output '<json>'` when `intervention.outputSchemas` has one) and Fail (`--fail <message>`).
+- **`running`.** It says which step runs and sends nothing.
+- **Quarantined, an external step, or ended.** It says so, with the commands status gives, sends nothing and stops.
+
+After a decision, a resolution, or a `running` run, it runs `spore worker --run <runId> --until-parked` in the background and reports as `start` does.
+
+**Continuing by `worker`, not by `spore run` again.** Running `spore run <workflow> --key <key> --input <same>` again also continues a run, but needs the workflow's name, the key and the original input, and neither `status` nor `list` gives the name. `worker --run` needs only the run ID, the run already holds its own input and artifact, and a changed input can never reach it.
+
+**Closing Claude** stops the background command; the run stays where it was, and `continue` picks it up.
 
 ## Profile kinds (p.13)
 
