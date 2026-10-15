@@ -1,0 +1,47 @@
+#!/usr/bin/env bun
+// The ml-workflow launcher (docs/spec.md, p.5). `claude-spore launcher install` copies this file to
+// ~/.local/bin, so a worker started from a plain terminal can still run Claude steps. It imports
+// nothing: it runs the helper of the ml-workflow installation that applies to the current folder.
+import { existsSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join, relative, sep } from "node:path";
+
+const PLUGIN = "ml-workflow@max-skills";
+
+type Entry = { scope?: unknown; projectPath?: unknown; installPath?: unknown };
+
+function entries(): Entry[] {
+  const claude = process.env.CLAUDE_CONFIG_DIR || join(process.env.HOME || homedir(), ".claude");
+  try {
+    const registry = JSON.parse(readFileSync(join(claude, "plugins", "installed_plugins.json"), "utf8"));
+    const listed = registry?.plugins?.[PLUGIN];
+    return Array.isArray(listed) ? listed.filter((entry) => entry && typeof entry.installPath === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+// A project's own entry, the deepest project holding this folder first, beats the user's.
+function chosen(cwd: string): Entry | undefined {
+  const holds = (project: unknown) => {
+    if (typeof project !== "string") return false;
+    const rel = relative(project, cwd);
+    return rel === "" || (!rel.startsWith("..") && !rel.startsWith(sep));
+  };
+  const all = entries();
+  const projects = all
+    .filter((entry) => entry.scope !== "user" && holds(entry.projectPath))
+    .sort((a, b) => (b.projectPath as string).length - (a.projectPath as string).length);
+  return projects[0] ?? all.find((entry) => entry.scope === "user");
+}
+
+const entry = chosen(process.cwd());
+const helper = entry ? join(entry.installPath as string, "bin", "claude-spore") : undefined;
+if (!helper || !existsSync(helper)) {
+  console.error(`claude-spore: ${PLUGIN} is not installed for ${process.cwd()}; install it in Claude Code with /plugin install ${PLUGIN}`);
+  process.exit(2);
+}
+
+const child = Bun.spawn([helper, ...process.argv.slice(2)], { stdin: "inherit", stdout: "inherit", stderr: "inherit" });
+for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const) process.on(signal, () => child.kill(signal));
+process.exit(await child.exited);

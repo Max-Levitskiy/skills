@@ -15,11 +15,20 @@ ml-workflow needs Claude Code 2.1.290 or later. Compare the version above with 2
 
 > ml-workflow needs Claude Code 2.1.290 or later; this is <the version above, or "unknown">. Run `claude update`, then try again.
 
-## 2. Check spore's version
+## 2. Check spore
 
-Run `spore --version`. It prints `spore <major>.<minor>.<patch>`. If the command is not found, or the version is below 0.2.0 compared as three numbers, reply with exactly this and stop:
+Run `claude-spore doctor --json`. It prints `{"ok", "spore", "problems", "launcher"}`, and `ok` is true when spore fits; then go on.
 
-> ml-workflow needs spore 0.2.0 or later; this is <the version, or "not installed">. Install it with `cargo install --git https://github.com/Web-tree/runspore --locked runspore-cli`, then try again.
+Otherwise, take each problem in order:
+
+- `plugin.reload`: reply with its `message` and stop.
+- Any other: show its `message`, ask "Run `<fix>` now?", and end the turn. Run the fix only on a yes, show what it printed, then run `claude-spore doctor --json` again and go on only when `ok` is true. A no, or a fix that fails, stops the skill. It installs nothing on its own.
+
+If `claude-spore` itself does not run:
+
+- The shell cannot find `claude-spore`: reply "ml-workflow's helper is not on this session's PATH. Run `/reload-plugins`, then try again." and stop.
+- It fails because `bun` is not found (exit 127): say "ml-workflow needs Bun 1.2.0 or later, and none is on PATH." and ask "Run `curl -fsSL https://bun.sh/install | bash` now?". On a yes, run it, then tell the person to restart Claude Code so its PATH has Bun, and stop.
+- It exits 2 saying it needs a newer Bun: show that line and ask "Run `bun upgrade` now?". On a yes, run it, then run the check again.
 
 ## 3. Report
 
