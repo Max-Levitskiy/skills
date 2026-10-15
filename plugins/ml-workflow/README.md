@@ -6,7 +6,7 @@ Run [Runspore](https://github.com/Web-tree/runspore) workflows from inside Claud
 /plugin install ml-workflow@max-skills
 ```
 
-**This release starts, shows and continues runs, does background and watched Claude steps, writes workflows by interview, and installs or updates `spore` when you say yes.** `start`, `status` and `continue` are a basic tier over the commands `spore` 0.2 has; the menu, cancelling and the run line arrive in the next releases. [docs/spec.md](docs/spec.md) is the whole design and says what is built.
+**This release starts, follows, continues and cancels runs, does background and watched Claude steps, writes workflows by interview, and installs or updates `spore` when you say yes.** The menu, the session-start line and the run line arrive in the next releases. [docs/spec.md](docs/spec.md) is the whole design and says what is built.
 
 ## Requirements
 
@@ -43,13 +43,17 @@ Each sub-skill approves `spore` and `claude-spore` for the turn it runs in. To s
 | Typed | Does | Built |
 |---|---|---|
 | `/ml-workflow:menu` | the unfinished runs and what each needs, the workflows to start, writing or changing one | stub |
-| `/ml-workflow:start <workflow> [--key <key>]` | validates the workflow, drafts its inputs, starts the run in the background, says when it parks or ends | basic |
-| `/ml-workflow:status [<runId>]` | the unfinished runs, or one run's state in words | basic |
-| `/ml-workflow:continue [<runId>]` | sends the decision a run waits for, or resolves its stuck step, then works it on in the background | basic |
-| `/ml-workflow:cancel <runId>` | cancels a run after a one-line confirmation | stub |
+| `/ml-workflow:start <workflow> [--key <key>]` | checks the workflow, drafts its inputs, starts the run and follows it | built |
+| `/ml-workflow:status [<runId>]` | the unfinished runs and what each needs, or one run's state in words | built |
+| `/ml-workflow:continue [<runId>]` | follows a run, and offers what it needs when it stops for you: the decision, the stuck step's Retry, Mark done or Fail, the release, the claim line | built |
+| `/ml-workflow:cancel [<runId>] [--reason <text>]` | cancels a run after a one-line confirmation | built |
 | `/ml-workflow:author [<workflow> \| --change]` | writes a new workflow, or changes one in place, through a short interview | built |
 
-A stub checks the Claude Code version and says it is not built yet; stubs are typed only, and so is `author`, which writes files. The basic sub-skills Claude may also load on its own. They read the database spore finds itself, `$RUNSPORE_DB` or the nearest `.spore/runspore.db` above the current folder, and name it. `continue` offers only the outcomes the run's status lists, since spore 0.2.0 drops an unknown outcome without an error. Following a run with `spore continue --wait` replaces this tier later ([docs/spec.md](docs/spec.md), "Basic tier").
+The stub checks the Claude Code version and says it is not built yet. It is typed only, and so is `author`, which writes files; Claude may load the other four on its own, and each asks you before it sends a decision, a resolution, a release or a cancel, or starts a run. They read the database spore finds itself, `$RUNSPORE_DB` or the nearest `.spore/runspore.db` above the current folder, and name it.
+
+**Following a run.** `start` and `continue` run `spore continue <runId> --wait --json` in the background and end the turn. When the run needs you or ends, Claude says so in one line and offers what to do right there: the outcomes of a decision, Retry, Mark done or Fail for a stuck step, the release of a quarantine, the claim line of a step waiting for its actor, or that a watched step waits for you in its pane. After you act it follows again. Closing Claude stops the follow; the run stays where it was, and `/ml-workflow:continue` picks it up. Only outcomes the run lists are offered.
+
+Following and cancelling need a `spore` with `continue --wait` and `cancel`, which the v0.2.0 release predates. Until a release has them, build `spore` from runspore's main branch: `cargo install --git https://github.com/Web-tree/runspore --locked --force runspore-cli`.
 
 ## Background Claude steps
 
@@ -120,7 +124,7 @@ bun test plugins/ml-workflow/test                # the helper, run as a subproce
 claude plugin test plugins/ml-workflow           # the mod, in the engine's own runner
 ```
 
-The helper's specs put a fake `claude` and a fake `herdr` (`test/fixtures/bin/`) first on PATH. The install specs need `ssh-keygen` and `tar`: they sign local release folders with a throwaway key pinned into a copy of the plugin. The ones that run a real `spore` use `$SPORE`, else `spore` on PATH, and are skipped when that is not 0.2, or for the watched step when it does not run async commands. CI runs both, against `spore` built from a pinned runspore commit, and runs the helper under Bun 1.1 to check that it refuses.
+The helper's specs put a fake `claude` and a fake `herdr` (`test/fixtures/bin/`) first on PATH. The install specs need `ssh-keygen` and `tar`: they sign local release folders with a throwaway key pinned into a copy of the plugin. The ones that run a real `spore` use `$SPORE`, else `spore` on PATH, and are skipped when that is not 0.2, for the watched step when it does not run async commands, and for following a run when it has no `continue --wait` or `cancel`. CI runs both, against `spore` built from a pinned runspore commit, and runs the helper under Bun 1.1 to check that it refuses.
 
 ## License
 
