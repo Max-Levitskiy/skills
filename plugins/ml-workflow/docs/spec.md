@@ -13,10 +13,10 @@ Each part is built by one ticket of skills#59. This table says what exists in th
 | Skeleton: packaging, minimum versions, `claude-spore --version`, the mod registering, sub-skill stubs, README rules, CI | p.1, p.2, p.6 | built (skills#60) |
 | Getting and checking `spore`, the launcher, helper/mod version match | p.3, p.4, p.5 | not built |
 | Entry points, menu, session-start line, following a run | p.7–p.12 | the basic tier of `start`, `status` and `continue` (skills#74); `menu` and `cancel` are stubs that check the host version and say they are not built |
-| Profile kinds, node parameters, `claude-spore check` | p.13–p.15 | built (skills#62), except the herdr check |
+| Profile kinds, node parameters, `claude-spore check` | p.13–p.15 | built (skills#62; the herdr check skills#63) |
 | Background Claude step: `claude-spore run`, session table, repair, facts | p.16, p.18, p.19, p.20 | built (skills#62) |
-| Interactive Claude step: `start`, `probe`, `watch`, `report`, `stop` | p.17 | not built |
-| Authoring interview | p.21–p.23 | built (skills#67); it writes background Claude steps only until the interactive step is built, and draws the draft as text until `claude-spore draw` is |
+| Interactive Claude step: `start`, `probe`, `watch`, `report`, `stop` | p.17 | built (skills#63) |
+| Authoring interview | p.21–p.23 | built (skills#67); it draws the draft as text until `claude-spore draw` is |
 | Run line and live view | p.24 | not built |
 | Reference loop as the end-to-end check | p.25 | not built |
 
@@ -212,7 +212,7 @@ A Claude step is a `command` action whose `argv` runs `claude-spore run` or `cla
 
 - **Strict form.** A schema fits Claude Code's strict form when it uses only `$schema`, `type`, `description`, `title`, `properties`, `required`, `additionalProperties`, `items`, `enum`, `const` and `anyOf`; every object declares `properties`; `additionalProperties` is absent or `false`; `anyOf` stands alone (beside `description` or `title` at most); and it is at most 32 levels deep ([C12][c12] W02).
 - **Output.** One line per problem, `error: <node>: <message>` or `warning: <node>: <message>`, and exit 2 when there is an error, else 0. With `--json`, one object `{"ok", "errors", "warnings"}`, each problem `{"node", "code", "message"}`, with the same exit codes.
-- **Codes.** `params.unknown`, `params.not-literal`, `params.format`, `params.schema-missing`, `params.schema-outcome`, `params.outcome`, `params.model`, `params.tools`, `params.skill`; the warning `schema.not-strict`; and `workflow.unreadable` for a folder without a readable `settings.json`.
+- **Codes.** `params.unknown`, `params.not-literal`, `params.format`, `params.schema-missing`, `params.schema-outcome`, `params.outcome`, `params.model`, `params.tools`, `params.skill`; the warning `schema.not-strict`; `workflow.unreadable` for a folder without a readable `settings.json`; and `herdr.unreachable`, once for the folder, when it has an interactive step and `herdr status server --json` does not answer with a running server.
 
 ## Background step, `claude-spore run` (p.16)
 
@@ -241,6 +241,54 @@ How it does this:
 - **`watch`** waits until herdr shows the session idle or done and `$RUNSPORE_WORK_DIR/<attempt>.result.json` exists, then prints it. Quiet with no file, it prints `{"needs": "person", "message": "<node> waits for you in its pane"}`. A later try first copies an earlier try's success result in the same invocation to its own name; a failure result is never carried over.
 - **`report --outcome <o>`** reads the answer as JSON on stdin and checks it against `params.json`. If it fits, it writes the result file and prints "accepted". If not, it prints one error per line, exits 1 and counts the bad answer in `<attempt>.answers`; the third bad answer writes a non-retryable `output.invalid` result.
 - **`stop`** closes the pane by the handle.
+
+How it does this (skills#63):
+
+- **The action** is the one the interview writes (`skills/author/references/authoring.md` §5): `"argv": ["claude-spore", "start"]`, no `output`, and `async` with `timeoutMs` `"14400000"` and the probe, watch and stop commands `claude-spore probe|watch|stop`. No `leaseMs`: nobody renews, so the 4 h deadline is the lease. The step reports through its watch, never with `RUNSPORE_TOKEN`.
+- **Its environment.** `start` and `watch` need `RUNSPORE_RUN_ID`, `RUNSPORE_NODE_ID`, `RUNSPORE_VISIT`, `RUNSPORE_ATTEMPT` and `RUNSPORE_WORK_DIR`, and exit 2 without them. `probe` and `stop` need only the handle on stdin.
+- **The herdr agent** is named `sp-<node>-<10 hex>`: the node ID lower-cased with every character outside `[a-z0-9_-]` turned into `-` and cut to 16, then the first 10 hex digits of the session ID. herdr's names match `[a-z][a-z0-9_-]{0,31}` and are unique among live agents, so one run and node has one name.
+- **Talking to herdr.** Every call is `herdr … ` with JSON on stdout (`{"result": …}`) or an error on stderr (`{"error": {"code"}}`, exit 1); a code containing `not_found` means the agent is gone. The calls:
+
+  | What | Call |
+  |---|---|
+  | Is the agent live, and its state | `agent get <name>`: `agent_status` (`idle`, `working`, `blocked`, `done`, `unknown`) and `pane_id` |
+  | Open a pane | `workspace create --label <name> --cwd <working folder> --no-focus --env RUNSPORE_WORK_DIR=… [--env RUNSPORE_DB=…]`, then the pane `root_pane.pane_id` |
+  | Start Claude in it | `agent start <name> --kind claude --pane <pane> --timeout 60000 -- <claude flags>` |
+  | Seed or prompt it | `agent prompt <name> <message>` |
+  | Close it | `pane close <pane>` |
+  | Is herdr reachable (`check`) | `status server --json` |
+
+- **Claude's flags** are the background step's without `-p`, `--output-format` and `--json-schema`: `--session-id` or `--resume`, `--permission-mode default`, `--tools`/`--allowedTools` when `tools` is set, `--model` when set, and `--add-dir "$RUNSPORE_STEP_FILES"`. Anything outside `tools` asks in the pane (U12). The message goes by `agent prompt`, never in `argv`; with `skill` set the start message begins `/<skill> `.
+- **The PID and start time.** herdr starts the canonical `claude` itself, so no launcher of the plugin's sits between the shell and Claude. Once `agent start` returns, `start` finds the process whose arguments hold `--session-id <uuid>` or `--resume <uuid>` (`ps -A -ww -o pid= -o args=`, leaving out `herdr`, shells and `claude-spore`), for up to 10 s, and reads its start time. Without one it closes the pane and exits 1, a retryable `command.exit`.
+- **The handle** is `{"herdrAgent", "session", "pid", "started", "boot", "machine"}`: `started` is the start time as a string (on Linux field 22 of `/proc/<pid>/stat`; elsewhere `ps -o lstart=` read with `LC_ALL=C` and `TZ=UTC`), `boot` the boot ID (`/proc/sys/kernel/random/boot_id` on Linux, the `sec` and `usec` of `sysctl -n kern.boottime` on macOS as `<sec>.<usec>`), and `machine` the host name. `start` and `probe` read these with one function, so they agree.
+- **Which session.** `start` follows the table of p.18 before it opens anything. Whether the session exists is learned from Claude's transcript, a file `<uuid>.jsonl` in any folder under `${CLAUDE_CONFIG_DIR:-~/.claude}/projects/`: an interactive Claude cannot answer "already in use" to a program, and looking in every project folder makes the answer independent of where the session started. Visit 1 starts when no transcript exists, and a first try that finds one is `session.foreign`; every other try resumes, a later visit without a transcript is `session.lost`.
+- **A failure `start` finds itself** (the parameters checked again with `run`'s rules and failing as `params.invalid`, `session.foreign`, `session.lost`) is written as the non-retryable result `<attempt>.result.json`, and `start` prints a handle with `herdrAgent`, `pid` and `started` null. The watch prints that result at once, and the probe answers `unknown` for such a handle, so the failure, not an expiry, ends the try.
+- **Repeating a start.** `start` writes `pane.json` in the work folder: the handle, the pane, and the attempt whose report command the pane was given. When `agent get` finds the agent live:
+  - with a `pane.json` here whose PID and start time still name a live process, this invocation already has its pane: `start` prints the same handle. When the attempt changed, it first prompts the pane with the cut-off message and the new attempt's report command, and records that attempt.
+  - otherwise the pane belongs to an earlier visit, or to a start that died before writing `pane.json`: `start` closes it, waits up to 10 s until no process holds the session, and opens a new one. A new visit therefore gets a pane whose `RUNSPORE_WORK_DIR` is its own.
+- **The message** is the background step's (the instructions, where the step files are, the input, or the "came back" and "cut off" lines of p.18) followed by the report command for this attempt and each outcome's shape:
+
+  ```text
+  When you have finished, hand in your answer with this command, the answer on stdin:
+
+      claude-spore report --attempt <n> --outcome <outcome> <<'ANSWER'
+      <answer>
+      ANSWER
+
+  The outcomes, each with the JSON its answer must fit:
+  - `<outcome>`: <schema>
+  ```
+
+  A `text` step names its one outcome and takes its answer as plain text. The pane's Bash tool finds `RUNSPORE_WORK_DIR` in its environment.
+- **`report`** checks the answer with spore's schema subset (`spec/schema.md` §3, Web-tree/runspore): every keyword of the subset, up to 16 errors, each `<path>: <message>` with `(root)` for the whole value, and a number with a fraction refused as in `run`. A `json` step's answer is JSON fitting the schema of its outcome, and an outcome outside `schema` is an error. A `text` step's answer is any text, kept as `{"text": …}`, and the outcome must be its `outcome`. A good answer writes `{"outcome", "output"}`; an attempt that already has a result file prints that it has its answer and exits 1, writing nothing. The third bad answer writes `{"error": {"code": "output.invalid", "message": <the last errors>}, "retryable": false}` and says that the step failed. Exit 2 is a usage error, or a work folder without `params.json`.
+- **`watch`** polls once a second (`CLAUDE_SPORE_WATCH_POLL_MS`, for the specs):
+  - when this attempt has no result file and an earlier attempt of the work folder has a success, it copies the latest such success to this attempt's name;
+  - a result file and an agent that is `idle`, `done` or gone: it prints the file and exits 0;
+  - `idle`, `done` or `blocked` with no file: it prints the `needs` line once, and again only after the agent was busy in between. `blocked` counts because Claude is asking a question in the pane;
+  - the agent gone with no file: it exits 1, so the host only loses sight of the step and the probe decides;
+  - herdr not answering: it keeps polling until the host stops it.
+- **`probe`** answers, in order: `unknown` for a handle it cannot read, a pane-less handle, another machine, or a boot ID it cannot read; `dead` for another boot ID; `alive` when the PID's start time equals `started`; `dead` when it does not, or no process has that PID. It always exits 0.
+- **`stop`** looks the agent up by `herdrAgent` and closes its pane. A pane-less handle, or an agent already gone, is nothing to do. It exits 0 unless herdr refuses the close.
 
 ## Session ID and the message to send (p.18)
 
@@ -284,8 +332,9 @@ Claude Code reports used-up repairs as `terminal_reason: "structured_output_retr
 
 | File | Written by | Holds |
 |---|---|---|
-| `params.json` | `start` | the step's parameters, for `report` |
-| `<attempt>.result.json` | `report`, or a carried-over success | the answer `watch` prints |
+| `params.json` | `start` | the step's parameters, defaults filled in, for `report` |
+| `pane.json` | `start` | the handle, the herdr pane, and the attempt the pane was last given a report command for |
+| `<attempt>.result.json` | `report`, `start` for a failure it finds, or a carried-over success | the answer `watch` prints |
 | `<attempt>.answers` | `report` | the count of bad answers this attempt |
 | `<attempt>.facts.json` | `run` | session, turns, duration, cost, denied tools |
 
@@ -359,7 +408,8 @@ A SIGKILL of the Claude process alone leaves its `continue --wait` running as an
 - **A good test drives a public surface** and checks what a person or `spore` would see: the helper's stdout, exit code and files in the work folder; the `spore` run state after it; which processes are alive. It never tests private functions.
 - **Seam 1, the `claude-spore` executable,** run as a subprocess, with the real `spore` binary and fake `claude` and `herdr` programs first on PATH. Its specs are `test/*.spec.ts`, run by `bun test`.
 - **Seam 2, mod registration,** tested the way `ml-agent-config`'s register test is, under `claude plugin test`: the hooks, commands, tool and panes are registered, and each hook passes the helper's JSON through to the UI unchanged. No logic is tested there.
-- **The fake `claude`** (`test/fixtures/bin/claude`) keeps sessions the way the real one answers `--session-id` and `--resume`, records each call's arguments, stdin, working folder and environment, and plays back a scripted list of envelopes, raw stdout included, so a test can send `2.0`.
+- **The fake `claude`** (`test/fixtures/bin/claude`) keeps sessions the way the real one answers `--session-id` and `--resume`, as transcripts under `$CLAUDE_CONFIG_DIR/projects/`, records each call's arguments, stdin, working folder and environment, and plays back a scripted list of envelopes, raw stdout included, so a test can send `2.0`. Without `-p` it is an interactive Claude: it records the call and waits until it is killed.
+- **The fake `herdr`** (`test/fixtures/bin/herdr`) keeps workspaces, panes and agents in `$FAKE_HERDR_DIR`. `agent start` starts the fake `claude` detached in the pane's folder with the pane's environment, so `start` finds a real process and `probe` checks it; a test sets each agent's state, and `pane close` kills the process. Every call is recorded.
 - **The interview's examples** (`test/authoring.spec.ts`): both folders under `skills/author/references/examples/` pass the real `spore validate` and `claude-spore check` with no warning; the worktree step's command makes one worktree per run ID and reuses it on a repeat; and a real run of `parallel-coding-loop` with the fake `claude` works in the run's worktree up to the approval. The interview itself, a conversation, is checked by the end-to-end run (p.25).
 - **The real `spore`** is the one the `SPORE` variable names, else `spore` on PATH. A spec that needs it is skipped, with the reason printed, when that `spore` is not 0.2, unless `REQUIRE_SPORE=1`, which CI sets.
 - **CI** runs both seams; once the helper drives `spore`, against the newest `spore` release and against 0.2.0. Until runspore publishes 0.2.0, CI builds `spore` from a pinned runspore commit instead. It also runs the helper under Bun 1.1 and expects exit 2.
@@ -373,7 +423,8 @@ The Desktop app, claude.ai, Cowork, and `claude -p` as a surface for the menu; r
 
 - Claude Code internals are undocumented: `MAX_STRUCTURED_OUTPUT_RETRIES`, the strict-schema allowlist, `CLAUDE_CODE_FORCE_TERMINAL_IMAGES`.
 - The shape of `installed_plugins.json`, read by the launcher.
-- herdr's state output as a contract.
+- herdr's state output as a contract, and that `agent start --kind claude` runs the `claude` on the pane's PATH with the arguments after `--`.
+- Claude Code's transcript layout, `projects/<folder>/<uuid>.jsonl`, read by the interactive `start` to learn whether a session exists.
 - Process start times and boot IDs must be read the same way by the launcher and the probe on macOS and Linux.
 
 [c04]: https://github.com/Web-tree/runspore/blob/main/docs/research/c04-headless-agent-step.md
