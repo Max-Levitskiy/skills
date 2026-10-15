@@ -4,6 +4,7 @@ import { expect, test } from "bun:test";
 import { join } from "node:path";
 
 import manifest from "../.claude-plugin/plugin.json";
+import { PLUGIN_VERSION } from "../src/version";
 
 const HELPER = join(import.meta.dir, "..", "bin", "claude-spore");
 const OLD_BUN = join(import.meta.dir, "fixtures", "old-bun.ts");
@@ -21,6 +22,10 @@ test("--version prints the plugin's version and nothing else", () => {
   expect(exitCode).toBe(0);
   expect(stdout).toBe(`${manifest.version}\n`);
   expect(stderr).toBe("");
+});
+
+test("the mod's version is the manifest's", () => {
+  expect(PLUGIN_VERSION).toBe(manifest.version);
 });
 
 test("the helper runs by its own name, as steps on PATH run it", () => {

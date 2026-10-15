@@ -6,7 +6,7 @@ Run [Runspore](https://github.com/Web-tree/runspore) workflows from inside Claud
 /plugin install ml-workflow@max-skills
 ```
 
-**This release starts, shows and continues runs, does background and watched Claude steps, and writes workflows by interview.** `start`, `status` and `continue` are a basic tier over the commands `spore` 0.2.0 has; the menu, cancelling and the run line arrive in the next releases. [docs/spec.md](docs/spec.md) is the whole design and says what is built.
+**This release starts, shows and continues runs, does background and watched Claude steps, writes workflows by interview, and installs or updates `spore` when you say yes.** `start`, `status` and `continue` are a basic tier over the commands `spore` 0.2 has; the menu, cancelling and the run line arrive in the next releases. [docs/spec.md](docs/spec.md) is the whole design and says what is built.
 
 ## Requirements
 
@@ -14,9 +14,17 @@ Run [Runspore](https://github.com/Web-tree/runspore) workflows from inside Claud
 |---|---|---|
 | Claude Code, in a terminal | **2.1.290** | every sub-skill, before anything else; the mod at session start. Older: `claude update` |
 | Bun | **1.2.0** | `claude-spore`, before anything else; it exits 2 naming the version. Older: `bun upgrade` |
-| [`spore`](https://github.com/Web-tree/runspore) | **0.2.0** | `start`, `status`, `continue` and `author`, after the Claude Code check; they print the install line and stop: `cargo install --git https://github.com/Web-tree/runspore --locked runspore-cli` |
+| [`spore`](https://github.com/Web-tree/runspore) | **0.2.0**, answering `spore capabilities` with the `cli`, `host`, `kernel` and `store` contracts at 0.2 | `claude-spore doctor`: the mod at session start, silent when it fits, and `start`, `status`, `continue` and `author` after the Claude Code check. Missing or older: one line with the install or update command, run only when you say yes |
 
 claude.ai and Cowork refuse a plugin with a top-level `bin/`, so this plugin is for terminal Claude Code only.
+
+## Getting spore
+
+The plugin uses your own `spore` whenever it fits. When it is missing or too old, it offers `claude-spore install-spore`, which downloads the release for your machine, checks the Ed25519 signature on `SHA256SUMS` against the release key pinned in the plugin and the archive's SHA-256 against `SHA256SUMS`, and only then writes `spore`. It updates the copy your PATH selects, or installs into `~/.local/bin` when there is none. A copy you cannot write is left alone: the plugin names it and gives the command of what installed it. `SPORE_VERSION` and `SPORE_DOWNLOAD_URL` work as in runspore's `install.sh`.
+
+After the plugin is updated, a session that loaded the older version asks you to run `/reload-plugins` before it starts anything.
+
+**The launcher.** The first `start` offers to put a `claude-spore` launcher in `~/.local/bin`, so a `spore worker` you start in a plain terminal can still run Claude steps. It runs the helper of the `ml-workflow` installation for the folder you are in, a project's own before your user one. `claude-spore launcher install` installs it later.
 
 ## Standing permissions
 
@@ -97,7 +105,8 @@ Saying you'll run several at once adds a first step that makes a git worktree pe
 ml-workflow/
 ├── .claude-plugin/plugin.json   name, version, the mod's hooks file
 ├── bin/claude-spore             the helper (Bun); checks Bun first, then runs src/cli.ts
-├── src/                         the helper's code; version.ts holds both minimums
+├── src/                         the helper's code; version.ts holds the minimums and contracts
+├── launcher/claude-spore        the launcher `claude-spore launcher install` copies to ~/.local/bin
 ├── claude-code/                 the mod: register.ts and its registration test
 ├── skills/                      the six sub-skills
 ├── test/                        the helper's specs, run as a subprocess
@@ -111,7 +120,7 @@ bun test plugins/ml-workflow/test                # the helper, run as a subproce
 claude plugin test plugins/ml-workflow           # the mod, in the engine's own runner
 ```
 
-The helper's specs put a fake `claude` and a fake `herdr` (`test/fixtures/bin/`) first on PATH. The ones that run a real `spore` use `$SPORE`, else `spore` on PATH, and are skipped when that is not 0.2, or for the watched step when it does not run async commands. CI runs both, against `spore` built from a pinned runspore commit, and runs the helper under Bun 1.1 to check that it refuses.
+The helper's specs put a fake `claude` and a fake `herdr` (`test/fixtures/bin/`) first on PATH. The install specs need `ssh-keygen` and `tar`: they sign local release folders with a throwaway key pinned into a copy of the plugin. The ones that run a real `spore` use `$SPORE`, else `spore` on PATH, and are skipped when that is not 0.2, or for the watched step when it does not run async commands. CI runs both, against `spore` built from a pinned runspore commit, and runs the helper under Bun 1.1 to check that it refuses.
 
 ## License
 

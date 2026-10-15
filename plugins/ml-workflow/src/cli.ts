@@ -5,25 +5,43 @@ import manifest from "../.claude-plugin/plugin.json";
 export const VERSION: string = manifest.version;
 
 const USAGE = `usage: claude-spore --version
+       claude-spore doctor [--json] [--plugin-version <version>]
+       claude-spore install-spore
+       claude-spore launcher install | decline
        claude-spore check <folder> [--json]
        claude-spore run
        claude-spore start | probe | watch | stop
        claude-spore report --attempt <n> --outcome <outcome>
 
 The ml-workflow helper (docs/spec.md).
-  check   checks the node parameters of every Claude step in a workflow folder
-  run     a background Claude step; spore runs it, with the parameters on stdin
-  start   an interactive Claude step in a herdr pane; prints its holder handle
-  probe   answers whether the pane's Claude still runs, the handle on stdin
-  watch   waits for the pane's answer and prints it, the handle on stdin
-  stop    closes the pane, the handle on stdin
-  report  hands in the answer of an interactive step, from its pane, on stdin`;
+  doctor         checks that the spore on PATH is one ml-workflow drives
+  install-spore  installs or updates spore from a signed release
+  launcher       installs the claude-spore launcher in ~/.local/bin, or declines it
+  check          checks the node parameters of every Claude step in a workflow folder
+  run            a background Claude step; spore runs it, with the parameters on stdin
+  start          an interactive Claude step in a herdr pane; prints its holder handle
+  probe          answers whether the pane's Claude still runs, the handle on stdin
+  watch          waits for the pane's answer and prints it, the handle on stdin
+  stop           closes the pane, the handle on stdin
+  report         hands in the answer of an interactive step, from its pane, on stdin`;
 
 export async function main(argv: string[]): Promise<number> {
   const [command, ...rest] = argv;
   if (command === "--version") {
     console.log(VERSION);
     return 0;
+  }
+  if (command === "doctor") {
+    const { doctor } = await import("./doctor.ts");
+    return doctor(rest);
+  }
+  if (command === "install-spore") {
+    const { installSpore } = await import("./install.ts");
+    return installSpore(rest);
+  }
+  if (command === "launcher") {
+    const { launcher } = await import("./launcher.ts");
+    return launcher(rest);
   }
   if (command === "check") {
     const { check } = await import("./check.ts");
