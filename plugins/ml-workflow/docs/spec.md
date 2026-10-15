@@ -16,7 +16,7 @@ Each part is built by one ticket of skills#59. This table says what exists in th
 | Profile kinds, node parameters, `claude-spore check` | p.13–p.15 | built (skills#62), except the herdr check |
 | Background Claude step: `claude-spore run`, session table, repair, facts | p.16, p.18, p.19, p.20 | built (skills#62) |
 | Interactive Claude step: `start`, `probe`, `watch`, `report`, `stop` | p.17 | not built |
-| Authoring interview | p.21–p.23 | not built |
+| Authoring interview | p.21–p.23 | built (skills#67); it writes background Claude steps only until the interactive step is built, and draws the draft as text until `claude-spore draw` is |
 | Run line and live view | p.24 | not built |
 | Reference loop as the end-to-end check | p.25 | not built |
 
@@ -85,7 +85,7 @@ A plugin cannot ship standing allow rules. Each sub-skill pre-approves `Bash(spo
   - `status [<runId>]`: the unfinished runs, or one run's state in words;
   - `continue [<runId>]`: follows a run, and asks which when several are unfinished;
   - `cancel <runId>`: confirms in one line, then runs `spore cancel`;
-  - `author [<workflow>]`: the interview; its guide ships as `skills/author/references/authoring.md`.
+  - `author [<workflow> | --change]`: the interview, new with no argument, a change of the named workflow, or with `--change` a list of workflows to change; its guide ships as `skills/author/references/authoring.md`. The menu's "write a new workflow" runs `author`, and "change a workflow" runs `author --change`.
 - **Opening the pop-up.** The mod hooks `skill.prompt` for `ml-workflow:menu`, opens the pane with `$.ui.open` and returns "The workflow menu is open." If opening from that hook is refused, the skill tells Claude to call the mod tool `open_menu`.
 - **The menu widget** is a pane with a `Select` ([C05][c05]).
 - **The mod stays thin.** The helper works out what the mod shows (the start line, the menu rows, the run line text, the drawings) and returns it as JSON from subcommands named in implementation. The mod only calls the helper and renders what comes back, so the helper's tests cover the logic.
@@ -307,6 +307,18 @@ Claude Code reports used-up repairs as `terminal_reason: "structured_output_retr
 - **Two runs at once:** when the person says yes, the interview adds a first step that makes a git worktree and returns its path, and points every later action's `cwd` at it: commands with `{"fromInput": "/workdir"}`, Claude steps with `{"fromInput": "/context/workdir"}`.
 - Changing a workflow edits in place, keeps comments, hand-written instructions and render attributes, and warns that unfinished runs keep the old version. A folder that does not build is still shown, its errors first.
 
+How it does this (skills#67):
+
+- **The guide.** The skill is short: it checks the host and `spore`, then follows `skills/author/references/authoring.md`, which carries the C09 flow, the question table, the defaults, the shape of every kind of step, the worktree step, the change flow and the ending. Two folders beside it, `references/examples/coding-loop/` (the reference loop) and `references/examples/parallel-coding-loop/` (the same loop with the worktree step), are what the interview writes for those descriptions; the guide points at them as the shapes to copy.
+- **Typed only.** `disable-model-invocation` stays set: the interview writes files, so it starts only when the person types `/ml-workflow:author` or the menu hands off to it.
+- **Claude steps' schemas use Claude Code's strict form** (p.15), so `check` reports no warning: no length bounds, patterns or numeric bounds in a Claude step's `outputSchemas`. The reference loop's `minLength` on `implement`'s `summary` is dropped for that reason. A person's answers (`await-signal` schemas) keep any keyword spore's subset has, since only spore checks them.
+- **The worktree step** is a `command` action that runs `sh -c`, reading the run ID from `$RUNSPORE_RUN_ID` (not from an `argv` mapping, so it builds on every spore 0.2). It makes the worktree `<repo>/../<repo name>.worktrees/<run id>` on a new branch `spore/<run id>` from `HEAD`, or reuses the folder when a try already made it, and prints `{"workdir": "<absolute path>"}` with `output: "json"`. It is `idempotent` with 3 tries. The worktree stays when the run ends; removing it is the person's, and the ending says so.
+- **Interactive steps** are written only when the helper has `start` (`claude-spore --help` lists it). Until then, a person who wants to watch a step is told that interactive steps are not built yet, the step is written as a background step, and the ending lists that.
+- **The picture on request** is a text drawing of the draft in a code block until `claude-spore draw` (p.24) exists.
+- **The check loop.** After writing, `spore validate <folder>` and `claude-spore check <folder>`; on any problem Claude edits the files and runs both again. A third failing round stops the loop: Claude shows each remaining problem in plain words and asks the person. Errors the person's own edits caused in a change are shown the same way, never silently undone.
+- **Finding a workflow to change.** By graph id among the folders under `.spore/workflows/`; with no argument, the interview lists them and asks. A new workflow's name never matches an existing folder or graph id.
+- **Unfinished runs of a changed workflow** come from `spore list` and `spore --json list` (status not `completed`, `failed` or `cancelled`). Neither `list` nor `status` names a run's workflow in spore 0.2.0, so when any run is unfinished the interview counts them and says that a run keeps the version it started with; only new runs get the change.
+
 ## Actor label (p.23)
 
 The actor label for a person is `person`.
@@ -348,6 +360,7 @@ A SIGKILL of the Claude process alone leaves its `continue --wait` running as an
 - **Seam 1, the `claude-spore` executable,** run as a subprocess, with the real `spore` binary and fake `claude` and `herdr` programs first on PATH. Its specs are `test/*.spec.ts`, run by `bun test`.
 - **Seam 2, mod registration,** tested the way `ml-agent-config`'s register test is, under `claude plugin test`: the hooks, commands, tool and panes are registered, and each hook passes the helper's JSON through to the UI unchanged. No logic is tested there.
 - **The fake `claude`** (`test/fixtures/bin/claude`) keeps sessions the way the real one answers `--session-id` and `--resume`, records each call's arguments, stdin, working folder and environment, and plays back a scripted list of envelopes, raw stdout included, so a test can send `2.0`.
+- **The interview's examples** (`test/authoring.spec.ts`): both folders under `skills/author/references/examples/` pass the real `spore validate` and `claude-spore check` with no warning; the worktree step's command makes one worktree per run ID and reuses it on a repeat; and a real run of `parallel-coding-loop` with the fake `claude` works in the run's worktree up to the approval. The interview itself, a conversation, is checked by the end-to-end run (p.25).
 - **The real `spore`** is the one the `SPORE` variable names, else `spore` on PATH. A spec that needs it is skipped, with the reason printed, when that `spore` is not 0.2, unless `REQUIRE_SPORE=1`, which CI sets.
 - **CI** runs both seams; once the helper drives `spore`, against the newest `spore` release and against 0.2.0. Until runspore publishes 0.2.0, CI builds `spore` from a pinned runspore commit instead. It also runs the helper under Bun 1.1 and expects exit 2.
 - **The end-to-end check** is p.25, gated, before a release.
