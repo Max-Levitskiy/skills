@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import manifest from '../.claude-plugin/plugin.json'
+import { PLUGIN_VERSION } from '../src/version'
 
 // Seam 2 (docs/spec.md, Testing): the mod registers and passes through; no logic is tested here.
 
@@ -10,7 +10,7 @@ type World = { version: { version: string; base?: string }; logs: string[]; runs
 
 const FINE = JSON.stringify({ ok: true, spore: { path: '/bin/spore', version: '0.2.1' }, problems: [], launcher: 'offer' })
 const MISSING = 'ml-workflow needs spore 0.2.0 or later, and none is on PATH. Install it with: claude-spore install-spore'
-const RELOAD = `ml-workflow changed since this session loaded it (helper 9.9.9, session ${manifest.version}). Run /reload-plugins, then try again.`
+const RELOAD = `ml-workflow changed since this session loaded it (helper 9.9.9, session ${PLUGIN_VERSION}). Run /reload-plugins, then try again.`
 const PROBLEMS = JSON.stringify({
   ok: false,
   spore: null,
@@ -77,7 +77,7 @@ test('session start runs the doctor with the version the session loaded', async 
   await $.session.start(START)
   expect(w.runs).toHaveLength(1)
   expect(w.runs[0]![0]!.endsWith('/bin/claude-spore')).toBe(true)
-  expect(w.runs[0]!.slice(1)).toEqual(['doctor', '--json', '--plugin-version', manifest.version])
+  expect(w.runs[0]!.slice(1)).toEqual(['doctor', '--json', '--plugin-version', PLUGIN_VERSION])
 })
 
 test("session start writes each of the doctor's problems as one line", async ($, on) => {

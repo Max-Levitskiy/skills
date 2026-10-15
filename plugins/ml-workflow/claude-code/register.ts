@@ -5,11 +5,10 @@
 
 import type { EngineInterface, Register } from 'claude-code'
 
-import manifest from '../.claude-plugin/plugin.json'
-import { BUN_MINIMUM, CLAUDE_CODE_MINIMUM, isOlder } from '../src/version'
+import { BUN_MINIMUM, CLAUDE_CODE_MINIMUM, isOlder, PLUGIN_VERSION } from '../src/version'
 
 // The version this session loaded, fixed when the mod loads: the helper on disk may be newer.
-const VERSION: string = manifest.version
+const VERSION = PLUGIN_VERSION
 
 type Ran = { exitCode: number; stdout: string; stderr: string }
 type Doctor = { ran?: Ran; isGone?: boolean }
