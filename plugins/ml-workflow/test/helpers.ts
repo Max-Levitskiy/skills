@@ -10,6 +10,27 @@ export const PLUGIN_BIN = join(import.meta.dir, "..", "bin");
 /** PATH with the fake `claude`, then `claude-spore`, then the Bun running the specs. */
 export const PATH = [FAKE_BIN, PLUGIN_BIN, dirname(process.execPath), process.env.PATH].join(":");
 
+/** The real `spore`: $SPORE, else the one on PATH. */
+export const SPORE = process.env.SPORE ?? Bun.which("spore") ?? "spore";
+
+/**
+ * The real spore's version when it is a 0.2, else null: a spec that needs it is skipped, with the
+ * reason printed, unless REQUIRE_SPORE=1 (CI) makes that a failure.
+ */
+export function sporeVersion(spec: string): string | null {
+  let version: string | null = null;
+  try {
+    const child = Bun.spawnSync([SPORE, "--version"]);
+    version = /^spore (0\.2\.\d+)/.exec(child.stdout.toString())?.[1] ?? null;
+  } catch {}
+  if (!version) {
+    const reason = `no spore 0.2 at ${SPORE}; set SPORE to one`;
+    if (process.env.REQUIRE_SPORE === "1") throw new Error(reason);
+    console.warn(`skipping ${spec}: ${reason}`);
+  }
+  return version;
+}
+
 export function scratch(): string {
   return mkdtempSync(join(tmpdir(), "claude-spore-"));
 }
