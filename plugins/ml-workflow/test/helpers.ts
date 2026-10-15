@@ -1,4 +1,5 @@
-// Shared by the specs: the helper run as a subprocess with the fake `claude` first on PATH.
+// Shared by the specs: the helper run as a subprocess with the fake `claude` and `herdr` first on
+// PATH.
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -7,7 +8,7 @@ export const HELPER = join(import.meta.dir, "..", "bin", "claude-spore");
 export const FAKE_BIN = join(import.meta.dir, "fixtures", "bin");
 export const PLUGIN_BIN = join(import.meta.dir, "..", "bin");
 
-/** PATH with the fake `claude`, then `claude-spore`, then the Bun running the specs. */
+/** PATH with the fake `claude` and `herdr`, then `claude-spore`, then the Bun running the specs. */
 export const PATH = [FAKE_BIN, PLUGIN_BIN, dirname(process.execPath), process.env.PATH].join(":");
 
 /** The real `spore`: $SPORE, else the one on PATH. */
@@ -123,6 +124,103 @@ export function runStep(fake: FakeClaude, options: StepOptions): StepRun {
     cwd: options.cwd,
     env: env as Record<string, string>,
     stdin: Buffer.from(typeof options.params === "string" ? options.params : JSON.stringify(options.params)),
+  });
+  const stdout = child.stdout.toString();
+  let result: unknown;
+  try {
+    result = JSON.parse(stdout);
+  } catch {
+    result = undefined;
+  }
+  return { exitCode: child.exitCode, stdout, stderr: child.stderr.toString(), result };
+}
+
+/** The fake `herdr`'s folder: its panes and agents, the states a test sets, and its calls. */
+export class FakeHerdr {
+  readonly dir = scratch();
+
+  constructor() {
+    mkdirSync(join(this.dir, "status"));
+  }
+
+  /** Sets the state herdr shows for the agent. */
+  status(agent: string, status: "idle" | "working" | "blocked" | "done" | "unknown") {
+    writeFileSync(join(this.dir, "status", agent), status);
+  }
+
+  /** Makes every call fail, or answer again. */
+  down(down = true) {
+    if (down) writeFileSync(join(this.dir, "down"), "");
+    else rmSync(join(this.dir, "down"), { force: true });
+  }
+
+  state(): { panes: Record<string, { cwd: string; env: Record<string, string> }>; agents: Record<string, { pane: string; pid: number }> } {
+    const file = join(this.dir, "state.json");
+    return existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : { panes: {}, agents: {} };
+  }
+
+  calls(): string[][] {
+    const file = join(this.dir, "calls.jsonl");
+    if (!existsSync(file)) return [];
+    return readFileSync(file, "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line).args);
+  }
+
+  /** Kills every Claude the fake started. */
+  dispose() {
+    for (const agent of Object.values(this.state().agents)) {
+      try {
+        process.kill(agent.pid, "SIGKILL");
+      } catch {}
+    }
+    remove(this.dir);
+  }
+}
+
+export type InteractiveOptions = Omit<StepOptions, "params"> & { stdin?: string; args?: string[] };
+
+/** The environment `claude-spore start|probe|watch|stop|report` gets from spore, with both fakes. */
+export function interactiveEnv(claude: FakeClaude, herdr: FakeHerdr, options: InteractiveOptions): Record<string, string> {
+  let instructions: string | undefined;
+  if (options.instructions !== undefined) {
+    instructions = join(claude.dir, "instructions.md");
+    writeFileSync(instructions, options.instructions);
+  }
+  if (options.workDir) mkdirSync(options.workDir, { recursive: true });
+  const env: Record<string, string | undefined> = {
+    ...process.env,
+    PATH,
+    FAKE_CLAUDE_DIR: claude.dir,
+    CLAUDE_CONFIG_DIR: claude.dir,
+    FAKE_HERDR_DIR: herdr.dir,
+    CLAUDE_SPORE_WATCH_POLL_MS: "50",
+    RUNSPORE_RUN_ID: options.run ?? "run_0123456789abcdef0123456789abcdef",
+    RUNSPORE_NODE_ID: options.node ?? "implement",
+    RUNSPORE_VISIT: String(options.visit ?? 1),
+    RUNSPORE_ATTEMPT: String(options.attempt ?? 1),
+    RUNSPORE_INSTRUCTIONS: instructions,
+    RUNSPORE_STEP_FILES: options.stepFiles,
+    RUNSPORE_WORK_DIR: options.workDir,
+    RUNSPORE_DB: undefined,
+    ...options.env,
+  };
+  for (const key of Object.keys(env)) if (env[key] === undefined) delete env[key];
+  return env as Record<string, string>;
+}
+
+/** One of the interactive commands, run to its end. */
+export function interactive(
+  command: "start" | "probe" | "watch" | "stop" | "report",
+  claude: FakeClaude,
+  herdr: FakeHerdr,
+  options: InteractiveOptions = {},
+): StepRun {
+  const child = Bun.spawnSync([HELPER, command, ...(options.args ?? [])], {
+    cwd: options.cwd,
+    env: interactiveEnv(claude, herdr, options),
+    stdin: Buffer.from(options.stdin ?? ""),
   });
   const stdout = child.stdout.toString();
   let result: unknown;
