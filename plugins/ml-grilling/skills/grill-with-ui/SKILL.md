@@ -117,9 +117,9 @@ GRILL_PATCH
    "Wait mode" at the end of this file for this step and for every wait after it.
 4. Run `node $SKILL/server.mjs url --session <session>`; it prints the URL.
 5. Print ONE line: the URL, how many questions wait, and the doc path (say the user can change
-   the path by typing in the terminal). When `GRILL_OPEN` is set, `serve` has already opened
-   the URL in the user's browser; say "opened" rather than asking them to open it. Return to
-   listening.
+   the path by typing in the terminal). When `serve`'s ready line (or `<session>/server.json`)
+   has `"opened": true`, it has already opened the URL in the user's browser; say "opened"
+   rather than asking them to open it. Return to listening.
 
 ## Resume (`/grill-with-ui resume`)
 

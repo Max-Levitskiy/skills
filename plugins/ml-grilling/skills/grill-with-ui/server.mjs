@@ -18,9 +18,10 @@
 //                             events.jsonl — appended only by this server, one line per Send
 //                             server.json  — url, port, pid of the running server
 //
-// Remote use: GRILL_HOST sets the address `serve` binds and puts in the url (default 127.0.0.1;
-// "tailscale" means this machine's Tailscale IPv4). GRILL_OPEN is a shell command that `serve`
-// runs with the url as its last argument once it is listening, e.g. `ssh mac open`.
+// Remote use, from agent-config's `grill-with-ui` keys when remote.enabled: remote.host is the
+// address `serve` binds and puts in the url (default 127.0.0.1; "tailscale" means this machine's
+// Tailscale IPv4), remote.open a shell command `serve` runs with the url as its last argument
+// once it is listening, e.g. `ssh mac open`.
 import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
@@ -202,9 +203,9 @@ function cmdServe(o) {
     // The page is opened at `url`, so its Origin is that host, in the browser's canonical spelling
     // (lower-case name, compressed IPv6); keep the loopback spellings too.
     selfOrigins = [new URL(url).origin, `http://127.0.0.1:${port}`, `http://localhost:${port}`];
-    writeJson(serverFile, { url, port, pid: process.pid, started: new Date().toISOString() });
-    print({ type: "ready", url, session });
-    openUrl(url);
+    const opened = openUrl(url);
+    writeJson(serverFile, { url, port, pid: process.pid, started: new Date().toISOString(), ...(opened && { opened }) });
+    print({ type: "ready", url, session, ...(opened && { opened }) });
   });
   srv.listen(attempt, host);
   // server.json stays on exit on purpose: it remembers the port for the next serve, and
@@ -233,7 +234,7 @@ function cmdWait(o) {
 }
 
 function bindHost() {
-  const h = process.env.GRILL_HOST || "127.0.0.1";
+  const h = remoteConfig().host || "127.0.0.1";
   if (h !== "tailscale") return h;
   // Tailscale hands out IPv4s from 100.64.0.0/10, a range carrier NAT shares, so an address there
   // is not proof. Prefer Tailscale's own interface (tailscale0 on Linux), then the tailscale CLI,
@@ -253,18 +254,57 @@ function bindHost() {
   } catch {}
   if (shared.length === 1) return shared[0];
   die(shared.length
-    ? `GRILL_HOST=tailscale: ${shared.join(", ")} could each be Tailscale; set GRILL_HOST to the right one`
-    : "GRILL_HOST=tailscale but this machine has no Tailscale IPv4", 1);
+    ? `host tailscale: ${shared.join(", ")} could each be Tailscale; set remote.host to the right one`
+    : "host tailscale, but this machine has no Tailscale IPv4", 1);
 }
 
 // Fire and forget: the opener's output must not reach stdout, which is the agent's event stream.
+// Returns whether an opener was started.
 function openUrl(url) {
-  const cmd = process.env.GRILL_OPEN;
-  if (!cmd) return;
+  const cmd = remoteConfig().open;
+  if (!cmd) return false;
   const child = spawn("sh", ["-c", `${cmd} "$1"`, "grill-open", url], { stdio: ["ignore", "ignore", "inherit"], detached: true });
-  child.on("error", (e) => process.stderr.write(`grill: GRILL_OPEN failed: ${e.message}\n`));
-  child.on("exit", (code) => { if (code) process.stderr.write(`grill: GRILL_OPEN exited ${code}\n`); });
+  child.on("error", (e) => process.stderr.write(`grill: remote.open failed: ${e.message}\n`));
+  child.on("exit", (code) => { if (code) process.stderr.write(`grill: remote.open exited ${code}\n`); });
   child.unref();
+  return true;
+}
+
+// agent-config's remote keys, loaded once per serve. No agent-config, or remote.enabled false,
+// means {}: upstream's local behaviour.
+let remote;
+function remoteConfig() {
+  if (remote) return remote;
+  remote = {};
+  for (const bin of agentConfigBins()) {
+    try {
+      const out = execFileSync(bin, ["load", "grill-with-ui", "--from", HERE], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 5000 });
+      const r = JSON.parse(out).config?.remote;
+      if (r?.enabled) remote = { host: r.host, open: r.open };
+    } catch (e) {
+      if (e.code === "ENOENT") continue;
+      process.stderr.write(`grill: agent-config load grill-with-ui failed, serving locally: ${(e.stderr || e.message).trim()}\n`);
+    }
+    break;
+  }
+  return remote;
+}
+
+// The lookup chain from ml-agent-config's working-actions.md: override, PATH, plugin caches.
+function agentConfigBins() {
+  if (process.env.AGENT_CONFIG_ROOT) return [path.join(process.env.AGENT_CONFIG_ROOT, "bin", "agent-config")];
+  const bins = ["agent-config"];
+  const ls = (d) => { try { return fs.readdirSync(d); } catch { return []; } };
+  for (const cache of [path.join(os.homedir(), ".claude", "plugins", "cache"),
+                       path.join(process.env.CODEX_HOME || path.join(os.homedir(), ".codex"), "plugins", "cache")]) {
+    for (const market of ls(cache)) {
+      for (const ver of ls(path.join(cache, market, "ml-agent-config"))) {
+        const bin = path.join(cache, market, "ml-agent-config", ver, "bin", "agent-config");
+        if (fs.existsSync(bin)) bins.push(bin);
+      }
+    }
+  }
+  return bins;
 }
 
 function rememberedPort(serverFile) {
