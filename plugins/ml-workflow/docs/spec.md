@@ -12,7 +12,7 @@ Each part is built by one ticket of skills#59. This table says what exists in th
 |---|---|---|
 | Skeleton: packaging, minimum versions, `claude-spore --version`, the mod registering, sub-skill stubs, README rules, CI | p.1, p.2, p.6 | built (skills#60) |
 | Getting and checking `spore`, the launcher, helper/mod version match | p.3, p.4, p.5 | built (skills#61) |
-| Entry points, menu, session-start line, following a run | p.7–p.12 | the basic tier of `start`, `status` and `continue` (skills#74); `menu` and `cancel` are stubs that check the host version and say they are not built |
+| Entry points, menu, session-start line, following a run | p.7–p.12 | `start`, `status`, `continue` and `cancel`, and following a run (skills#64); `menu` is a stub that checks the host version and says it is not built, and the session-start line is not built |
 | Profile kinds, node parameters, `claude-spore check` | p.13–p.15 | built (skills#62; the herdr check skills#63) |
 | Background Claude step: `claude-spore run`, session table, repair, facts | p.16, p.18, p.19, p.20 | built (skills#62) |
 | Interactive Claude step: `start`, `probe`, `watch`, `report`, `stop` | p.17 | built (skills#63) |
@@ -81,7 +81,7 @@ How it does this (skills#61):
   5. It runs the check again on the PATH copy. Success is reported only if the check passes and PATH selects the file just written; otherwise it says what is still wrong, for example that `~/.local/bin` is not on PATH, and exits 1.
 
   Exit 0 is success, 1 a refused or failed install, 2 a usage error. It changes nothing else: no shell profile, no other copy.
-- **The skills** run the check in their second step, after the Claude Code check (the basic tier below). A problem with a `fix` is shown as its one line with the question "Run it now?"; the command runs only on a yes, then the check runs again. A problem without a fix, and a no, stop the skill.
+- **The skills** run the check in their second step, after the Claude Code check (the sub-skills, step by step, below). A problem with a `fix` is shown as its one line with the question "Run it now?"; the command runs only on a yes, then the check runs again. A problem without a fix, and a no, stop the skill.
 
 ## The helper outside Claude (p.5)
 
@@ -108,7 +108,7 @@ A plugin cannot ship standing allow rules. Each sub-skill pre-approves `Bash(spo
   - `start <workflow>`: check, then the input draft, then `spore start`, then follow;
   - `status [<runId>]`: the unfinished runs, or one run's state in words;
   - `continue [<runId>]`: follows a run, and asks which when several are unfinished;
-  - `cancel <runId>`: confirms in one line, then runs `spore cancel`;
+  - `cancel [<runId>]`: confirms in one line, then runs `spore cancel`, and asks which when several are unfinished;
   - `author [<workflow> | --change]`: the interview, new with no argument, a change of the named workflow, or with `--change` a list of workflows to change; its guide ships as `skills/author/references/authoring.md`. The menu's "write a new workflow" runs `author`, and "change a workflow" runs `author --change`.
 - **Opening the pop-up.** The mod hooks `skill.prompt` for `ml-workflow:menu`, opens the pane with `$.ui.open` and returns "The workflow menu is open." If opening from that hook is refused, the skill tells Claude to call the mod tool `open_menu`.
 - **The menu widget** is a pane with a `Select` ([C05][c05]).
@@ -129,6 +129,31 @@ A plugin cannot ship standing allow rules. Each sub-skill pre-approves `Bash(spo
   - **0, 1, 7:** one line with the end state.
 - After the person acts, the skill runs `continue --wait` again. Closing Claude pauses the runs it followed.
 
+How it does this (skills#64):
+
+- **The command** is `spore continue <runId> --wait --json --db <db>`, run with the Bash tool's `run_in_background`, `<db>` being the absolute path the last `--json` answer about the run gave as `db`. Naming the database always is the simplest form of "when it is not found by walking up", and needs no condition. It goes as `--db` after the subcommand, not as a `RUNSPORE_DB=` prefix, so the line still starts `spore continue <runId> --wait`, which the run line (p.24) looks for, and still fits the skill's `Bash(spore *)` rule, which a leading variable would not. The turn then ends with one line: the run, the database, and that Claude will say when the run needs the person or ends.
+- **The answer** is one JSON object on stdout, the run's `status` with `needs` and `commands`; the progress lines go to stderr. Every value Claude offers comes from that object: an outcome, a resolution or a command is one it lists, never typed or guessed.
+- **The reactions**, by exit code, each one line, with what it offers right there:
+
+  | Exit | `needs` | Claude says | It offers, and on the person's answer runs |
+  |---|---|---|---|
+  | 0 | — | the run completed, its end node (`end.nodeId`) and the `result` | nothing |
+  | 1 | — | the run failed, its end node and `result.error` (`code`, `message`) | nothing |
+  | 7 | — | the run was cancelled, with `cancel.reason` when one was given | nothing |
+  | 3 | `signal` | the node that waits (`waiting.nodeId`), for which signal, since when; the gist of the instructions `spore step show <runId> --json` names | one option per `waiting.outcomes`, with data drafted for an outcome that has a schema in `waiting.outputSchemas`; then `spore signal <runId> <signal> --outcome <o> --id <position.activationId> [--data '<json>']` and follows again |
+  | 4 | `stuck` | the stuck step (`intervention.nodeId`), its kept error, after `attempt` of `maxAttempts` tries; for `reason` `unknown`, that the last try may have done its work, so Retry runs it again | Retry (`spore resolve <runId> --retry`), Mark done (`--complete <o>`, `o` from `intervention.outcomes`, with `--output '<json>'` when `intervention.outputSchemas` has one) or Fail (`--fail '<message>'`); then follows again |
+  | 5 | `quarantined` | the quarantine's code and details | `spore release <runId>`; then follows again |
+  | 6 | `external-ready` | the step, its actor label (`step.actor`), and the claim line `spore step claim <runId> --actor <label>`; for the actor `person`, that the work is the person's own and the claim prints its instructions and the commands that report it | nothing runs; when the step is reported, `/ml-workflow:continue <runId>` follows again |
+  | 6 | `held`, `step.waiting` `person` | `step.message`, for an interactive Claude step "implement waits for you in its pane", and the pane's herdr agent (`step.holder.herdrAgent`) | when the person says they are done there, follows again; `spore step abandon <runId>` frees the step |
+  | 6 | `capability-missing` | the step and `step.missing`: what this `spore` lacks and what to restore | nothing |
+  | 2 | — | the error's code and message (`run.not-found`: the run is not in that database); a usage error about `--wait` means a `spore` from before it (below) | nothing |
+  | 130 | — | the follow was stopped; the run stays where it was | `/ml-workflow:continue <runId>` |
+  | other | — | the last lines spore printed | nothing |
+
+  A refused `signal` or `resolve` changes nothing: `output.invalid` (data that does not fit) asks again; `signal.id-reused`, which a different decision already sent for this wait gives, is reported as "a decision was already sent", and the follow goes on with that one; `signal.outcome-unrouted` cannot happen with a listed outcome.
+- **Several followers.** Each follow is its own background command, so one session can follow several runs. A second follower of one run, from this session or another, is safe ([C06][c06] L1).
+- **Closing Claude** stops its background commands, which spore stops as on SIGHUP (exit 130); every followed run stays where it was, and `continue` picks it up.
+
 ## Menu rows (p.11)
 
 | `needs` | Actions | Runs |
@@ -148,49 +173,31 @@ Unfinished runs come first, newest first. Workflows under `.spore/workflows/` (b
 
 Choosing a workflow runs `claude-spore check` first and shows any errors without starting. The flow then asks for each declared input, using the property's `description` as the question and Claude's draft from the conversation as the answer to confirm. It runs `spore start` and ends by following the new run ([C08][c08] R5, R9).
 
-## Basic tier: `start`, `status`, `continue` on spore 0.2.0 (skills#74)
+## The sub-skills, step by step (skills#64)
 
-Until spore has `continue --wait` and `cancel` (Web-tree/runspore#74), the three sub-skills are thin prose over commands spore 0.2.0 has. This section is what they do now. p.10–p.12 replace it in skills#64.
+They replace the basic tier of skills#74, which drove `spore run` and `spore worker --run --until-parked` on spore 0.2.0 before it had `continue --wait` and `cancel`. They need a `spore` with both (Web-tree/runspore#73, #74). `spore capabilities` names neither and the version stays 0.2.0, so `doctor` cannot tell such a `spore` from the v0.2.0 release, which predates both. That `spore` refuses `--wait` or `cancel` with a usage error (exit 2); the skills read that as a `spore` from before them and name the command that builds one from runspore's main branch, `cargo install --git https://github.com/Web-tree/runspore --locked --force runspore-cli`, until a release has them. Nothing runs it unasked.
 
 **Before anything**, after the Claude Code check, each runs `claude-spore doctor --json` (p.3), or reads the result the mod put above `start`. A problem is shown as its one line; its fix runs only on a yes, then the check runs again. A problem without a fix, or a no, stops the skill. A `claude-spore` that does not start is read as p.3 says (Bun missing or old), and one that is not found asks for `/reload-plugins`.
 
-**The database.** The skills pass no `--db`: spore takes `$RUNSPORE_DB`, else the nearest `.spore/runspore.db` at or above the current folder, else `./runspore.db`. Every `--json` answer carries the database path as `db`, and the skills name it whenever they report runs.
+**The database.** The skills pass no `--db` until they follow: spore takes `$RUNSPORE_DB`, else the nearest `.spore/runspore.db` at or above the current folder, else `./runspore.db`. Every `--json` answer carries the database path as `db`; the skills name it whenever they report runs, and the follow passes it as `--db` (p.10).
 
-**Exit codes** of `spore run` and `spore worker --run <id> --until-parked`, checked against 0.2.0:
-
-| Exit | Run | One line |
-|---|---|---|
-| 0 | `completed` | the end node and the result |
-| 1 | `failed` | the end node and the error |
-| 3 | `waiting` for a signal | the node, the signal and its outcomes |
-| 4 | `needs-intervention` | the node and the kept error |
-| other | — | the last lines spore printed |
-
-The lines for 3 and 4 name `/ml-workflow:continue <runId>`.
-
-**`status [<runId>]`.** Without an ID it runs `spore list`, whose rows say how long each run has been where it is, and `spore --json list` for `db`, and lists the unfinished runs (status not `completed`, `failed` or `cancelled`): ID, node, status, how long. With an ID it runs `spore --json status <runId>` and says in words where the run is (`position`), what it waits for and since when (`waiting`, `intervention`, `quarantine`, `step`), or how it ended (`end`, `result`), then gives the commands `waiting.commands` or `intervention.commands` hold. It runs nothing else.
+**Unfinished runs** come from `spore list --unfinished --json`: newest first, each row with `runId`, `workflow`, `nodeId`, `needs`, `since` (when it last changed, in milliseconds), `startKey` and `actor`. A skill that needs a run and has no ID says there is none for zero rows, takes the one row, and with several asks which, one option per row: ID, workflow, node, what it needs and how long ago it changed.
 
 **`start <workflow> [--key <key>]`.**
 
-1. `spore validate <workflow>`, then `claude-spore check <folder>` (p.15). On a non-zero exit from either it shows the report and starts nothing.
-2. Reads `inputSchema` from the workflow's `settings.json`. spore finds a named workflow by its graph ID, so a name means the folder under `.spore/workflows/` whose `workflow.dot` declares `digraph "<name>"`, usually the folder of that name. Without a workflow, `start` lists the workflows in that `.spore/workflows/` and asks which. It asks for every property in one message, the `description` as the question and a value drafted from the conversation as the answer to confirm. A workflow without inputs still gets one confirmation before it starts. An input spore rejects (`input.invalid`, exit 2) creates no run; the skill asks again and retries with the same key.
-3. Without `--key` it makes a fresh key, `<workflow>-<8 hex>`, so a repeated start is a new run and never `request.digest-mismatch`.
-4. Runs `spore run <workflow> --key <key> --input '<json>'` as a background shell command, ends the turn, and gives the one line from the table when it returns.
+1. `spore validate <workflow>`, then `claude-spore check <folder>` (p.15). On a non-zero exit from either it shows each report as printed and starts nothing; warnings alone do not stop it.
+2. Reads `inputSchema` from the workflow's `settings.json`. spore finds a named workflow by its graph ID, so a name means the folder under `.spore/workflows/` whose `workflow.dot` declares `digraph "<name>"`, usually the folder of that name. Without a workflow, `start` lists the workflows in that `.spore/workflows/` and asks which. It asks for every property in one message, the `description` as the question and a value drafted from the conversation as the answer to confirm, and makes the launcher offer (p.5) in the same message. A workflow without inputs still gets one confirmation before it starts.
+3. Without `--key` it makes a fresh key, `<workflow>-<8 hex>`, so a repeated start is a new run and never `run.key-reused`.
+4. Runs `spore start <workflow> --key <key> --input '<json>' --json` in the foreground: it creates the run and prints its `runId`, working nothing. `input.invalid` (exit 2) creates no run: the skill shows `details.errors`, asks again about those values, and starts again with the same key. `run.key-reused`, which only a `--key` the person gave can meet, shows spore's message and asks whether to follow the run the key names (`details.runId`) or start with another key. The answer carries no `db`, so the skill reads it from `spore status <runId> --json` before it follows.
+5. Follows the new run (p.10).
 
-**`continue [<runId>]`.** Without an ID, `spore list` and `spore --json list`: no unfinished run says so; one is taken; several are asked about. Then `spore --json status <runId>`, and by what it holds:
+**`continue [<runId>]`.** Takes the run as above, then follows it (p.10); a given ID is read with `spore status <runId> --json` only for its `db`, and `run.not-found` stops there. It acts on nothing before the follow: `continue --wait` does the next thing the run needs and returns at once for a run that waits for the person, and the reaction to its answer offers what to do.
 
-- **`waiting`, a signal.** It offers exactly `waiting.outcomes`, never free text: spore 0.2.0 stores an outcome the node does not route and drops it without an error (`signal.outcome-unrouted`). An outcome with an entry in `waiting.outputSchemas` also needs data fitting that schema. It sends `spore signal <run> <signal> --outcome <o> --id <activationId> [--data '<json>']`. The ID is `position.activationId`, so one wait takes one decision: the same decision again is a no-op, and a different one fails with `request.digest-mismatch`, which the skill reports as "a decision was already sent" before going on. A sent signal leaves the run `waiting` until a worker consumes it.
-- **`needs-intervention`.** It shows the node, `intervention.error` and the tries, and offers Retry (`spore resolve <run> --retry`; when `intervention.reason` is `unknown` the last try may have done its work, and the skill says that Retry runs it again), Mark done (`--complete <o>` with `o` from `intervention.outcomes`, plus `--output '<json>'` when `intervention.outputSchemas` has one) and Fail (`--fail <message>`).
-- **`running`.** It says which step runs and sends nothing.
-- **Quarantined, an external step, or ended.** It says so, with the commands status gives, sends nothing and stops.
+**`status [<runId>]`.** Without an ID, the rows of `list --unfinished`, one line each with what the run needs in words (`signal`: a decision; `stuck`; `working`; `held`: by its pane or its actor; `external-ready`: for its actor to claim it; `quarantined`; `capability-missing`), or that there is none. With an ID, `spore status <runId> --json` in words: where the run is (`position`), what it waits for and since when (`waiting`, `intervention`, `running`, `quarantine`, `step`), or how it ended (`end`, `result`, `cancel`), then the commands `waiting.commands` or `intervention.commands` hold, and that `/ml-workflow:continue <runId>` follows it. It runs nothing else.
 
-After a decision, a resolution, or a `running` run, it runs `spore worker --run <runId> --until-parked` in the background and reports as `start` does.
+**`cancel [<runId>]`.** Takes the run as above and reads `spore status <runId> --json`. A run that has already ended is said so, and nothing is asked. Otherwise it asks in one line, naming the run, where it is, and that cancelling stops its running step and cannot be undone. Only on a yes it runs `spore cancel <runId> --json`, with `--reason '<reason>'` when the person gave one, and reports the run cancelled with each stop that ran, or for a `duplicate` that the run had already ended. A follower of the run, in this session or another, then returns with exit 7.
 
-**Continuing by `worker`, not by `spore run` again.** Running `spore run <workflow> --key <key> --input <same>` again also continues a run, but needs the workflow's name, the key and the original input, and neither `status` nor `list` gives the name. `worker --run` needs only the run ID, the run already holds its own input and artifact, and a changed input can never reach it.
-
-**Claude may load these three on its own**, unlike the stubs, which stay typed only: each asks the person before it sends a decision, a resolution or starts a run.
-
-**Closing Claude** stops the background command; the run stays where it was, and `continue` picks it up.
+**Claude may load all four on its own**, unlike the `menu` stub and `author`, which writes files, both typed only: each asks the person before it sends a decision, a resolution, a release or a cancel, or starts a run.
 
 ## Profile kinds (p.13)
 
@@ -436,8 +443,10 @@ A SIGKILL of the Claude process alone leaves its `continue --wait` running as an
 - **The fake `herdr`** (`test/fixtures/bin/herdr`) keeps workspaces, panes and agents in `$FAKE_HERDR_DIR`. `agent start` starts the fake `claude` detached in the pane's folder with the pane's environment, so `start` finds a real process and `probe` checks it; a test sets each agent's state, and `pane close` kills the process. Every call is recorded.
 - **Getting and checking `spore`** (`test/doctor.spec.ts`, `test/install.spec.ts`, `test/launcher.spec.ts`) use local fixtures only: a fake `spore` that answers `capabilities` as each test says, and release folders signed by the real `ssh-keygen` with a throwaway key, which a copy of the plugin pins in place of the release key. A tampered archive, a tampered `SHA256SUMS` that matches it, another key's signature, and a missing signature are each refused with the folder unchanged. The launcher runs against a scratch `installed_plugins.json`.
 - **The interview's examples** (`test/authoring.spec.ts`): both folders under `skills/author/references/examples/` pass the real `spore validate` and `claude-spore check` with no warning; the worktree step's command makes one worktree per run ID and reuses it on a repeat; and a real run of `parallel-coding-loop` with the fake `claude` works in the run's worktree up to the approval. The interview itself, a conversation, is checked by the end-to-end run (p.25).
+- **The sub-skills** (`test/skills.spec.ts`): each `SKILL.md` names its own sub-skill, pre-approves `Bash(spore *)` and `Bash(claude-spore *)` (p.6), and reads the Claude Code version first (p.2); only `menu` and `author` are typed only. `start` and `continue` each carry the reaction table of p.10 and what it offers, word for word the same. What the skills say is checked by the end-to-end run (p.25).
+- **Following a run** (`test/follow.spec.ts`) drives the real `spore` with the commands the skills run and checks that each answer holds what the reaction of p.10 reads: a fresh run from `spore start --json`, and `input.invalid` creating none; `continue --wait --json` with exit 0, 3, 4, 6 and 7 and the fields of each row, `--db` after the subcommand included; a decision sent with `--id <activationId>`, the same decision again a no-op and another one `signal.id-reused`; an interactive step whose pane waits for the person returning exit 6 with `step.waiting` `person` and "implement waits for you in its pane"; several unfinished runs listed by `list --unfinished`; and `spore cancel` ending a held interactive step, its pane closed by `claude-spore stop`. It needs a `spore` with `continue --wait` and `cancel`, and is skipped without one, unless `REQUIRE_SPORE=1`.
 - **The real `spore`** is the one the `SPORE` variable names, else `spore` on PATH. A spec that needs it is skipped, with the reason printed, when that `spore` is not 0.2, unless `REQUIRE_SPORE=1`, which CI sets.
-- **CI** runs both seams; once the helper drives `spore`, against the newest `spore` release and against 0.2.0. Until a runspore release has async commands (the v0.2.0 tag predates them), CI builds `spore` from a pinned runspore commit instead. The interactive step's real-`spore` spec needs a `spore` whose `capabilities` list `command` among `asyncKinds`; it is skipped without one, unless `REQUIRE_SPORE=1`. It also runs the helper under Bun 1.1 and expects exit 2.
+- **CI** runs both seams; once the helper drives `spore`, against the newest `spore` release and against 0.2.0. Until a runspore release has async commands, `continue --wait` and `cancel` (the v0.2.0 tag predates them), CI builds `spore` from a pinned runspore commit instead. The interactive step's real-`spore` spec needs a `spore` whose `capabilities` list `command` among `asyncKinds`; it is skipped without one, unless `REQUIRE_SPORE=1`. It also runs the helper under Bun 1.1 and expects exit 2.
 - **The end-to-end check** is p.25, gated, before a release.
 
 ## Out of scope
