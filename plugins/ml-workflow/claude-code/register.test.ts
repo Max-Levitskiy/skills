@@ -6,7 +6,9 @@ import { PLUGIN_VERSION } from '../src/version'
 // Seam 2 (docs/spec.md, Testing): the mod registers and passes through; no logic is tested here.
 
 type Ran = { exitCode: number; stdout: string; stderr: string }
-type World = { version: { version: string; base?: string }; logs: string[]; runs: string[][]; doctor: Ran | Error }
+// A helper that does not start is `{ deny }`: the engine's refusal, which rejects the mod's call with
+// that reason. A hook that throws is skipped instead, so its message never reaches the mod.
+type World = { version: { version: string; base?: string }; logs: string[]; runs: string[][]; doctor: Ran | { deny: string } }
 
 const FINE = JSON.stringify({ ok: true, spore: { path: '/bin/spore', version: '0.2.1' }, problems: [], launcher: 'offer' })
 const MISSING = 'ml-workflow needs spore 0.2.0 or later, and none is on PATH. Install it with: claude-spore install-spore'
@@ -22,7 +24,7 @@ const PROBLEMS = JSON.stringify({
 })
 
 // Everything beneath the plugin: the engine's own answers, and the helper.
-function world(on: On, version: World['version'], doctor: Ran | Error = { exitCode: 0, stdout: FINE, stderr: '' }): World {
+function world(on: On, version: World['version'], doctor: World['doctor'] = { exitCode: 0, stdout: FINE, stderr: '' }): World {
   const w: World = { version, logs: [], runs: [], doctor }
   on('session.version', () => ({ value: w.version }))
   on('session.start', ($, e) => ({ cwd: e.cwd }))
@@ -32,7 +34,7 @@ function world(on: On, version: World['version'], doctor: Ran | Error = { exitCo
   })
   on('process.run', ($, e) => {
     w.runs.push([...e.argv])
-    if (w.doctor instanceof Error) throw w.doctor
+    if ('deny' in w.doctor) return { deny: w.doctor.deny }
     return { value: { ...w.doctor, isStdoutTruncated: false, isStderrTruncated: false } }
   })
   on('skill.prompt', ($, e) => ({ text: e.text }))
@@ -100,13 +102,13 @@ test("an old Bun's refusal is passed through as its first line", async ($, on) =
 })
 
 test('a helper that is gone asks for /reload-plugins', async ($, on) => {
-  const w = world(on, NEW, new Error('ENOENT: no such file or directory, posix_spawn'))
+  const w = world(on, NEW, { deny: 'ENOENT: no such file or directory, posix_spawn' })
   await $.session.start(START)
   expect(w.logs).toEqual(['ml-workflow changed since this session loaded it. Run /reload-plugins, then try again.'])
 })
 
 test('a helper that times out shows nothing', async ($, on) => {
-  const w = world(on, NEW, new Error('timed out after 8000ms'))
+  const w = world(on, NEW, { deny: 'timed out after 8000ms' })
   await $.session.start(START)
   expect(w.logs).toEqual([])
 })
