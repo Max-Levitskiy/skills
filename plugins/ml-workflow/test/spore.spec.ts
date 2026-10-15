@@ -5,25 +5,9 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { answered, FakeClaude, HELPER, PATH, remove, scratch } from "./helpers.ts";
+import { answered, FakeClaude, HELPER, PATH, remove, scratch, SPORE, sporeVersion } from "./helpers.ts";
 
-const SPORE = process.env.SPORE ?? Bun.which("spore") ?? "spore";
-
-function sporeVersion(): string | null {
-  try {
-    const child = Bun.spawnSync([SPORE, "--version"]);
-    return /^spore (0\.2\.\d+)/.exec(child.stdout.toString())?.[1] ?? null;
-  } catch {
-    return null;
-  }
-}
-
-const version = sporeVersion();
-if (!version) {
-  const reason = `no spore 0.2 at ${SPORE}; set SPORE to one`;
-  if (process.env.REQUIRE_SPORE === "1") throw new Error(reason);
-  console.warn(`skipping spore.spec.ts: ${reason}`);
-}
+const version = sporeVersion("spore.spec.ts");
 
 const SETTINGS = {
   format: "runspore.workflow/0.2",

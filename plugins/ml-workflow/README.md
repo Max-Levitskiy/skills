@@ -6,7 +6,7 @@ Run [Runspore](https://github.com/Web-tree/runspore) workflows from inside Claud
 /plugin install ml-workflow@max-skills
 ```
 
-**This release starts, shows and continues runs, and does background Claude steps.** `start`, `status` and `continue` are a basic tier over the commands `spore` 0.2.0 has; the menu, cancelling, the run line and writing workflows arrive in the next releases. [docs/spec.md](docs/spec.md) is the whole design and says what is built.
+**This release starts, shows and continues runs, does background Claude steps, and writes workflows by interview.** `start`, `status` and `continue` are a basic tier over the commands `spore` 0.2.0 has; the menu, cancelling, watched Claude steps and the run line arrive in the next releases. [docs/spec.md](docs/spec.md) is the whole design and says what is built.
 
 ## Requirements
 
@@ -14,7 +14,7 @@ Run [Runspore](https://github.com/Web-tree/runspore) workflows from inside Claud
 |---|---|---|
 | Claude Code, in a terminal | **2.1.290** | every sub-skill, before anything else; the mod at session start. Older: `claude update` |
 | Bun | **1.2.0** | `claude-spore`, before anything else; it exits 2 naming the version. Older: `bun upgrade` |
-| [`spore`](https://github.com/Web-tree/runspore) | **0.2.0** | `start`, `status` and `continue`, after the Claude Code check; they print the install line and stop: `cargo install --git https://github.com/Web-tree/runspore --locked runspore-cli` |
+| [`spore`](https://github.com/Web-tree/runspore) | **0.2.0** | `start`, `status`, `continue` and `author`, after the Claude Code check; they print the install line and stop: `cargo install --git https://github.com/Web-tree/runspore --locked runspore-cli` |
 
 claude.ai and Cowork refuse a plugin with a top-level `bin/`, so this plugin is for terminal Claude Code only.
 
@@ -39,9 +39,9 @@ Each sub-skill approves `spore` and `claude-spore` for the turn it runs in. To s
 | `/ml-workflow:status [<runId>]` | the unfinished runs, or one run's state in words | basic |
 | `/ml-workflow:continue [<runId>]` | sends the decision a run waits for, or resolves its stuck step, then works it on in the background | basic |
 | `/ml-workflow:cancel <runId>` | cancels a run after a one-line confirmation | stub |
-| `/ml-workflow:author [<workflow>]` | writes or changes a workflow through a short interview | stub |
+| `/ml-workflow:author [<workflow> \| --change]` | writes a new workflow, or changes one in place, through a short interview | built |
 
-A stub checks the Claude Code version and says it is not built yet; stubs are typed only. The basic sub-skills Claude may also load on its own. They read the database spore finds itself, `$RUNSPORE_DB` or the nearest `.spore/runspore.db` above the current folder, and name it. `continue` offers only the outcomes the run's status lists, since spore 0.2.0 drops an unknown outcome without an error. Following a run with `spore continue --wait` replaces this tier later ([docs/spec.md](docs/spec.md), "Basic tier").
+A stub checks the Claude Code version and says it is not built yet; stubs are typed only, and so is `author`, which writes files. The basic sub-skills Claude may also load on its own. They read the database spore finds itself, `$RUNSPORE_DB` or the nearest `.spore/runspore.db` above the current folder, and name it. `continue` offers only the outcomes the run's status lists, since spore 0.2.0 drops an unknown outcome without an error. Following a run with `spore continue --wait` replaces this tier later ([docs/spec.md](docs/spec.md), "Basic tier").
 
 ## Background Claude steps
 
@@ -69,6 +69,12 @@ A workflow step whose action runs `claude-spore run` with `"output": "result"` i
 ```
 
 `claude-spore check <folder>` checks these parameters in a workflow folder. Each try's turns, duration, cost and denied tools go to `<attempt>.facts.json` in the step's work folder. The rules are in [docs/spec.md](docs/spec.md), p.14–p.20.
+
+## Writing a workflow
+
+`/ml-workflow:author` asks what the workflow should do, from start to finish, and shows the whole draft as a numbered list. You correct it in plain words; it asks only what changes the outcome (who does each step, where each ending goes, loop limits, approvals, inputs, steps unsafe to repeat, running several at once) and fills in the rest. On save it runs `spore init` if needed, writes `.spore/workflows/<name>/`, runs `spore validate` and `claude-spore check` and fixes its own errors, then lists every default it filled in. It never commits. `/ml-workflow:author <workflow>` changes a workflow in place, keeping comments, hand-written instructions and render attributes.
+
+Saying you'll run several at once adds a first step that makes a git worktree per run, beside the repository, and runs every later step in it. The guide the interview follows, and the two folders it copies, are in [skills/author/references/](skills/author/references/).
 
 ## What's in the box
 

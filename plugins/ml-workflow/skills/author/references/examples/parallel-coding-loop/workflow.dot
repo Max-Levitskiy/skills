@@ -1,0 +1,26 @@
+// The reference coding loop, for running several at once in one checkout.
+// A first step makes a git worktree for the run; every later step works in it.
+// Claude implements, a command runs the tests, red tests go back to implement
+// at most 3 times in a row, then a person decides; a person approves the result.
+digraph "parallel-coding-loop" {
+  dialect = "runspore/0.2";
+  start   = "worktree";
+
+  worktree    [label="Make the run's worktree"];
+  implement   [label="Implement (Claude)"];
+  test        [label="Run the tests"];
+  approve     [kind="await-signal", label="Approve (you)"];
+  tests_stuck [kind="await-signal", label="Tests keep failing (you)"];
+  done        [kind="complete"];
+  stopped     [kind="fail"];
+
+  worktree    -> implement;
+  implement   -> test;
+  test        -> approve     [on="ok"];
+  test        -> implement   [on="red", label="red ×3"];
+  test        -> tests_stuck [on="exhausted"];
+  tests_stuck -> implement   [on="keep-going"];
+  tests_stuck -> stopped     [on="stop"];
+  approve     -> done        [on="approved"];
+  approve     -> implement   [on="rejected"];
+}
