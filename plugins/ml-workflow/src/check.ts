@@ -2,6 +2,7 @@
 // a workflow folder's `settings.json`. It builds nothing; `spore validate` checks the rest.
 import { basename, join } from "node:path";
 
+import { reachable } from "./herdr.ts";
 import { checkParams, PARAMETERS, type Problem } from "./params.ts";
 import { isObject } from "./schema.ts";
 
@@ -43,24 +44,34 @@ async function checkFolder(folder: string): Promise<{ problems: NodeProblem[]; s
 
   const problems: NodeProblem[] = [];
   let steps = 0;
+  let interactive = false;
   for (const [nodeId, node] of Object.entries(nodes)) {
     if (!isObject(node) || typeof node.action !== "string") continue;
     const action = actions[node.action];
-    if (!isClaudeStep(action)) continue;
+    const kind = claudeStep(action);
+    if (!kind || !isObject(action)) continue;
     steps++;
+    if (kind === "start") interactive = true;
     const outcomes = Array.isArray(action.outcomes) ? action.outcomes.map(String) : ["ok"];
     for (const problem of nodeProblems(node, outcomes)) problems.push({ ...problem, node: nodeId });
+  }
+  if (interactive && !reachable()) {
+    problems.push({
+      severity: "error",
+      code: "herdr.unreachable",
+      message: "the workflow has interactive Claude steps, and no herdr server answers `herdr status server --json`; start herdr first",
+      node: null,
+    });
   }
   return { problems, steps };
 }
 
-/** A `command` running `claude-spore run` or `start`, by name or by a path to it. */
-function isClaudeStep(action: unknown): action is Record<string, unknown> {
-  if (!isObject(action) || action.kind !== "command" || !Array.isArray(action.argv)) return false;
+/** `run` or `start` for a `command` running `claude-spore run` or `start`, by name or by a path to it. */
+function claudeStep(action: unknown): "run" | "start" | null {
+  if (!isObject(action) || action.kind !== "command" || !Array.isArray(action.argv)) return null;
   const [program, command] = action.argv;
-  return (
-    typeof program === "string" && basename(program) === "claude-spore" && (command === "run" || command === "start")
-  );
+  if (typeof program !== "string" || basename(program) !== "claude-spore") return null;
+  return command === "run" || command === "start" ? command : null;
 }
 
 /** The node's parameters as `run` will get them, then the rules both share. */

@@ -6,7 +6,7 @@ Run [Runspore](https://github.com/Web-tree/runspore) workflows from inside Claud
 /plugin install ml-workflow@max-skills
 ```
 
-**This release starts, shows and continues runs, does background Claude steps, and writes workflows by interview.** `start`, `status` and `continue` are a basic tier over the commands `spore` 0.2.0 has; the menu, cancelling, watched Claude steps and the run line arrive in the next releases. [docs/spec.md](docs/spec.md) is the whole design and says what is built.
+**This release starts, shows and continues runs, does background and watched Claude steps, and writes workflows by interview.** `start`, `status` and `continue` are a basic tier over the commands `spore` 0.2.0 has; the menu, cancelling and the run line arrive in the next releases. [docs/spec.md](docs/spec.md) is the whole design and says what is built.
 
 ## Requirements
 
@@ -70,6 +70,21 @@ A workflow step whose action runs `claude-spore run` with `"output": "result"` i
 
 `claude-spore check <folder>` checks these parameters in a workflow folder. Each try's turns, duration, cost and denied tools go to `<attempt>.facts.json` in the step's work folder. The rules are in [docs/spec.md](docs/spec.md), p.14–p.20.
 
+## Watched Claude steps
+
+A step you want to watch and type into runs Claude in a [herdr](https://herdr.dev) pane instead. Its action is an async command, with the same node parameters:
+
+```json
+"implement": { "kind": "command", "argv": ["claude-spore", "start"], "outcomes": ["ok"],
+               "effect": "idempotent", "retry": {"maxAttempts": 3},
+               "async": { "timeoutMs": "14400000",
+                          "probe": {"command": {"argv": ["claude-spore", "probe"]}},
+                          "watch": {"command": {"argv": ["claude-spore", "watch"]}},
+                          "stop":  {"command": {"argv": ["claude-spore", "stop"]}} } }
+```
+
+`claude-spore start` opens the pane in the action's working folder, starts Claude there with the step's tools approved (anything else asks in the pane), and gives it the instructions, the input and the command to hand in its answer, `claude-spore report`, which checks the answer against the step's schema and lets Claude fix it twice. The watch tells the run when the pane waits for you, and delivers the answer once Claude is quiet. A pane whose machine went down is found dead by its boot ID and process start time, and the next try resumes the same conversation in a new pane. Starting again for the same step reuses its live pane. `claude-spore check` refuses a workflow with watched steps when no herdr server answers.
+
 ## Writing a workflow
 
 `/ml-workflow:author` asks what the workflow should do, from start to finish, and shows the whole draft as a numbered list. You correct it in plain words; it asks only what changes the outcome (who does each step, where each ending goes, loop limits, approvals, inputs, steps unsafe to repeat, running several at once) and fills in the rest. On save it runs `spore init` if needed, writes `.spore/workflows/<name>/`, runs `spore validate` and `claude-spore check` and fixes its own errors, then lists every default it filled in. It never commits. `/ml-workflow:author <workflow>` changes a workflow in place, keeping comments, hand-written instructions and render attributes.
@@ -96,7 +111,7 @@ bun test plugins/ml-workflow/test                # the helper, run as a subproce
 claude plugin test plugins/ml-workflow           # the mod, in the engine's own runner
 ```
 
-The helper's specs put a fake `claude` (`test/fixtures/bin/claude`) first on PATH. The one that runs a real `spore` uses `$SPORE`, else `spore` on PATH, and is skipped when that is not 0.2. CI runs both, against `spore` built from a pinned runspore commit, and runs the helper under Bun 1.1 to check that it refuses.
+The helper's specs put a fake `claude` and a fake `herdr` (`test/fixtures/bin/`) first on PATH. The ones that run a real `spore` use `$SPORE`, else `spore` on PATH, and are skipped when that is not 0.2, or for the watched step when it does not run async commands. CI runs both, against `spore` built from a pinned runspore commit, and runs the helper under Bun 1.1 to check that it refuses.
 
 ## License
 

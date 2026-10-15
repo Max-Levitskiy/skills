@@ -3,15 +3,20 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { HELPER, remove, scratch } from "./helpers.ts";
+import { FakeHerdr, HELPER, PATH, remove, scratch } from "./helpers.ts";
 
 const SUMMARY = { type: "object", properties: { summary: { type: "string" } }, required: ["summary"], additionalProperties: false };
 
 let folder: string;
+let herdr: FakeHerdr;
 beforeEach(() => {
   folder = scratch();
+  herdr = new FakeHerdr();
 });
-afterEach(() => remove(folder));
+afterEach(() => {
+  remove(folder);
+  herdr.dispose();
+});
 
 type Node = Record<string, unknown>;
 
@@ -38,7 +43,9 @@ function workflow(input: Record<string, unknown>, options: { outcomes?: string[]
 }
 
 function check(...args: string[]) {
-  const child = Bun.spawnSync([HELPER, "check", folder, ...args]);
+  const child = Bun.spawnSync([HELPER, "check", folder, ...args], {
+    env: { ...process.env, PATH, FAKE_HERDR_DIR: herdr.dir },
+  });
   return { exitCode: child.exitCode, stdout: child.stdout.toString(), stderr: child.stderr.toString() };
 }
 
@@ -92,6 +99,27 @@ describe("the closed parameter set", () => {
   test("an interactive step is checked the same way", () => {
     workflow({ ...JSON_STEP, prompt: { $literal: "hi" } }, { argv: ["/opt/plugin/bin/claude-spore", "start"] });
     expect(codes()).toEqual(["params.unknown"]);
+  });
+});
+
+describe("herdr", () => {
+  test("a workflow with an interactive step needs a herdr server that answers", () => {
+    workflow(JSON_STEP, { argv: ["claude-spore", "start"] });
+    expect(check().exitCode).toBe(0);
+    expect(herdr.calls()).toEqual([["status", "server", "--json"]]);
+
+    herdr.down();
+    const { exitCode, stdout } = check();
+    expect(exitCode).toBe(2);
+    expect(stdout).toStartWith(`error: ${folder}: the workflow has interactive Claude steps, and no herdr server answers`);
+    expect(codes()).toEqual(["herdr.unreachable"]);
+  });
+
+  test("a workflow with background steps only never asks herdr", () => {
+    herdr.down();
+    workflow(JSON_STEP);
+    expect(check().exitCode).toBe(0);
+    expect(herdr.calls()).toEqual([]);
   });
 });
 

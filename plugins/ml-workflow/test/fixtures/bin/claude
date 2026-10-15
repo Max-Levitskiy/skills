@@ -1,13 +1,16 @@
 #!/usr/bin/env bun
 // The fake `claude` (docs/spec.md, Testing), first on PATH in the helper's specs. Everything lives
 // in $FAKE_CLAUDE_DIR:
-//   sessions/<uuid>  one file per session, answered as the real CLI answers --session-id and
+//   projects/<folder>/<uuid>.jsonl  one transcript per session, as Claude Code keeps them under
+//                    $CLAUDE_CONFIG_DIR, answered as the real CLI answers --session-id and
 //                    --resume (C04): an existing ID is "already in use", a missing one "not found";
 //   script.json      the answers to play back in order, each {stdout?, envelope?, exit?, stderr?}:
 //                    `stdout` is written as it is (so a test can send 2.0), else `envelope` is
 //                    merged into a successful envelope;
-//   calls.jsonl      one line per call: args, stdin, cwd and MAX_STRUCTURED_OUTPUT_RETRIES.
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+//   calls.jsonl      one line per call: args, stdin, cwd, MAX_STRUCTURED_OUTPUT_RETRIES and the
+//                    RUNSPORE_ variables.
+// Without -p it is an interactive Claude: it records the call and waits until it is killed.
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 const dir = process.env.FAKE_CLAUDE_DIR;
@@ -16,31 +19,41 @@ if (!dir) {
   process.exit(1);
 }
 const args = process.argv.slice(2);
-const stdin = await Bun.stdin.text();
+const interactive = !args.includes("-p");
+const stdin = interactive ? "" : await Bun.stdin.text();
+const runspore = Object.fromEntries(Object.entries(process.env).filter(([key]) => key.startsWith("RUNSPORE_")));
 appendFileSync(
   join(dir, "calls.jsonl"),
-  `${JSON.stringify({ args, stdin, cwd: process.cwd(), retries: process.env.MAX_STRUCTURED_OUTPUT_RETRIES ?? null })}\n`,
+  `${JSON.stringify({ args, stdin, cwd: process.cwd(), retries: process.env.MAX_STRUCTURED_OUTPUT_RETRIES ?? null, env: runspore })}\n`,
 );
 
 const flag = (name: string) => {
   const i = args.indexOf(name);
   return i >= 0 ? args[i + 1] : undefined;
 };
-const sessions = join(dir, "sessions");
-mkdirSync(sessions, { recursive: true });
+const projects = join(dir, "projects");
+mkdirSync(projects, { recursive: true });
+const exists = (id: string) => readdirSync(projects).some((folder) => existsSync(join(projects, folder, `${id}.jsonl`)));
 const created = flag("--session-id");
 const resumed = flag("--resume");
 const session = created ?? resumed ?? "00000000-0000-0000-0000-000000000000";
 if (created !== undefined) {
-  if (existsSync(join(sessions, created))) {
+  if (exists(created)) {
     console.error(`Error: Session ID ${created} is already in use.`);
     process.exit(1);
   }
-  writeFileSync(join(sessions, created), "");
+  const folder = join(projects, process.cwd().replace(/[^A-Za-z0-9]/g, "-"));
+  mkdirSync(folder, { recursive: true });
+  writeFileSync(join(folder, `${created}.jsonl`), "");
 }
-if (resumed !== undefined && !existsSync(join(sessions, resumed))) {
+if (resumed !== undefined && !exists(resumed)) {
   console.error(`No conversation found with session ID: ${resumed}`);
   process.exit(1);
+}
+if (interactive) {
+  // A Claude in a pane: it stays until its pane is closed.
+  setInterval(() => {}, 60_000);
+  await new Promise(() => {});
 }
 
 const played = join(dir, "played");

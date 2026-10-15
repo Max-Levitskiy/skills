@@ -3,7 +3,16 @@
 // exits 0, so spore records an outcome or a failure that says whether another try can help.
 import { join } from "node:path";
 
-import { checkParams, stepParams, type StepParams } from "./params.ts";
+import {
+  cameBackMessage,
+  claudeFlags,
+  cutOffMessage,
+  readInstructions,
+  readParams,
+  startMessage,
+  stepNumbers,
+} from "./claude.ts";
+import type { StepParams } from "./params.ts";
 import { answerSchema, fractionAt, isObject } from "./schema.ts";
 import { sessionId } from "./session.ts";
 
@@ -33,8 +42,6 @@ type Facts = {
   deniedTools: { tool: string; input: unknown }[];
 };
 
-const REQUIRED_ENV = ["RUNSPORE_RUN_ID", "RUNSPORE_NODE_ID", "RUNSPORE_VISIT", "RUNSPORE_ATTEMPT"] as const;
-
 // Spore's result limit is 64 KiB; the rest is room for the result's own keys.
 const TEXT_LIMIT = 63 * 1024;
 
@@ -45,40 +52,16 @@ function failure(code: string, message: string, retryable: boolean): Result {
 }
 
 export async function run(): Promise<number> {
-  const env = process.env;
-  const missing = REQUIRED_ENV.filter((name) => !env[name]);
-  if (missing.length > 0) {
-    console.error(`claude-spore run: ${missing.join(", ")} not set; it runs as a step of a spore workflow`);
-    return 2;
-  }
-  const visit = Number(env.RUNSPORE_VISIT);
-  const attempt = Number(env.RUNSPORE_ATTEMPT);
-  if (!(visit >= 1 && Number.isInteger(visit)) || !(attempt >= 1 && Number.isInteger(attempt))) {
-    console.error("claude-spore run: RUNSPORE_VISIT and RUNSPORE_ATTEMPT must be numbers from 1");
-    return 2;
-  }
-
-  const result = await step(visit, attempt);
+  const step = stepNumbers("run");
+  if (!step) return 2;
+  const result = await answer(step.visit, step.attempt);
   console.log(JSON.stringify(result));
   return 0;
 }
 
-async function step(visit: number, attempt: number): Promise<Result> {
-  let raw: unknown;
-  try {
-    raw = JSON.parse(await Bun.stdin.text());
-  } catch {
-    return failure("params.invalid", "the step's input on stdin is not JSON", false);
-  }
-  if (!isObject(raw)) return failure("params.invalid", "the step's input must be an object of node parameters", false);
-  const problems = checkParams(raw);
-  for (const warning of problems.filter((p) => p.severity === "warning")) {
-    console.error(`claude-spore run: warning: ${warning.message}`);
-  }
-  const errors = problems.filter((p) => p.severity === "error");
-  if (errors.length > 0) return failure("params.invalid", errors.map((p) => p.message).join("\n"), false);
-
-  const params = stepParams(raw);
+async function answer(visit: number, attempt: number): Promise<Result> {
+  const params = await readParams("run");
+  if (typeof params === "string") return failure("params.invalid", params, false);
   const claude = new Conversation(params, sessionId(process.env.RUNSPORE_RUN_ID!, process.env.RUNSPORE_NODE_ID!));
   try {
     return await converse(claude, params, visit, attempt);
@@ -89,11 +72,10 @@ async function step(visit: number, attempt: number): Promise<Result> {
 
 /** The session table of docs/spec.md p.18, then the answer. */
 async function converse(claude: Conversation, params: StepParams, visit: number, attempt: number): Promise<Result> {
-  const instructions = process.env.RUNSPORE_INSTRUCTIONS
-    ? (await Bun.file(process.env.RUNSPORE_INSTRUCTIONS).text()).trim()
-    : "";
+  const instructions = await readInstructions();
+  const ending = answerLine(params);
   const start = async (): Promise<Call | Result> => {
-    const call = await claude.send("start", startMessage(params, instructions));
+    const call = await claude.send("start", startMessage(params, instructions, ending));
     if (call.envelope === null && call.stderr.includes("is already in use")) {
       return failure(
         "session.foreign",
@@ -108,7 +90,10 @@ async function converse(claude: Conversation, params: StepParams, visit: number,
   if (visit === 1 && attempt === 1) {
     call = await start();
   } else {
-    const resumed = await claude.send("resume", attempt > 1 ? cutOffMessage(params) : cameBackMessage(params, visit));
+    const resumed = await claude.send(
+      "resume",
+      attempt > 1 ? cutOffMessage(params, ending) : cameBackMessage(params, visit, ending),
+    );
     if (resumed.envelope !== null || !resumed.stderr.includes("No conversation found")) {
       call = resumed;
     } else if (visit === 1) {
@@ -191,39 +176,10 @@ function textResult(outcome: string, reply: unknown): Result {
   return { outcome, output: { text: marked } };
 }
 
-function inputBlock(params: StepParams): string {
-  return `The input of this step:\n\n\`\`\`json\n${JSON.stringify(params.context, null, 2)}\n\`\`\``;
-}
-
 function answerLine(params: StepParams): string {
   return params.format === "json"
     ? "End by giving your answer with the StructuredOutput tool: the outcome that fits, and its output."
     : "End with your reply as plain text; it is the step's output.";
-}
-
-function startMessage(params: StepParams, instructions: string): string {
-  const parts = [];
-  if (instructions) parts.push(instructions);
-  if (process.env.RUNSPORE_STEP_FILES) parts.push(`The step's files are in ${process.env.RUNSPORE_STEP_FILES}.`);
-  parts.push(inputBlock(params), answerLine(params));
-  const message = parts.join("\n\n");
-  return params.skill ? `/${params.skill} ${message}` : message;
-}
-
-function cameBackMessage(params: StepParams, visit: number): string {
-  return [
-    `The run came back to this step: this is its visit ${visit}. Do the step again with the new input.`,
-    inputBlock(params),
-    answerLine(params),
-  ].join("\n\n");
-}
-
-function cutOffMessage(params: StepParams): string {
-  return [
-    "You were cut off before you finished this step. Check what you already did, then finish the step.",
-    inputBlock(params),
-    answerLine(params),
-  ].join("\n\n");
 }
 
 /** The `claude -p` calls of one try, and the facts they add up to. */
@@ -240,14 +196,7 @@ class Conversation {
 
   async send(mode: "start" | "resume", message: string): Promise<Call> {
     const { params } = this;
-    const args = ["-p", "--output-format", "json", mode === "start" ? "--session-id" : "--resume", this.session];
-    args.push("--permission-mode", "default");
-    if (params.tools) {
-      args.push("--tools", params.tools.join(","));
-      if (params.tools.length > 0) args.push("--allowedTools", params.tools.join(","));
-    }
-    if (params.model) args.push("--model", params.model);
-    if (process.env.RUNSPORE_STEP_FILES) args.push("--add-dir", process.env.RUNSPORE_STEP_FILES);
+    const args = ["-p", "--output-format", "json", ...claudeFlags(params, mode, this.session)];
     if (params.format === "json") args.push("--json-schema", JSON.stringify(answerSchema(params.schema)));
 
     let child;

@@ -17,10 +17,10 @@ permissions:
   contents: read
 
 env:
-  # runspore has published no 0.2 release yet, so the helper's specs run against spore built
-  # from this commit (docs/spec.md, Testing). Replace with the newest release and 0.2.0 once
-  # they exist.
-  RUNSPORE_REF: 808b84de4c99dc2ee0513a21485b9450b0092d17
+  # The helper's specs run against spore built from this commit (docs/spec.md, Testing): the
+  # v0.2.0 tag predates async commands (Web-tree/runspore#71), which the interactive step needs.
+  # Replace with the newest release and the oldest supported one once a release has them.
+  RUNSPORE_REF: b0c115b060582bf766757b6b6a36d35c1a62ecb3
 
 jobs:
   helper:

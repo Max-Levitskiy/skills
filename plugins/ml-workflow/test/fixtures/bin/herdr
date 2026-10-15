@@ -1,0 +1,123 @@
+#!/usr/bin/env bun
+// The fake `herdr` (docs/spec.md, Testing), first on PATH in the helper's specs. Everything lives
+// in $FAKE_HERDR_DIR:
+//   state.json      the panes ({cwd, env}) and the live agents ({pane, pid});
+//   status/<name>   an agent's state as a test set it, `idle` when absent;
+//   down            when present, every call fails as an unreachable server would;
+//   calls.jsonl     one line per call: its args.
+// `agent start` starts the `claude` on PATH, detached, in the pane's folder with the pane's
+// environment, so the helper finds a real process; `pane close` kills it.
+import { spawn } from "node:child_process";
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+
+type Pane = { cwd: string; env: Record<string, string> };
+type State = { next: number; panes: Record<string, Pane>; agents: Record<string, { pane: string; pid: number }> };
+
+const dir = process.env.FAKE_HERDR_DIR;
+if (!dir) {
+  console.error("fake herdr: FAKE_HERDR_DIR is not set");
+  process.exit(1);
+}
+const args = process.argv.slice(2);
+appendFileSync(join(dir, "calls.jsonl"), `${JSON.stringify({ args })}\n`);
+
+const out = (result: unknown) => {
+  console.log(JSON.stringify({ id: "fake", result }));
+  process.exit(0);
+};
+const fail = (code: string): never => {
+  console.error(JSON.stringify({ error: { code, message: `fake herdr: ${code}` } }));
+  process.exit(1);
+};
+if (existsSync(join(dir, "down"))) fail("unavailable");
+
+const stateFile = join(dir, "state.json");
+const state: State = existsSync(stateFile)
+  ? JSON.parse(readFileSync(stateFile, "utf8"))
+  : { next: 1, panes: {}, agents: {} };
+const save = () => writeFileSync(stateFile, JSON.stringify(state));
+const flag = (name: string) => {
+  const i = args.indexOf(name);
+  return i >= 0 ? args[i + 1] : undefined;
+};
+const alive = (pid: number) => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
+const live = (name: string) => {
+  const agent = state.agents[name];
+  return agent && alive(agent.pid) ? agent : null;
+};
+const shown = (name: string, agent: { pane: string }) => {
+  const file = join(dir, "status", name);
+  const status = existsSync(file) ? readFileSync(file, "utf8").trim() : "idle";
+  return { name, agent: "claude", pane_id: agent.pane, agent_status: status };
+};
+
+const [group, command] = args;
+if (group === "status" && command === "server") out({ server: { running: true, compatible: true } });
+
+if (group === "workspace" && command === "create") {
+  const pane = `w${state.next++}:p1`;
+  const env: Record<string, string> = {};
+  args.forEach((arg, i) => {
+    if (arg !== "--env") return;
+    const [key, ...value] = args[i + 1]!.split("=");
+    env[key!] = value.join("=");
+  });
+  state.panes[pane] = { cwd: flag("--cwd") ?? process.cwd(), env };
+  save();
+  out({ workspace: { workspace_id: `w${state.next - 1}`, label: flag("--label") }, root_pane: { pane_id: pane } });
+}
+
+if (group === "agent" && command === "start") {
+  const name = args[2]!;
+  const paneId = flag("--pane")!;
+  const pane = state.panes[paneId] ?? fail("pane_not_found");
+  if (live(name)) fail("agent_name_taken");
+  const claudeArgs = args.slice(args.indexOf("--") + 1);
+  const child = spawn("claude", claudeArgs, {
+    cwd: pane.cwd,
+    env: { ...process.env, ...pane.env },
+    detached: true,
+    stdio: "ignore",
+  });
+  child.unref();
+  state.agents[name] = { pane: paneId, pid: child.pid! };
+  save();
+  // The real one returns once the agent is ready for input.
+  await Bun.sleep(300);
+  out({ agent: shown(name, state.agents[name]!) });
+}
+
+if (group === "agent" && (command === "get" || command === "prompt")) {
+  const name = args[2]!;
+  const agent = live(name) ?? fail("agent_not_found");
+  out({ agent: shown(name, agent) });
+}
+
+if (group === "agent" && command === "list") {
+  out({ agents: Object.keys(state.agents).filter(live).map((name) => shown(name, state.agents[name]!)) });
+}
+
+if (group === "pane" && command === "close") {
+  const pane = args[2]!;
+  if (!state.panes[pane]) fail("pane_not_found");
+  for (const [name, agent] of Object.entries(state.agents)) {
+    if (agent.pane !== pane) continue;
+    try {
+      process.kill(agent.pid, "SIGTERM");
+    } catch {}
+    delete state.agents[name];
+  }
+  delete state.panes[pane];
+  save();
+  out({ type: "ok", target: pane });
+}
+
+fail("unexpected_fixture_command");
