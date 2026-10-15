@@ -18,9 +18,10 @@ permissions:
 
 env:
   # The helper's specs run against spore built from this commit (docs/spec.md, Testing): the
-  # v0.2.0 tag predates async commands (Web-tree/runspore#71), which the interactive step needs.
+  # v0.2.0 tag predates async commands (Web-tree/runspore#71), which the interactive step needs,
+  # and `continue --wait` and `cancel` (#73, #74), which following and cancelling a run need.
   # Replace with the newest release and the oldest supported one once a release has them.
-  RUNSPORE_REF: b0c115b060582bf766757b6b6a36d35c1a62ecb3
+  RUNSPORE_REF: 814764512eab0da8de936c30ce698e40079474bb
 
 jobs:
   helper:
