@@ -340,6 +340,62 @@ describe("watch", () => {
     expect(watched.stdout).toBe("");
   });
 
+  describe("a message is never typed while Claude works or asks a question: the watch sends it once Claude is quiet", () => {
+    /** The prompts herdr got, once there are `count` of them. */
+    async function prompts(count: number, ms = 5000) {
+      const end = Date.now() + ms;
+      while (herdrCalls("agent", "prompt").length < count && Date.now() < end) await Bun.sleep(25);
+      return herdrCalls("agent", "prompt").map((args) => args[3]!);
+    }
+
+    test("a later try's, while Claude goes on after it reported", async () => {
+      const { result, stdout } = start();
+      herdr.status(result.herdrAgent, "working");
+      expect(start({ attempt: 2 }).stdout).toBe(stdout);
+      expect(herdrCalls("agent", "prompt")).toHaveLength(1);
+      const record = readJson(join(work, "pane.json"));
+      expect(record.attempt).toBe(2);
+      expect(record.unsent).toStartWith("You were cut off");
+
+      const watch = watching(stdout, { attempt: 2 });
+      await Bun.sleep(300);
+      expect(herdrCalls("agent", "prompt")).toHaveLength(1);
+      herdr.status(result.herdrAgent, "blocked");
+      expect((await watch.until(1)).map((l) => JSON.parse(l))).toEqual([NEEDS]);
+      expect(herdrCalls("agent", "prompt")).toHaveLength(1);
+
+      herdr.status(result.herdrAgent, "idle");
+      const [, message] = await prompts(2);
+      expect(message).toStartWith("You were cut off before you finished this step.");
+      expect(message).toContain("claude-spore report --attempt 2 --outcome");
+      expect(readJson(join(work, "pane.json")).unsent).toBeUndefined();
+
+      report("ok", '{"summary": "Done."}', { attempt: 2 });
+      expect(await watch.child.exited).toBe(0);
+      expect(JSON.parse(watch.lines().at(-1)!)).toEqual({ outcome: "ok", output: { summary: "Done." } });
+      expect(herdrCalls("agent", "prompt")).toHaveLength(2);
+    });
+
+    test("a new pane's first, kept with a later try's report command when that try comes first", async () => {
+      const first = start();
+      run("stop", { stdin: first.stdout });
+      herdr.status(first.result.herdrAgent, "working");
+      const work2 = join(root, "work", "inv2");
+      const second = start({ visit: 2, workDir: work2 });
+      expect(second.exitCode).toBe(0);
+      expect(start({ visit: 2, attempt: 2, workDir: work2 }).stdout).toBe(second.stdout);
+      expect(herdrCalls("agent", "prompt")).toHaveLength(1);
+
+      herdr.status(first.result.herdrAgent, "idle");
+      const watch = watching(second.stdout, { visit: 2, attempt: 2, workDir: work2 });
+      const [, message] = await prompts(2);
+      expect(message).toStartWith("The run came back to this step: this is its visit 2.");
+      expect(message).toContain("claude-spore report --attempt 2 --outcome");
+      expect(message).not.toContain("--attempt 1");
+      watch.child.kill();
+    });
+  });
+
   test("a gone pane's result is still printed", () => {
     const { stdout } = start();
     report("ok", '{"summary": "Done."}');
