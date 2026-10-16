@@ -163,20 +163,30 @@ state.
 ### Running the agent on a remote machine
 
 The page is served on `127.0.0.1` by default, so only a browser on the same machine can open
-it. When the agent runs on a remote box, two environment variables let `serve` put the page
-in front of you:
+it. When the agent runs on a remote box, tell `serve` once per machine, in the global layer of
+[agent-config](../../../ml-agent-config) (`/agent-config` pane, or `agent-config write`):
 
-- `GRILL_HOST` — the address to bind and to put in the url. `tailscale` picks this machine's
-  Tailscale IPv4, so the page is reachable from your tailnet and nothing else. Any other value
-  is used as-is. Binding `0.0.0.0` exposes the Send endpoint to the whole network; avoid it.
-- `GRILL_OPEN` — a shell command run with the url as its last argument once the server is
-  listening, on every start and resume.
+```json
+{ "remote": { "enabled": true, "host": "tailscale", "open": "ssh -o BatchMode=yes mac open" } }
+```
 
-For a Linux box with a Mac on the same tailnet that it can SSH into without a password:
+- `remote.host` — the address to bind and to put in the url. `tailscale` (the default) picks
+  this machine's Tailscale IPv4, so the page is reachable from your tailnet and nothing else.
+  Any other value is used as-is. Binding `0.0.0.0` exposes the Send endpoint to the whole
+  network; avoid it.
+- `remote.open` — a shell command run with the url as its last argument once the server is
+  listening, on every start and resume. Empty prints the url only.
+
+The skill needs no instructions for either mode: `serve` reads the config itself, and its
+ready line says `"opened": true` when it ran the opener. Without agent-config installed, or with
+`remote.enabled` false, it behaves exactly as upstream.
+
+agent-config reads the global layer from your home folder, so to run the tests below as
+upstream does on a machine with `remote.enabled`, point `HOME` at an empty folder: they expect
+`127.0.0.1`, and an opener would open every test server in your browser.
 
 ```sh
-export GRILL_HOST=tailscale
-export GRILL_OPEN="ssh -o BatchMode=yes mac open"
+HOME=$(mktemp -d) node --test test/server.test.mjs
 ```
 
 ## Tests

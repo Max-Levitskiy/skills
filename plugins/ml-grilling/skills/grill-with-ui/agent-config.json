@@ -1,0 +1,36 @@
+{
+  "$schema": "../../../ml-agent-config/agent-config.schema.json",
+  "version": 2,
+  "name": "grill-with-ui",
+  "schema": {
+    "version": 1,
+    "keys": {
+      "remote.enabled": {
+        "description": "The agent runs on a different machine from your browser, so the page is served on a network address instead of 127.0.0.1",
+        "layer": "global",
+        "default": false,
+        "type": "boolean"
+      }
+    },
+    "groups": [
+      {
+        "when": "remote.enabled",
+        "keys": {
+          "remote.host": {
+            "description": "The address to serve the page on: `tailscale` picks this machine's Tailscale IPv4, anything else is used as-is. Never 0.0.0.0, which exposes the Send endpoint to the whole network",
+            "layer": "global",
+            "default": "tailscale",
+            "type": "string",
+            "minLength": 1
+          },
+          "remote.open": {
+            "description": "A shell command run with the page url as its last argument once the server is listening, e.g. `ssh -o BatchMode=yes mac open`; empty prints the url only",
+            "layer": "global",
+            "default": "",
+            "type": "string"
+          }
+        }
+      }
+    ]
+  }
+}
