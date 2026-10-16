@@ -1,5 +1,5 @@
 import { expect, mock, test } from 'claude-code/testing'
-import type { On } from 'claude-code'
+import type { On, RenderElement } from 'claude-code'
 
 import { PLUGIN_VERSION } from '../src/version'
 
@@ -82,7 +82,9 @@ function world(on: On, version: World['version'], doctor: Answer = { exitCode: 0
     w.blits.push(`${e.requestId}/${e.key}`)
     return { value: w.blit }
   })
-  on('tool.call', { tool: 'Bash' }, () => ({ result: {} as never }))
+  on('tool.call', { tool: 'Bash' }, () => ({ result: { stdout: '', stderr: '', interrupted: false } }))
+  // The engine's own band, empty: what the mod's band passes to when no run line shows.
+  on('ui.render', { component: 'AbovePrompt' }, ($, e) => h($.ui.resolve(e).Box, {}) as RenderElement)
   on('skill.prompt', ($, e) => ({ text: e.text }))
   on('ui.open', ($, e) => {
     w.opens.push(e.id)
