@@ -7,16 +7,16 @@ import type { EngineInterface, On, RenderElement, UiOpenResult } from 'claude-co
 
 import type { FileLine, Followed, LiveView, RunLine, Span } from '../types'
 
-const PLUGIN = 'ml-workflow'
 const HERE = '#ffd43b'
 const TAKEN = '#e8590c'
 const POLL_MS = 1000
 
-const followed = atom({ plugin: PLUGIN, key: 'followed' } as const, [] as Followed[])
-const views = atom({ plugin: PLUGIN, key: 'views' } as const, {} as Record<string, LiveView>)
-const pictures = atom({ plugin: PLUGIN, key: 'pictures' } as const, null as boolean | null)
-const full = atom({ plugin: PLUGIN, key: 'full' } as const, [] as string[])
-const polling = atom({ plugin: PLUGIN, key: 'polling' } as const, false)
+// `claude plugin validate` holds each `$.state` reference to the contract by its literal plugin and key.
+const followed = atom({ plugin: 'ml-workflow', key: 'followed' } as const, [] as Followed[])
+const views = atom({ plugin: 'ml-workflow', key: 'views' } as const, {} as Record<string, LiveView>)
+const pictures = atom({ plugin: 'ml-workflow', key: 'pictures' } as const, null as boolean | null)
+const full = atom({ plugin: 'ml-workflow', key: 'full' } as const, [] as string[])
+const polling = atom({ plugin: 'ml-workflow', key: 'polling' } as const, false)
 
 // The open views, by run, with the database each was opened with, and the ended runs whose open
 // view already has its last picture. The module's own: a reload drops the panes too.
