@@ -1,0 +1,331 @@
+<!--
+Topic: Claude steps without the claude-spore binary (diagram, v1 first cut).
+Reflects:
+  q1  one step runner, both run modes; run mode = agent-config default, node parameter wins
+  q2  answer handed in through a Claude Code hook (Stop), same path in a herdr pane
+  q3  spore records "step needs you"; status, continue and the menu show it
+  q4  runner is a WASM module sealed into the workflow; a run keeps the runner it started with
+  q5  Claude starts in the project folder with the normal setup, plus an optional step plugin
+      that adds and switches off plugins, tool servers, tools
+  q6  herdr unreachable = ordinary retryable failure, back-off, then pause for a person
+  q7  spore checks the final message against the step's output schema; refused -> fix, up to the limit
+  q8  the workflow lists the runner's rights; spore enforces exactly that list
+  q9  runspore "module host" issue blocks the plugin switch; claude-spore stays until then
+  q10 "asking you" is an allowed answer; run waits for the reply, then resumes the same conversation
+Assumed regions: none (every question answered).
+Marked "to check": switching a plugin off for one session (q5 thread: not yet tried).
+Proposed default, not a question: 3 tries from a 30 s wait (q6 thread).
+-->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Claude Step Runner</title>
+<style>
+  :root {
+    --bg: #fbfaf7; --ink: #1d1d1b; --muted: #66645e; --line: #3a3936;
+    --box: #ffffff; --stroke: #b9b5ab;
+    --spore: #eef3f8; --spore-stroke: #6f8fb0;
+    --seal: #f3eefa; --seal-stroke: #8a6fb5;
+    --claude: #f6f1e8; --claude-stroke: #b08a52;
+    --hook: #fff8ec;
+    --you: #e7f4ec; --you-stroke: #4f9a6c;
+    --today: #efefed; --today-stroke: #9a9892;
+    --warn: #b0661c; --warn-bg: #fdf0e1;
+    --bad: #b5463a;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #171716; --ink: #ecebe6; --muted: #a3a19a; --line: #cfcdc6;
+      --box: #22221f; --stroke: #55534d;
+      --spore: #1b2430; --spore-stroke: #6f8fb0;
+      --seal: #251f30; --seal-stroke: #9b83c4;
+      --claude: #2a241b; --claude-stroke: #b08a52;
+      --hook: #2e2718;
+      --you: #1a2b21; --you-stroke: #5fae7d;
+      --today: #262624; --today-stroke: #77756f;
+      --warn: #e6a35c; --warn-bg: #3a2a17;
+      --bad: #e07b6e;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #171716; --ink: #ecebe6; --muted: #a3a19a; --line: #cfcdc6;
+    --box: #22221f; --stroke: #55534d;
+    --spore: #1b2430; --spore-stroke: #6f8fb0;
+    --seal: #251f30; --seal-stroke: #9b83c4;
+    --claude: #2a241b; --claude-stroke: #b08a52;
+    --hook: #2e2718;
+    --you: #1a2b21; --you-stroke: #5fae7d;
+    --today: #262624; --today-stroke: #77756f;
+    --warn: #e6a35c; --warn-bg: #3a2a17;
+    --bad: #e07b6e;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  header { padding: 16px 16px 4px; max-width: 1320px; margin: 0 auto; }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  header p { margin: 0 0 10px; color: var(--muted); }
+  .legend { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 12.5px; color: var(--muted); }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .sw { width: 22px; height: 14px; border-radius: 3px; border: 1.5px solid; display: inline-block; }
+  .wrap { padding: 8px 16px 24px; max-width: 1320px; margin: 0 auto; overflow-x: auto; }
+  svg { width: 100%; min-width: 900px; height: auto; display: block; }
+  svg text { fill: var(--ink); font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; font-size: 12.5px; }
+  svg .t { font-weight: 650; font-size: 13.5px; }
+  svg .big { font-weight: 700; font-size: 15px; }
+  svg .m { fill: var(--muted); font-size: 12px; }
+  svg .lbl { font-size: 11.5px; fill: var(--ink); paint-order: stroke; stroke: var(--bg); stroke-width: 4px; stroke-linejoin: round; }
+  svg .lbl-bad { fill: var(--bad); }
+  .b { fill: var(--box); stroke: var(--stroke); stroke-width: 1.2; }
+  .spore { fill: var(--spore); stroke: var(--spore-stroke); stroke-width: 1.6; }
+  .seal { fill: var(--seal); stroke: var(--seal-stroke); stroke-width: 1.6; stroke-dasharray: 1 0; }
+  .seal-in { fill: var(--box); stroke: var(--seal-stroke); stroke-width: 1.2; }
+  .claude { fill: var(--claude); stroke: var(--claude-stroke); stroke-width: 1.6; }
+  .hook { fill: var(--hook); stroke: var(--claude-stroke); stroke-width: 1.2; }
+  .you { fill: var(--you); stroke: var(--you-stroke); stroke-width: 1.6; }
+  .today { fill: var(--today); stroke: var(--today-stroke); stroke-width: 1.2; }
+  .chip { fill: var(--seal); stroke: var(--seal-stroke); stroke-width: 1; }
+  .warn { fill: var(--warn-bg); stroke: var(--warn); stroke-width: 1; }
+  svg .warn-t { fill: var(--warn); font-size: 11.5px; font-weight: 600; }
+  .a { fill: none; stroke: var(--line); stroke-width: 1.5; marker-end: url(#ah); }
+  .a-bad { fill: none; stroke: var(--bad); stroke-width: 1.5; marker-end: url(#ahb); stroke-dasharray: 5 3; }
+  .a-you { fill: none; stroke: var(--you-stroke); stroke-width: 1.7; marker-end: url(#ahy); }
+  .ah { fill: var(--line); } .ahb { fill: var(--bad); } .ahy { fill: var(--you-stroke); }
+</style>
+</head>
+<body>
+<header>
+  <h1>How a Claude step runs once claude-spore is gone</h1>
+  <p>Every question is answered, so nothing on this page is assumed. Hooks report to spore; spore owns the lease, the schema check and the "needs you" mark.</p>
+  <div class="legend">
+    <span><i class="sw" style="background:var(--spore);border-color:var(--spore-stroke)"></i>spore (Rust, Wasmtime)</span>
+    <span><i class="sw" style="background:var(--seal);border-color:var(--seal-stroke)"></i>sealed in the workflow</span>
+    <span><i class="sw" style="background:var(--claude);border-color:var(--claude-stroke)"></i>Claude Code</span>
+    <span><i class="sw" style="background:var(--you);border-color:var(--you-stroke);border-radius:8px"></i>you</span>
+    <span><i class="sw" style="background:var(--today);border-color:var(--today-stroke)"></i>today, until replaced</span>
+    <span><i class="sw" style="background:var(--warn-bg);border-color:var(--warn)"></i>to check first</span>
+    <span><svg width="30" height="10" style="min-width:0;width:30px"><line x1="0" y1="5" x2="30" y2="5" stroke="var(--bad)" stroke-width="1.5" stroke-dasharray="5 3"/></svg>refused, back to Claude</span>
+  </div>
+</header>
+<div class="wrap">
+<svg viewBox="0 0 1310 940" role="img" aria-label="Diagram: spore hosts the sealed runner module, which starts Claude Code in a herdr pane or as a plain process; Claude Code hooks report back to spore.">
+  <defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0,0 L10,5 L0,10 z"/></marker>
+    <marker id="ahb" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ahb" d="M0,0 L10,5 L0,10 z"/></marker>
+    <marker id="ahy" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ahy" d="M0,0 L10,5 L0,10 z"/></marker>
+  </defs>
+
+  <!-- ========== YOU (actor) ========== -->
+  <rect class="you" x="990" y="6" width="270" height="46" rx="23"/>
+  <text x="1125" y="25" text-anchor="middle" class="t">you</text>
+  <text x="1125" y="42" text-anchor="middle" class="m">reply in the pane or the plugin menu</text>
+
+  <!-- ========== SPORE HOST ========== -->
+  <rect class="spore" x="20" y="70" width="1240" height="340" rx="10"/>
+  <text x="36" y="93" class="big">spore worker / host</text>
+  <text x="236" y="93" class="m">Rust · loads the runner module in Wasmtime</text>
+
+  <!-- workflow artifact (sealed) -->
+  <rect class="seal" x="40" y="106" width="400" height="290" rx="8"/>
+  <text x="56" y="126" class="t">workflow artifact (sealed)</text>
+
+  <rect class="seal-in" x="56" y="138" width="368" height="124" rx="6"/>
+  <text x="70" y="159" class="t">runner module (WASM)</text>
+  <text x="70" y="178">starts, checks and stops Claude for one step</text>
+  <text x="70" y="198" class="m">a run keeps the runner it started with (Q4)</text>
+  <text x="70" y="214" class="m">rights: the workflow's list, never asked (Q8)</text>
+  <rect class="chip" x="70" y="226" width="118" height="24" rx="12"/>
+  <text x="129" y="242" text-anchor="middle">start programs</text>
+  <rect class="chip" x="198" y="226" width="110" height="24" rx="12"/>
+  <text x="253" y="242" text-anchor="middle">talk to herdr</text>
+
+  <rect class="seal-in" x="56" y="274" width="368" height="108" rx="6"/>
+  <text x="70" y="295" class="t">node settings</text>
+  <text x="70" y="314">run mode · step plugin · things to switch off</text>
+  <text x="70" y="333">output schema · tries and waits</text>
+  <text x="70" y="352" class="m">the node's own setting wins over your</text>
+  <text x="70" y="368" class="m">agent-config default (Q1)</text>
+
+  <!-- upper row of spore checks -->
+  <rect class="b" x="470" y="106" width="230" height="124" rx="6"/>
+  <text x="484" y="127" class="t">retry with back-off (Q6)</text>
+  <text x="484" y="147">herdr unreachable: a failure</text>
+  <text x="484" y="166">default: 3 tries, 30 s wait</text>
+  <text x="484" y="185" class="m">settings.json can change it</text>
+  <text x="484" y="205">then the run pauses for you;</text>
+  <text x="484" y="222" class="m">resume once herdr is back</text>
+
+  <rect class="b" x="740" y="106" width="230" height="124" rx="6"/>
+  <text x="754" y="127" class="t">step done</text>
+  <text x="754" y="147">the final message is the</text>
+  <text x="754" y="166">step's answer</text>
+  <text x="754" y="190" class="m">the run follows the next arrow</text>
+  <text x="754" y="207" class="m">in workflow.dot</text>
+
+  <rect class="b" x="1010" y="106" width="230" height="124" rx="6"/>
+  <text x="1024" y="127" class="t">asking you (Q10)</text>
+  <text x="1024" y="147">an allowed answer of the step</text>
+  <text x="1024" y="166">the run waits for your reply</text>
+  <text x="1024" y="190" class="m">kept in spore, so it survives</text>
+  <text x="1024" y="207" class="m">a closed pane or session</text>
+
+  <!-- lower row of spore checks -->
+  <rect class="b" x="470" y="270" width="230" height="124" rx="6"/>
+  <text x="484" y="291" class="t">lease + liveness check</text>
+  <text x="484" y="311">heartbeat renews the lease</text>
+  <text x="484" y="330">plus the runner's alive? check</text>
+  <text x="484" y="354" class="m">safety net when hooks go quiet:</text>
+  <text x="484" y="371" class="m">a lapsed lease fails the step</text>
+
+  <rect class="b" x="740" y="270" width="230" height="124" rx="6"/>
+  <text x="754" y="291" class="t">output schema check (Q7)</text>
+  <text x="754" y="311">checks the final message</text>
+  <text x="754" y="330">against the step's schema</text>
+  <text x="754" y="354" class="m">as runspore does for any step;</text>
+  <text x="754" y="371" class="m">same in both run modes</text>
+
+  <rect class="b" x="1010" y="270" width="230" height="124" rx="6"/>
+  <text x="1024" y="291" class="t">step needs you (Q3)</text>
+  <text x="1024" y="311">recorded on the step in spore</text>
+  <text x="1024" y="330">shown by spore status, continue</text>
+  <text x="1024" y="349">and the Claude Code menu</text>
+  <text x="1024" y="371" class="m">from any terminal</text>
+
+  <!-- arrows inside spore -->
+  <path class="a-you" d="M1125,52 L1125,104"/>
+  <text x="1133" y="84" class="lbl">your reply</text>
+
+  <path class="a" d="M424,180 L468,180"/>
+  <text x="446" y="172" class="lbl" text-anchor="middle">fails</text>
+
+  <path class="a" d="M585,270 L585,232"/>
+  <text x="593" y="256" class="lbl">lease lapses</text>
+
+  <path class="a" d="M855,270 L855,232"/>
+  <text x="863" y="256" class="lbl">fits</text>
+
+  <path class="a" d="M960,270 L1022,232"/>
+  <text x="976" y="246" class="lbl">"asking you"</text>
+
+  <path class="a" d="M1125,230 L1125,268"/>
+  <text x="1133" y="254" class="lbl">shown as</text>
+
+  <!-- resume: back into the same conversation -->
+  <path class="a-you" d="M1240,150 L1280,150 L1280,720 L1242,720"/>
+  <text x="1290" y="440" class="lbl" transform="rotate(90 1290 440)" text-anchor="middle">your reply goes back into the same conversation</text>
+
+  <!-- ========== RUN MODES ========== -->
+  <path class="a" d="M110,396 L110,488"/>
+  <text x="118" y="440" class="lbl">starts Claude</text>
+  <text x="118" y="455" class="lbl">in the run mode</text>
+
+  <rect class="b" x="40" y="490" width="140" height="250" rx="8"/>
+  <text x="54" y="514" class="t">run mode (Q1)</text>
+  <text x="54" y="538" class="m">agent-config</text>
+  <text x="54" y="554" class="m">default,</text>
+  <text x="54" y="570" class="m">overridden</text>
+  <text x="54" y="586" class="m">per node</text>
+
+  <rect class="b" x="220" y="490" width="220" height="110" rx="8"/>
+  <text x="234" y="512" class="t">herdr pane</text>
+  <text x="234" y="531">watched step</text>
+  <text x="234" y="551" class="m">you can look and type in</text>
+  <text x="234" y="568" class="m">herdr tracks it by its own</text>
+  <text x="234" y="585" class="m">state hook</text>
+
+  <rect class="b" x="220" y="630" width="220" height="110" rx="8"/>
+  <text x="234" y="652" class="t">plain claude process</text>
+  <text x="234" y="671">background step</text>
+  <text x="234" y="691" class="m">no window; the answer is</text>
+  <text x="234" y="708" class="m">collected when it finishes</text>
+
+  <path class="a" d="M180,545 L218,545"/>
+  <path class="a" d="M180,685 L218,685"/>
+  <path class="a" d="M440,545 L468,545"/>
+  <path class="a" d="M440,685 L468,685"/>
+
+  <!-- ========== CLAUDE CODE ========== -->
+  <rect class="claude" x="470" y="470" width="770" height="312" rx="10"/>
+  <text x="908" y="494" class="big">Claude Code session</text>
+  <text x="908" y="512" class="m">starts in the project folder</text>
+
+  <rect class="hook" x="486" y="526" width="100" height="70" rx="6"/>
+  <text x="536" y="553" text-anchor="middle" class="t">heartbeat</text>
+  <text x="536" y="572" text-anchor="middle" class="m">while working</text>
+
+  <rect class="hook" x="596" y="526" width="100" height="70" rx="6"/>
+  <text x="646" y="553" text-anchor="middle" class="t">SessionEnd</text>
+  <text x="646" y="572" text-anchor="middle" class="m">session closed</text>
+
+  <rect class="hook" x="756" y="526" width="198" height="70" rx="6"/>
+  <text x="855" y="553" text-anchor="middle" class="t">Stop</text>
+  <text x="855" y="572" text-anchor="middle" class="m">final message to spore</text>
+
+  <rect class="hook" x="1026" y="526" width="198" height="70" rx="6"/>
+  <text x="1125" y="553" text-anchor="middle" class="t">Notification</text>
+  <text x="1125" y="572" text-anchor="middle" class="m">Claude is waiting on you</text>
+
+  <!-- hook arrows up to spore -->
+  <path class="a" d="M536,526 L536,396"/>
+  <text x="530" y="440" class="lbl" text-anchor="end">renew lease</text>
+  <path class="a" d="M646,526 L646,396"/>
+  <text x="652" y="458" class="lbl">session closed</text>
+
+  <path class="a" d="M820,526 L820,396"/>
+  <text x="814" y="425" class="lbl" text-anchor="end">final message</text>
+  <path class="a-bad" d="M890,394 L890,524"/>
+  <text x="898" y="432" class="lbl lbl-bad">refused: spore's error</text>
+  <text x="898" y="447" class="lbl lbl-bad">back to Claude to fix,</text>
+  <text x="898" y="462" class="lbl lbl-bad">up to the fix limit</text>
+
+  <path class="a" d="M1125,526 L1125,396"/>
+  <text x="1133" y="440" class="lbl">mark: needs you</text>
+
+  <!-- setup -->
+  <text x="486" y="614" class="m">these hooks call the spore CLI</text>
+  <text x="486" y="636" class="m">loaded at start (Q5)</text>
+  <rect class="b" x="486" y="646" width="370" height="120" rx="6"/>
+  <text x="500" y="668" class="t">your normal setup</text>
+  <text x="500" y="688">installed plugins, skills, settings</text>
+  <text x="500" y="707">the project's CLAUDE.md and settings</text>
+  <text x="500" y="731" class="m">herdr's state hook comes along with it</text>
+  <text x="500" y="748" class="m">a run depends on what its starter installed</text>
+
+  <text x="878" y="712" class="big" text-anchor="middle">+</text>
+
+  <rect class="b" x="900" y="646" width="324" height="120" rx="6"/>
+  <text x="914" y="668" class="t">step plugin</text>
+  <text x="1010" y="668" class="m">optional, per node</text>
+  <text x="914" y="688">adds plugins, tool servers, tools</text>
+  <text x="914" y="707">switches off chosen ones</text>
+  <rect class="warn" x="914" y="720" width="296" height="34" rx="5"/>
+  <text x="924" y="734" class="warn-t">to check first: switching a plugin off</text>
+  <text x="924" y="748" class="warn-t">for one session (not tried yet)</text>
+
+  <!-- ========== ORDER OF WORK (Q9) ========== -->
+  <text x="40" y="812" class="big">Order of work (Q9)</text>
+  <text x="234" y="812" class="m">a GitHub blocking link, not a note in the text</text>
+
+  <rect class="spore" x="40" y="826" width="360" height="96" rx="8"/>
+  <text x="56" y="849" class="t">runspore issue: module host</text>
+  <text x="56" y="869">rights to start programs and reach herdr,</text>
+  <text x="56" y="888">sealing, crash tests</text>
+
+  <path class="a" d="M400,874 L478,874"/>
+  <text x="439" y="866" class="lbl" text-anchor="middle">blocks</text>
+
+  <rect class="seal" x="480" y="826" width="380" height="96" rx="8"/>
+  <text x="496" y="849" class="t">ml-workflow: Claude steps move to the</text>
+  <text x="496" y="867" class="t">runner module and hooks</text>
+  <text x="496" y="890" class="m">starts once runspore can load modules</text>
+
+  <rect class="today" x="900" y="826" width="340" height="96" rx="8"/>
+  <text x="916" y="849" class="t">until then: claude-spore stays as it is</text>
+  <text x="916" y="869">its start, probe, watch and stop commands</text>
+  <text x="916" y="888" class="m">keep running Claude steps unchanged</text>
+</svg>
+</div>
+</body>
+</html>
