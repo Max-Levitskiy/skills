@@ -178,7 +178,7 @@ describe.skipIf(!follows())(`following a run under a real spore ${version ?? ""}
     workflow("watched", WATCHED_DOT, WATCHED, { "implement.md": "Implement the task.\n" });
     for (const name of ["decide", "stuck", "manual", "watched"]) expect(spore("validate", name).exitCode).toBe(0);
     db = spore("list", "--json").json.db;
-  });
+  }, SLOW);
 
   afterAll(() => {
     herdr.dispose();

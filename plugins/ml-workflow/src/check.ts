@@ -67,7 +67,7 @@ async function checkFolder(folder: string): Promise<{ problems: NodeProblem[]; s
 }
 
 /** `run` or `start` for a `command` running `claude-spore run` or `start`, by name or by a path to it. */
-function claudeStep(action: unknown): "run" | "start" | null {
+export function claudeStep(action: unknown): "run" | "start" | null {
   if (!isObject(action) || action.kind !== "command" || !Array.isArray(action.argv)) return null;
   const [program, command] = action.argv;
   if (typeof program !== "string" || basename(program) !== "claude-spore") return null;

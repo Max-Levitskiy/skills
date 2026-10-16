@@ -9,6 +9,7 @@ const USAGE = `usage: claude-spore --version
        claude-spore install-spore
        claude-spore launcher install | decline
        claude-spore check <folder> [--json]
+       claude-spore example list [--json] | copy <name> <folder> [--watch <node>]...
        claude-spore run
        claude-spore start | probe | watch | stop
        claude-spore report --attempt <n> --outcome <outcome>
@@ -19,6 +20,7 @@ The ml-workflow helper (docs/spec.md).
   install-spore  installs or updates spore from a signed release
   launcher       installs the claude-spore launcher in ~/.local/bin, or declines it
   check          checks the node parameters of every Claude step in a workflow folder
+  example        lists the workflows the plugin ships, or copies one into a project
   run            a background Claude step; spore runs it, with the parameters on stdin
   start          an interactive Claude step in a herdr pane; prints its holder handle
   probe          answers whether the pane's Claude still runs, the handle on stdin
@@ -48,6 +50,10 @@ export async function main(argv: string[]): Promise<number> {
   if (command === "check") {
     const { check } = await import("./check.ts");
     return check(rest);
+  }
+  if (command === "example") {
+    const { example } = await import("./example.ts");
+    return example(rest);
   }
   if (command === "run") {
     const { run } = await import("./run.ts");
