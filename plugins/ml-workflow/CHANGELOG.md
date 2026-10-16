@@ -2,6 +2,10 @@
 
 What each ml-workflow version changed. Every change to the plugin raises the version and adds its section here with `bun scripts/plugin-version.ts bump` (AGENTS.md, Releasing a plugin). Versions up to 0.9.0 are in the git history of `.claude-plugin/plugin.json`.
 
+## 0.11.2
+
+- A watched step's message goes only once Claude is ready, and counts as sent once it lands: Claude turns working or its transcript gains a turn; one that does not land is typed again, 3 times in all, then the watch tells the person. A pane that stays quiet with no answer for a minute after its message needs the person (skills#118).
+
 ## 0.11.1
 
 - Opening a watched step's pane no longer loses a try when the pane's shell is slow to its prompt: start tries agent start again for up to 60 s while no Claude holds the session (skills#119).

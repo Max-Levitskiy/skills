@@ -53,6 +53,18 @@ function readJson(file: string): any {
   return JSON.parse(readFileSync(file, "utf8"));
 }
 
+/** `pane.json` once its message has landed and left it, or as it is after `ms`. */
+async function landed(dir = work, ms = 5000) {
+  const end = Date.now() + ms;
+  while (Date.now() < end) {
+    try {
+      if (readJson(join(dir, "pane.json")).unsent === undefined) break;
+    } catch {}
+    await Bun.sleep(25);
+  }
+  return readJson(join(dir, "pane.json"));
+}
+
 describe("start", () => {
   test("opens a pane in the action's working folder with the work folder and database, and prints the handle", () => {
     const stepFiles = join(root, "step-files");
@@ -355,6 +367,69 @@ describe("watch", () => {
     expect(watch.lines().map((l) => JSON.parse(l))).toEqual([{ outcome: "ok", output: { summary: "Done." } }]);
   });
 
+  test("a pane that stays quiet past the idle wait after its message needs the person", async () => {
+    const { stdout } = start();
+    const watch = watching(stdout, { env: { CLAUDE_SPORE_IDLE_MS: "300" } });
+
+    expect((await watch.until(1)).map((l) => JSON.parse(l))).toEqual([NEEDS]);
+    report("ok", '{"summary": "Done."}');
+    expect(await watch.child.exited).toBe(0);
+    expect(watch.lines().map((l) => JSON.parse(l))).toEqual([NEEDS, { outcome: "ok", output: { summary: "Done." } }]);
+  });
+
+  describe("a message goes once Claude is ready, and leaves pane.json only once it lands", () => {
+    const quick = { CLAUDE_SPORE_DELIVERY_WAIT_MS: "300" };
+    const prompts = () => herdrCalls("agent", "prompt").map((args) => args[3]!);
+
+    test("a resumed pane that drops the cut-off message gets it again", () => {
+      const first = start();
+      run("stop", { stdin: first.stdout });
+      herdr.loseEvery(1);
+      const second = start({ attempt: 2, env: quick });
+
+      expect(second.exitCode).toBe(0);
+      const [, lost, again] = prompts();
+      expect(prompts()).toHaveLength(3);
+      expect(lost).toStartWith("You were cut off");
+      expect(again).toBe(lost!);
+      const record = readJson(join(work, "pane.json"));
+      expect(record.unsent).toBeUndefined();
+      expect(record.lost).toBeUndefined();
+    });
+
+    test("one that never lands stays unsent, and the watch tells the person at once without typing it again", async () => {
+      herdr.loseEvery(3);
+      const { stdout } = start({ env: quick });
+
+      expect(prompts()).toHaveLength(3);
+      const record = readJson(join(work, "pane.json"));
+      expect(record.unsent).toStartWith("Implement it.");
+      expect(record.lost).toBe(3);
+
+      const watch = watching(stdout, { env: quick });
+      expect((await watch.until(1)).map((l) => JSON.parse(l))).toEqual([NEEDS]);
+      expect(prompts()).toHaveLength(3);
+      watch.child.kill();
+    });
+
+    test("a Claude herdr does not show ready gets nothing, and the watch sends it once herdr does", async () => {
+      herdr.everyStatus("unknown");
+      const { stdout } = start();
+      expect(prompts()).toHaveLength(0);
+      expect(readJson(join(work, "pane.json")).unsent).toStartWith("Implement it.");
+
+      const watch = watching(stdout);
+      await Bun.sleep(300);
+      expect(prompts()).toHaveLength(0);
+      herdr.everyStatus("idle");
+      expect((await landed()).unsent).toBeUndefined();
+      expect(prompts()).toHaveLength(1);
+      expect(prompts()[0]).toStartWith("Implement it.");
+      expect(watch.lines()).toEqual([]);
+      watch.child.kill();
+    });
+  });
+
   test("the next watch of the attempt does not tell the person again, and prints the answer when it lands", async () => {
     const { result, stdout } = start();
     herdr.status(result.herdrAgent, "blocked");
@@ -377,7 +452,10 @@ describe("watch", () => {
     const { result, stdout } = start();
     herdr.status(result.herdrAgent, "working");
     const first = watching(stdout);
-    await Bun.sleep(200);
+    const end = Date.now() + 5000;
+    while (!(existsSync(join(work, "1.watch")) && readFileSync(join(work, "1.watch"), "utf8").trim() === "busy") && Date.now() < end) {
+      await Bun.sleep(25);
+    }
     first.child.kill();
     await first.child.exited;
 
@@ -445,7 +523,7 @@ describe("watch", () => {
       const [, message] = await prompts(2);
       expect(message).toStartWith("You were cut off before you finished this step.");
       expect(message).toContain("claude-spore report --attempt 2 --outcome");
-      expect(readJson(join(work, "pane.json")).unsent).toBeUndefined();
+      expect((await landed()).unsent).toBeUndefined();
 
       report("ok", '{"summary": "Done."}', { attempt: 2 });
       expect(await watch.child.exited).toBe(0);

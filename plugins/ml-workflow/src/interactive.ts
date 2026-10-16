@@ -24,10 +24,10 @@ type Handle = {
 };
 
 /**
- * `pane.json`: the handle, the pane, the attempt whose report command the pane was given, and the
- * message not yet sent to it, without its report command.
+ * `pane.json`: the handle, the pane, the attempt whose report command the pane was given, the
+ * message not yet sent to it, without its report command, and how often it was typed without landing.
  */
-type PaneRecord = { handle: Handle; pane: string; attempt: number; unsent?: string };
+type PaneRecord = { handle: Handle; pane: string; attempt: number; unsent?: string; lost?: number };
 
 type Failure = { error: { code: string; message: string }; retryable: false };
 
@@ -42,6 +42,16 @@ const PROCESS_WAIT_MS = 10_000;
 // `--timeout` of `agent start` (`CLAUDE_SPORE_SHELL_WAIT_MS`, for the specs).
 const SHELL_WAIT_MS = Number(process.env.CLAUDE_SPORE_SHELL_WAIT_MS) || 60_000;
 const SHELL_RETRY_MS = 500;
+
+// A message typed this often without landing stays unsent, and the watch tells the person, like a
+// Kubernetes readiness probe's `failureThreshold`.
+const SENDS = 3;
+
+/** How long a sent message has to land (`CLAUDE_SPORE_DELIVERY_WAIT_MS`, for the specs). */
+const deliveryWait = () => Number(process.env.CLAUDE_SPORE_DELIVERY_WAIT_MS) || 10_000;
+
+/** How long a quiet pane with no answer waits before the watch tells the person (`CLAUDE_SPORE_IDLE_MS`). */
+const idleWait = () => Number(process.env.CLAUDE_SPORE_IDLE_MS) || 60_000;
 
 function failure(code: string, message: string): Failure {
   return { error: { code, message }, retryable: false };
@@ -67,16 +77,34 @@ export function agentName(node: string, session: string): string {
   return `sp-${slug}-${session.replaceAll("-", "").slice(0, 10)}`;
 }
 
-/** Whether Claude has a transcript of `session` in any project folder. */
-function transcriptExists(session: string): boolean {
+/** Claude's transcript of `session`, in any project folder, or null. */
+function transcript(session: string): string | null {
   const projects = join(process.env.CLAUDE_CONFIG_DIR || join(homedir(), ".claude"), "projects");
   let folders: string[];
   try {
     folders = readdirSync(projects);
   } catch {
-    return false;
+    return null;
   }
-  return folders.some((folder) => existsSync(join(projects, folder, `${session}.jsonl`)));
+  const folder = folders.find((f) => existsSync(join(projects, f, `${session}.jsonl`)));
+  return folder === undefined ? null : join(projects, folder, `${session}.jsonl`);
+}
+
+/**
+ * The user entries of `session`'s transcript, leaving out Claude Code's own (`isMeta`). A resumed
+ * Claude adds none until it takes a prompt, so a count that moves after a send means it landed.
+ */
+function turns(session: string): number {
+  const file = transcript(session);
+  if (file === null) return 0;
+  let count = 0;
+  for (const line of readFileSync(file, "utf8").split("\n")) {
+    try {
+      const entry = JSON.parse(line);
+      if (isObject(entry) && entry.type === "user" && entry.isMeta !== true) count++;
+    } catch {}
+  }
+  return count;
 }
 
 async function until<T>(get: () => T | null, ms: number): Promise<T | null> {
@@ -128,16 +156,43 @@ function reportEnding(params: StepParams, attempt: number): string {
 }
 
 /**
- * Sends the record's unsent message, with its attempt's report command, when the agent can take it.
- * A prompt typed while Claude works is lost, and Claude can report before its turn ends; one typed
- * while it asks a question would answer that question. Until then the message waits in `pane.json`.
+ * Sends the record's unsent message, with its attempt's report command, once the agent is ready for
+ * it, and waits until it lands. Ready is `idle` or `done`: a prompt typed while Claude works is lost,
+ * and Claude can report before its turn ends; one typed while it asks a question would answer that
+ * question. A Claude that herdr shows ready can still be drawing a resumed conversation and drop the
+ * prompt, so the message leaves `pane.json` only once Claude turns `working` or its transcript gains
+ * a turn; otherwise it stays, counted in `lost`. Returns the record as it now is.
  */
-function deliver(work: string, record: PaneRecord, params: StepParams, status: string): PaneRecord {
-  if (record.unsent === undefined || status === "working" || status === "blocked") return record;
-  prompt(record.handle.herdrAgent!, `${record.unsent}\n\n${reportEnding(params, record.attempt)}`);
-  const { unsent: _, ...sent } = record;
-  writeJson(join(work, "pane.json"), sent);
-  return sent;
+async function deliver(work: string, record: PaneRecord, params: StepParams): Promise<PaneRecord> {
+  if (record.unsent === undefined || (record.lost ?? 0) >= SENDS) return record;
+  const name = record.handle.herdrAgent!;
+  const status = getAgent(name)?.status;
+  if (status !== "idle" && status !== "done") return record;
+  const session = record.handle.session;
+  const before = turns(session);
+  prompt(name, `${record.unsent}\n\n${reportEnding(params, record.attempt)}`);
+  const working = () => {
+    try {
+      return getAgent(name)?.status === "working";
+    } catch {
+      return false;
+    }
+  };
+  const landed = await until(() => (turns(session) > before || working() ? true : null), deliveryWait());
+  const { unsent: _, lost: __, ...sent } = record;
+  const next = landed ? sent : { ...record, lost: (record.lost ?? 0) + 1 };
+  writeJson(join(work, "pane.json"), next);
+  return next;
+}
+
+/** Delivers the record's message, typing it again while it does not land, up to `SENDS` times in all. */
+async function send(work: string, record: PaneRecord, params: StepParams): Promise<PaneRecord> {
+  for (let next = record; ; ) {
+    const after = await deliver(work, next, params);
+    // Sent, given up, or Claude not ready: the watch sends it once Claude is.
+    if (after === next || after.unsent === undefined) return after;
+    next = after;
+  }
 }
 
 export async function start(): Promise<number> {
@@ -173,10 +228,10 @@ export async function start(): Promise<number> {
         // still goes, with this attempt's report command; else it is told it was cut off.
         let next = record;
         if (record.attempt !== attempt) {
-          next = { ...record, attempt, unsent: record.unsent ?? cutOffMessage(params, "") };
+          next = { handle, pane: record.pane, attempt, unsent: record.unsent ?? cutOffMessage(params, "") };
           writeJson(join(work, "pane.json"), next);
         }
-        deliver(work, next, params, live.status);
+        await send(work, next, params);
         return print(handle);
       }
       // An earlier visit's pane, or one whose start died before it was recorded.
@@ -194,7 +249,7 @@ export async function start(): Promise<number> {
   // The message without its report command, which `deliver` adds.
   let mode: "start" | "resume";
   let message: string;
-  if (!transcriptExists(session)) {
+  if (transcript(session) === null) {
     if (visit > 1) {
       return paneless(
         failure("session.lost", `the conversation of this step, ${session}, is gone (removed, or on another machine); this is visit ${visit}`),
@@ -239,9 +294,8 @@ export async function start(): Promise<number> {
   const record: PaneRecord = { handle, pane, attempt, unsent: message };
   writeJson(join(work, "pane.json"), record);
   try {
-    const agent = getAgent(name);
-    if (!agent) return give(`the agent ${name} is gone from pane ${pane}`);
-    deliver(work, record, params, agent.status);
+    if (!getAgent(name)) return give(`the agent ${name} is gone from pane ${pane}`);
+    await send(work, record, params);
   } catch (error) {
     return give(`herdr: ${(error as Error).message}`);
   }
@@ -317,6 +371,8 @@ export async function watch(): Promise<number> {
     else rmSync(seenFile, { force: true });
     seen = state;
   };
+  // Since when this watch has seen the pane quiet with no answer, counted again after a message is sent.
+  let quietSince: number | null = null;
 
   for (;;) {
     carryOver(work, step.attempt);
@@ -348,26 +404,31 @@ export async function watch(): Promise<number> {
         console.error(`claude-spore watch: the pane of ${node} is gone, and it reported nothing`);
         return 1;
       }
-      // A message `start` could not send while Claude worked goes once it can take one.
+      // A message `start` could not send, or that did not land, goes once Claude can take it.
       const record = readJson(join(work, "pane.json")) as PaneRecord | undefined;
       const params = readJson(join(work, "params.json")) as StepParams | undefined;
+      let undelivered = false;
       if (record?.unsent !== undefined && record.attempt === step.attempt && record.handle.herdrAgent === handle.herdrAgent && params) {
-        let sent = false;
+        let next = record;
         try {
-          sent = deliver(work, record, params, agent.status) !== record;
+          next = await deliver(work, record, params);
         } catch {
           // herdr refused the prompt: try again at the next poll.
         }
-        if (sent) {
+        if (next.unsent === undefined) {
           // The pane has not started on the message yet: what the watches saw before no longer holds.
           see("");
+          quietSince = null;
           await Bun.sleep(poll);
           continue;
         }
+        undelivered = (next.lost ?? 0) >= SENDS;
       }
-      // Quiet counts only once the pane was busy: a pane that has not started on its message yet
-      // shows idle too.
-      if (seen !== "told" && (agent.status === "blocked" || (quiet && seen === "busy"))) {
+      quietSince = quiet ? (quietSince ?? Date.now()) : null;
+      // Quiet counts once the pane was busy, or once it stayed quiet past the idle wait: a pane that
+      // has not started on its message yet shows idle too, but not for long.
+      const stalled = quiet && (seen === "busy" || undelivered || Date.now() - quietSince! >= idleWait());
+      if (seen !== "told" && (agent.status === "blocked" || stalled)) {
         console.log(JSON.stringify({ needs: "person", message: `${node} waits for you in its pane` }));
         see("told");
       } else if (agent.status === "working") {
