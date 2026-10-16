@@ -86,6 +86,8 @@ function world(on: On, version: World['version'], doctor: Answer = { exitCode: 0
     w.blits.push(`${e.requestId}/${e.key}`)
     return { value: w.blit }
   })
+  // The live view keeps its current node in view; no surface here moves a window.
+  on('ui.scroll', () => ({}))
   on('tool.call', { tool: 'Bash' }, () => ({ result: { stdout: '', stderr: '', interrupted: false } }))
   // The engine's own band, empty: what the mod's band passes to when no run line shows.
   on('ui.render', { component: 'AbovePrompt' }, ($, e) => h($.ui.resolve(e).Box, { key: 'engine' }) as RenderElement)
@@ -407,8 +409,8 @@ const LIVE = {
   picture: { file: '/data/artifacts/ab/implement@test.red.png', width: 760, height: 840 },
   dots: [[{ text: '╭─────────╮', style: 'here' }], [{ text: '│ implement │', style: 'here' }, { text: '  red ×3', style: 'taken-label' }]],
   tree: [
-    [{ text: 'Implement (Claude)', style: 'here' }],
-    [{ text: '└─▶ ', style: 'edge' }, { text: 'Run the tests', style: 'node' }],
+    [{ text: 'Run the tests', style: 'node' }],
+    [{ text: '└─▶ ', style: 'edge' }, { text: 'Implement (Claude)', style: 'here' }],
   ],
   dot: [
     { n: 1, text: 'digraph "coding-loop" {', mark: null },
