@@ -50,6 +50,6 @@ spore cancel <runId> --json [--reason '<reason>']
 
 with `--reason` when the person gave one, in single quotes, on one line, each `'` inside written as `'\''`. It prints `{"runId", "requestId", "disposition", "status", "cancel", "stops"}`. Reply with one line: the run is cancelled, and for each of `stops` that its step was told to stop (`exit` null: it did not exit by itself). For the disposition `duplicate`, say that the run had already ended as `status`, and that nothing changed.
 
-A follow of this run, in this session or another, then returns with exit 7.
+A follow of this run, in this session or another, then returns with `status` `cancelled`.
 
 A usage error (exit 2) about `cancel` means this `spore` predates it, as the v0.2.0 release does: say that ml-workflow cancels runs with `spore cancel`, which a `spore` built from runspore's main branch has until a release does, and give `cargo install --git https://github.com/Web-tree/runspore --locked --force runspore-cli`. Run it only on a yes.
