@@ -36,6 +36,7 @@ import { HttpClient, AtlassianError } from "./lib/http";
 import { JiraClient, DEFAULT_FIELDS } from "./lib/jira";
 import { ConfluenceClient, buildTextCql } from "./lib/confluence";
 import { adfToMarkdown, renderBody } from "./lib/adf";
+import { installLauncher } from "./lib/launcher";
 import { markdownToStorage, storageToMarkdown } from "./lib/storage";
 import { formatIssue, formatPage, hitDetails, issueRows, table, truncate } from "./lib/format";
 
@@ -1016,6 +1017,9 @@ command prints what it narrowed.
   confluence attach <id|url> <file> | confluence attachments <id|url>
   confluence to-storage --body-file f    preview the markdown → storage conversion
 
+  launcher install                   put an \`atlassian\` launcher in ~/.local/bin, for
+                                     workflow hooks and terminals outside Claude Code
+
 Bodies: --body-file accepts "-" to read stdin. Markdown in, native format out
 (ADF on Jira Cloud, wiki markup on Data Center, storage XHTML on Confluence).
 Every command takes --json for structured output.`;
@@ -1040,8 +1044,15 @@ async function main() {
     case "confluence":
     case "wiki":
       return cmdConfluence(args);
+    case "launcher": {
+      if (args.positional.length !== 1 || args.positional[0] !== "install") fail("usage: atlassian launcher install", 2);
+      const installed = installLauncher();
+      if (!installed.ok) fail(installed.message);
+      out(installed.message);
+      return;
+    }
     default:
-      fail(`Unknown command group "${group}". Expected: config, jira, confluence. Run 'help' for details.`);
+      fail(`Unknown command group "${group}". Expected: config, jira, confluence, launcher. Run 'help' for details.`);
   }
 }
 

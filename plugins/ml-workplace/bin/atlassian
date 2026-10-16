@@ -1,0 +1,6 @@
+#!/usr/bin/env bun
+// The Atlassian CLI by a stable name. Claude Code puts the plugin's `bin/` on the Bash tool's PATH,
+// so a skill or a workflow step runs the bare `atlassian`. Outside Claude Code, `atlassian launcher
+// install` puts a launcher of that name in ~/.local/bin, which finds this file through the plugin
+// registry.
+await import("../skills/atlassian/scripts/atlassian.ts");
