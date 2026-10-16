@@ -1,6 +1,6 @@
 # ml-agent-config
 
-The Agent Config Standard (ACS v1) — layered settings, secret-free credential references, and a re-runnable onboarding flow — packaged as a skill plus a zero-dependency TypeScript loader. `orchestrate` and `herdr` vendor the v1 library instead of maintaining their own copy, and `fellow` reads its config through the v2 `agent-config` CLI; see [`standards/agent-config.md`](../../standards/agent-config.md) for the full spec this implements.
+The Agent Config Standard (ACS v2) — layered settings, secret-free credential references, and a re-runnable onboarding flow — packaged as the `agent-config` CLI plus a skill that teaches it. `fellow`, `atlassian`, `orchestrate`, `herdr` and `grill-with-ui` each declare their keys in an `agent-config.json` and read their config through the CLI; see [`standards/agent-config.md`](../../standards/agent-config.md) for the full spec this implements.
 
 ```bash
 /plugin install ml-agent-config@max-skills
@@ -10,16 +10,17 @@ The Agent Config Standard (ACS v1) — layered settings, secret-free credential 
 
 **Your skill needs a setting or a credential right now.** Ask Claude. It invokes `/ml-agent-config:setup`, walks you through which layer each value belongs in and where the credential lives, writes the file, and verifies it with a real call.
 
-**You're building a skill or subagent that needs configuration.** Read the standard and vendor `lib/config.ts` and `lib/credentials.ts` — see [Vendoring](#vendoring) — instead of writing a loader, a merge function, and five credential resolvers from scratch.
+**You're building a skill or subagent that needs configuration.** Declare its keys in an `agent-config.json` and read config through `agent-config load`, instead of writing a loader, a merge function, and five credential resolvers from scratch. `/ml-agent-config:setup` walks through it, with fellow as the worked example.
 
 ## What it gives you
 
-Settings live in three layers, deep-merged in order — global → repo → local. Objects merge key by key; arrays and scalars replace wholesale; an explicit `null` deletes an inherited key.
+Settings live in four layers, deep-merged in order — global → repo → user-repo → local. Objects merge key by key; arrays and scalars replace wholesale; an explicit `null` deletes an inherited key.
 
 | Layer | Path | Committed? | Holds |
 | --- | --- | --- | --- |
 | **global** | `~/.agents/config/<name>/config.json` | n/a | your defaults across every project |
 | **repo** | `<repo>/.agents/config/<name>/config.json` | yes | settings the whole team shares |
+| **user-repo** | `~/.agents/config/<name>/user-repo/<repo identity>/config.json` | n/a | your settings for one repository, in every worktree of it |
 | **local** | `<repo>/.agents/config/<name>/config.local.json` | no — gitignored | per-checkout overrides, personal paths |
 
 A config file never contains a secret, only a reference to where one lives — the repo layer is committed, so a config file that could hold a secret eventually leaks one:
@@ -53,15 +54,6 @@ The plugin also ships a hooks module, `claude-code/register.ts`, which Claude Co
 
 Any program the session starts can read the cached secrets in that environment variable, the model's shell commands included. A `cacheVar` you export has the same exposure.
 
-## Vendoring
-
-The library is copied into each consuming plugin verbatim rather than imported across plugins. A runtime dependency between plugins breaks the moment a user has one installed and not the other; a copy always works. Drift is caught by diffing the vendored file's body against the canonical one — not a commit hash, which churns on every sync even when nothing changed and misses the case that actually happens, someone editing the copy.
-
-```bash
-plugins/ml-agent-config/skills/setup/scripts/vendor.sh sync   # refresh every vendored copy
-plugins/ml-agent-config/skills/setup/scripts/vendor.sh check  # fail if any copy has drifted
-```
-
 ## What's in the box
 
 ```
@@ -73,12 +65,7 @@ ml-agent-config/
 │   └── ui/                      Screen, PickList, fuzzy search, the levels
 ├── src/                         the CLI; key-schema.ts, what a key holds, is read by the pane too
 ├── types/index.d.ts             the session state the hooks module keeps
-├── skills/setup/
-│   ├── SKILL.md                 the onboarding flow — detect missing config, ask, write, gitignore, verify
-│   ├── lib/
-│   │   ├── config.ts            layer paths, deep merge, gitignore handling, credential validation
-│   │   └── credentials.ts       lazy resolution for all five sources, plus the cacheVar session cache; never logs a resolved secret or writes one to disk
-│   └── scripts/vendor.sh        sync/check the copies vendored into herdr and orchestrate
+├── skills/setup/SKILL.md        the onboarding flow and how to wire config into a component
 └── LICENSE
 ```
 
