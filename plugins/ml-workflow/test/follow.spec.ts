@@ -301,10 +301,22 @@ describe.skipIf(!follows())(`following a run under a real spore ${version ?? ""}
     const answer = JSON.parse(child.stdout.toString());
     expect(answer.db).toBe(db);
     expect(answer.lines).toEqual([
-      expect.stringMatching(/^decide-00000015, not started yet, created \d+ (s|min) ago; \/ml-workflow:continue to follow it$/),
-      expect.stringMatching(/^stuck-00000014 at build, stuck after attempt 1 of 1 for \d+ (s|min); \/ml-workflow:continue to follow it$/),
-      expect.stringMatching(/^decide-00000013 at approve, waiting for your decision for \d+ (s|min); \/ml-workflow:continue to follow it$/),
+      expect.stringMatching(/^decide-00000015, not started yet, created \d+ (s|min) ago; \/ml-workflow:menu to pick it up$/),
+      expect.stringMatching(/^stuck-00000014 at build, stuck after attempt 1 of 1 for \d+ (s|min); \/ml-workflow:menu to pick it up$/),
+      expect.stringMatching(/^decide-00000013 at approve, waiting for your decision for \d+ (s|min); \/ml-workflow:menu to pick it up$/),
     ]);
+
+    // The menu offers each run what it needs, and starts the project's workflows by graph id.
+    const menu = Bun.spawnSync([HELPER, "menu", "--json"], { cwd: project, env: { ...env(), PATH: `${dirname(SPORE)}:${PATH}` } });
+    expect({ exitCode: menu.exitCode, stderr: menu.stderr.toString() }).toEqual({ exitCode: 0, stderr: "" });
+    const rows = JSON.parse(menu.stdout.toString()).rows as { key: string; options: { label: string; args: string }[] }[];
+    const labels = (key: string) => rows.find((row) => row.key === key)?.options.map((option) => option.label);
+    expect(rows.map((row) => row.key)).toEqual([`run:${fresh}`, `run:${stuck}`, `run:${decide}`, "start", "author"]);
+    expect(labels(`run:${fresh}`)).toEqual(["Continue", "View", "Cancel"]);
+    expect(labels(`run:${stuck}`)).toEqual(["Retry", "Mark done", "Fail", "View", "Cancel"]);
+    expect(labels(`run:${decide}`)).toEqual(["Decide", "View", "Cancel"]);
+    expect(labels("start")).toEqual(["decide", "manual", "stuck", "watched"]);
+    expect(labels("author")).toEqual(["Write a new workflow", "Change a workflow"]);
     for (const runId of [decide, stuck, fresh]) spore("cancel", runId);
   }, SLOW);
 
