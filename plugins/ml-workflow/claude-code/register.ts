@@ -9,7 +9,7 @@ import type { EngineInterface, Register, RenderElement, UiOpenResult } from 'cla
 
 import { BUN_MINIMUM, CLAUDE_CODE_MINIMUM, isOlder, PLUGIN_VERSION } from '../src/version'
 import type { Menu, MenuOption } from '../types'
-import { openView, registerLive } from './live'
+import { openView, registerLive, registerViewTool } from './live'
 
 // The version this session loaded, fixed when the mod loads: the helper on disk may be newer.
 const VERSION = PLUGIN_VERSION
@@ -115,6 +115,7 @@ export const register: Register = on => {
           '/ml-workflow:menu calls it when the pane could not open by itself.',
       })
       .catch(error => $.ui.log(`ml-workflow: the open_menu tool was not registered: ${String(error)}`))
+    await registerViewTool($)
     const { version, base } = await $.session.version()
     if (isOlder(base ?? version, CLAUDE_CODE_MINIMUM)) {
       $.ui.log(`ml-workflow needs Claude Code ${CLAUDE_CODE_MINIMUM} or later; this is ${version}. Run: claude update`)

@@ -135,22 +135,22 @@ async function refresh($: EngineInterface, runId: string, db: string | null) {
   if (line?.ended) settled.add(runId)
 }
 
-export function registerLive(on: On) {
-  on('session.start', async ($, e, next) => {
-    await $.tool
-      .register({
-        name: 'open_view',
-        description: "Opens a Runspore run's live view in a pane: its workflow drawn with the current node and the arrow just taken, and the lines of its files. /ml-workflow:view calls it.",
-        inputSchema: {
-          type: 'object',
-          properties: { runId: { type: 'string', description: 'The run ID, run_…' }, db: { type: 'string', description: 'The database path spore gave as db' } },
-          required: ['runId'],
-        },
-      })
-      .catch(error => $.ui.log(`ml-workflow: the open_view tool was not registered: ${String(error)}`))
-    return next(e)
-  })
+// Registered from the plugin's one session.start handler (register.ts): the engine takes one per event.
+export async function registerViewTool($: EngineInterface): Promise<void> {
+  await $.tool
+    .register({
+      name: 'open_view',
+      description: "Opens a Runspore run's live view in a pane: its workflow drawn with the current node and the arrow just taken, and the lines of its files. /ml-workflow:view calls it.",
+      inputSchema: {
+        type: 'object',
+        properties: { runId: { type: 'string', description: 'The run ID, run_…' }, db: { type: 'string', description: 'The database path spore gave as db' } },
+        required: ['runId'],
+      },
+    })
+    .catch(error => $.ui.log(`ml-workflow: the open_view tool was not registered: ${String(error)}`))
+}
 
+export function registerLive(on: On) {
   // Claude following a run shows its line; the call itself goes on unchanged.
   on('tool.call', { tool: 'Bash' }, ($, e, next) => {
     const run = following(String((e as { command?: unknown }).command ?? ''))
