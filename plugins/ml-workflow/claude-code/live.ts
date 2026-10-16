@@ -92,6 +92,7 @@ export async function openView($: EngineInterface, runId: string, db: string | n
   }
   const view: LiveView = (await helperJson($, ['view', runId, ...dbArgs(db)])) ?? { runId, db, error: { code: 'helper', message: 'claude-spore view gave no answer' } }
   await update($, views, all => ({ ...all, [runId]: view }))
+  reveal($, runId)
   await poll($)
   if (view.picture && (await read($, pictures)) === null) $.clock.after(500, () => void checkPictures($, runId))
   return result
@@ -152,7 +153,10 @@ async function refresh($: EngineInterface, runId: string, db: string | null) {
   const shownLine = (await read($, views))[runId]?.line
   if (JSON.stringify(shownLine ?? null) !== JSON.stringify(line)) {
     const view = await helperJson($, ['view', runId, ...dbArgs(db)])
-    if (view && !view.error) await update($, views, all => ({ ...all, [runId]: view }))
+    if (view && !view.error) {
+      await update($, views, all => ({ ...all, [runId]: view }))
+      reveal($, runId)
+    }
   }
   if (line?.ended) settled.add(runId)
 }
@@ -162,6 +166,18 @@ async function refresh($: EngineInterface, runId: string, db: string | null) {
 async function keysOnBand($: EngineInterface, runId: string): Promise<string | undefined> {
   const newest = (await read($, followed)).find(run => run.line)
   return newest?.runId === runId ? 'Press ctrl+x tab, then v, to show it.' : undefined
+}
+
+// Keeps the current node in view once the pane drew the moment: the drawing's row of it, else the
+// picture. A node already showing does not move the window.
+function reveal($: EngineInterface, runId: string) {
+  $.clock.after(0, async () => {
+    for (const key of ['here', 'picture']) {
+      try {
+        if (!(await $.ui.scroll({ in: paneOf(runId), to: { key }, block: 'nearest' })).deny) return
+      } catch {}
+    }
+  })
 }
 
 // Registered from the plugin's one session.start handler (register.ts): the engine takes one per event.
@@ -246,16 +262,38 @@ export function registerLive(on: On) {
     const isWide = columns >= 150
     const facts = h(ui.Text, {}, h(ui.Text, { bold: true }, view.facts ?? ''), ...(view.line?.needsYou ? [h(ui.Text, { bold: true, color: TAKEN }, ', needs you')] : []))
     const width = Math.min(100, Math.max(10, (isWide ? Math.floor(columns / 2) : columns) - 2))
+    // The drawing fits the pane's rows less the facts line and the one under it.
+    const room = Math.max(3, e.props.scroll.bodyRows - 2)
     const usePicture = view.picture && 'Image' in ui && (await read($, pictures)) !== false
-    const drawing = usePicture
-      ? h(ui.Image, {
-          key: 'picture',
-          source: { file: view.picture!.file, format: 'png' },
-          columns: width,
-          rows: Math.min(255, Math.max(1, Math.round((width * view.picture!.height) / view.picture!.width / 2))),
-          alt: `The workflow at ${view.line?.text ?? runId}`,
-        })
-      : h(ui.Box, { flexDirection: 'column' }, ...(view.dots ?? []).map(row => h(ui.Text, { wrap: 'truncate-end' }, ...row.map(span => h(ui.Text, STYLE[span.style], span.text)))))
+    let drawing: ReturnType<typeof h>
+    if (usePicture) {
+      // A cell is about twice as tall as wide; a picture taller than the room is drawn narrower.
+      const rowsPerColumn = view.picture!.height / view.picture!.width / 2
+      const size = Math.round(width * rowsPerColumn) <= room ? { columns: width, rows: Math.round(width * rowsPerColumn) } : { columns: Math.round(room / rowsPerColumn), rows: room }
+      drawing = h(ui.Image, {
+        key: 'picture',
+        source: { file: view.picture!.file, format: 'png' },
+        columns: Math.max(1, size.columns),
+        rows: Math.min(255, Math.max(1, size.rows)),
+        alt: `The workflow at ${view.line?.text ?? runId}`,
+      })
+    } else {
+      // The dot drawing when it fits, else the compact tree, which wraps rather than cuts.
+      const dots = view.dots ?? []
+      const isFit = dots.length <= room && dots.every(row => row.reduce((n, span) => n + [...span.text].length, 0) <= width)
+      const isTree = !isFit && Boolean(view.tree?.length)
+      const rows = isTree ? view.tree! : dots
+      // The row `reveal` scrolls to: the middle one of the current node's, its label's in a box.
+      const hereRows = rows.flatMap((row, i) => (row.some(span => span.style === 'here') ? [i] : []))
+      const hereRow = hereRows[Math.floor(hereRows.length / 2)]
+      drawing = h(
+        ui.Box,
+        { flexDirection: 'column', flexShrink: 0 },
+        ...rows.map((row, i) =>
+          h(ui.Text, { ...(i === hereRow ? { key: 'here' } : {}), wrap: isTree ? 'wrap' : 'truncate-end' }, ...row.map(span => h(ui.Text, STYLE[span.style], span.text))),
+        ),
+      )
+    }
     const isFull = (await read($, full)).includes(runId)
     const instructions = view.instructions
       ? h(
@@ -273,7 +311,7 @@ export function registerLive(on: On) {
       : null
     const files = h(
       ui.Box,
-      { flexDirection: 'column', flexGrow: 1 },
+      { flexDirection: 'column', flexGrow: 1, flexShrink: 1 },
       fileBlock(ui, 'workflow.dot', view.dot ?? []),
       ...(view.settings?.length ? [fileBlock(ui, 'settings.json', view.settings)] : []),
       ...(instructions ? [instructions] : []),
@@ -289,7 +327,7 @@ function fileBlock(ui: Record<string, any>, file: string, lines: FileLine[]) {
     { flexDirection: 'column', marginTop: 1 },
     h(ui.Text, { underline: true }, file),
     ...lines.map(({ n, text, mark }) =>
-      h(ui.Text, { wrap: 'truncate-end', ...(mark === 'here' ? STYLE.here : mark === 'taken' ? STYLE.taken : {}) }, `${String(n).padStart(3)}  ${text || ' '}`),
+      h(ui.Text, { wrap: 'wrap', ...(mark === 'here' ? STYLE.here : mark === 'taken' ? STYLE.taken : {}) }, `${String(n).padStart(3)}  ${text || ' '}`),
     ),
   )
 }

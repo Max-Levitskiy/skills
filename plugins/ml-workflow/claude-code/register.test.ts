@@ -406,6 +406,10 @@ const LIVE = {
   facts: 'running, at implement, visit 3, try 1/3, red 2/3 in a row',
   picture: { file: '/data/artifacts/ab/implement@test.red.png', width: 760, height: 840 },
   dots: [[{ text: '╭─────────╮', style: 'here' }], [{ text: '│ implement │', style: 'here' }, { text: '  red ×3', style: 'taken-label' }]],
+  tree: [
+    [{ text: 'Implement (Claude)', style: 'here' }],
+    [{ text: '└─▶ ', style: 'edge' }, { text: 'Run the tests', style: 'node' }],
+  ],
   dot: [
     { n: 1, text: 'digraph "coding-loop" {', mark: null },
     { n: 2, text: '  implement [label="Implement (Claude)"];', mark: 'here' },
@@ -543,6 +547,36 @@ test('a picture check the terminal denies switches the session to the dot drawin
   await pane.redraw()
   expect(await pane.find({ key: 'picture' })).toBeUndefined()
   expect(await pane.find({ type: 'Text', text: /^│ implement │$/ })).toMatchObject({ props: { backgroundColor: '#ffd43b' } })
+  await pane.unmount()
+})
+
+test('a dot drawing taller than the pane gives way to the compact tree; the current node is keyed and file lines wrap', async ($, on) => {
+  mock.clock(on)
+  const w = world(on, NEW)
+  const dots = Array.from({ length: 30 }, (_, i) => [{ text: `row ${i}`, style: i === 20 ? 'here' : 'edge' }])
+  w.view.run_a = { exitCode: 0, stdout: JSON.stringify({ ...LIVE, picture: null, dots }), stderr: '' }
+  await $.tool.call({ tool: 'mcp__ml-workflow__open_view', runId: 'run_a', db: DB })
+  const short = await $.ui.mount({ ...VIEW_PANE, props: { ...VIEW_PANE.props, scroll: { offset: 0, bodyRows: 20 } }, surface: 'terminal' })
+  expect(await short.find({ type: 'Text', text: 'row 0' })).toBeUndefined()
+  expect(await short.find({ type: 'Text', text: 'Run the tests' })).toBeDefined()
+  expect(await short.find({ key: 'here' })).toBeDefined()
+  expect(await short.find({ type: 'Text', text: 'Implement (Claude)' })).toMatchObject({ props: { backgroundColor: '#ffd43b' } })
+  expect(await short.find({ type: 'Text', text: '  2    implement [label="Implement (Claude)"];' })).toMatchObject({ props: { wrap: 'wrap' } })
+  await short.unmount()
+  const tall = await $.ui.mount({ ...VIEW_PANE, surface: 'terminal' })
+  expect(await tall.find({ type: 'Text', text: 'row 0' })).toBeDefined()
+  expect(await tall.find({ type: 'Text', text: 'Run the tests' })).toBeUndefined()
+  await tall.unmount()
+})
+
+test('a picture taller than the pane is drawn narrower, to fit its rows', async ($, on) => {
+  mock.clock(on)
+  const w = world(on, NEW)
+  w.view.run_a = VIEWED
+  await $.tool.call({ tool: 'mcp__ml-workflow__open_view', runId: 'run_a', db: DB })
+  const pane = await $.ui.mount({ ...VIEW_PANE, props: { ...VIEW_PANE.props, scroll: { offset: 0, bodyRows: 22 } }, surface: 'terminal' })
+  // 760×840 is 0.55 rows a column: 20 rows, the room under the facts, take 36 columns.
+  expect((await pane.find({ key: 'picture' }))?.props).toMatchObject({ columns: 36, rows: 20 })
   await pane.unmount()
 })
 
