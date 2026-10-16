@@ -1,5 +1,5 @@
 // The sub-skills' frontmatter (docs/spec.md, p.2, p.6, the sub-skills step by step), and the one
-// reaction table `start` and `continue` both carry (p.10).
+// reaction table `start` and `continue` both carry, keyed on the answer's `status` and `needs` (p.10).
 import { expect, test } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -52,10 +52,29 @@ function reactions(name: string): string[] {
   return following.split("\n").filter((line) => line.startsWith("| "));
 }
 
-test("start and continue react to each exit code the same way", () => {
+test("start and continue react to the answer's status and needs the same way, not to the exit code", () => {
   const rows = reactions("continue");
-  expect(rows.map((row) => row.split("|")[1]!.trim())).toEqual(["Exit", "0", "1", "7", "3", "4", "5", "6", "2", "130", "other"]);
+  expect(rows.map((row) => row.split("|")[1]!.trim())).toEqual([
+    "The answer",
+    "`status` `completed`",
+    "`status` `failed`",
+    "`status` `cancelled`",
+    "`needs` `signal`",
+    "`needs` `stuck`",
+    "`needs` `quarantined`",
+    "`needs` `external-ready`, `held` or `capability-missing`",
+    "`error`, exit 2",
+    "no answer, exit 130",
+    "anything else",
+  ]);
   expect(reactions("start")).toEqual(rows);
+  // `--json` exits 0 whenever it printed the status (Web-tree/runspore#213); the run's codes are `--exit-status`'s.
+  for (const name of ["start", "continue"]) {
+    const { body } = skill(name);
+    expect(body).toContain("React by that object's `status` and `needs`, not by the exit code");
+    expect(body).not.toContain("React by the exit code");
+    expect(body).toContain("```\nspore continue <runId> --wait --json --db <db>\n```");
+  }
   // A decision, a stuck step and an async step, as each offers them.
   const offers = (name: string) => skill(name).body.split("**A decision.**")[1]!.split("The run does not need this session.")[0];
   expect(offers("start")).toContain("**An async step**, by `needs`:");

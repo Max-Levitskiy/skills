@@ -1,5 +1,7 @@
 // Following a run (docs/spec.md, p.10, p.12): the commands the start, continue and cancel skills run,
-// against the real spore, and the fields of each answer the reaction reads. It needs a spore with
+// against the real spore, and the fields of each answer the reaction reads. The reaction goes by the
+// answer's `status` and `needs`, not the follow's exit code, which a spore after Web-tree/runspore#213
+// keeps 0 whenever it printed the status, so these checks hold either side of it. It needs a spore with
 // `continue --wait` and `cancel` (Web-tree/runspore#73, #74); without one it is skipped, unless
 // REQUIRE_SPORE=1 (CI) makes that a failure.
 import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
@@ -201,11 +203,10 @@ describe.skipIf(!follows())(`following a run under a real spore ${version ?? ""}
     spore("cancel", started.json.runId);
   }, SLOW);
 
-  test("a decision: exit 3, the outcomes, the instructions, then one decision per wait", () => {
+  test("a decision: needs signal, the outcomes, the instructions, then one decision per wait", () => {
     const { runId } = start("decide", "decide-0000000b", { task: "add a flag" }).json;
 
     const waiting = follow(runId);
-    expect(waiting.exitCode).toBe(3);
     expect(waiting.json).toMatchObject({
       runId,
       db,
@@ -228,12 +229,11 @@ describe.skipIf(!follows())(`following a run under a real spore ${version ?? ""}
     expect(other.json.error.code).toBe("signal.id-reused");
 
     const ended = follow(runId);
-    expect(ended.exitCode).toBe(0);
     expect(ended.json).toMatchObject({ status: "completed", needs: null, end: { nodeId: "done" } });
     expect(JSON.stringify(ended.json.result)).toContain('"task":"add a flag"');
   }, SLOW);
 
-  test("a rejected decision with its data: exit 1, the end node and the error", () => {
+  test("a rejected decision with its data: status failed, the end node and the error", () => {
     const { runId } = start("decide", "decide-0000000c", { task: "add a flag" }).json;
     const id = follow(runId).json.position.activationId;
     const send = (data: unknown) =>
@@ -242,14 +242,12 @@ describe.skipIf(!follows())(`following a run under a real spore ${version ?? ""}
     expect(send({ reason: "too big" }).exitCode).toBe(0);
 
     const ended = follow(runId);
-    expect(ended.exitCode).toBe(1);
-    expect(ended.json).toMatchObject({ status: "failed", end: { nodeId: "stopped" }, result: { error: { code: "approval.rejected" } } });
+    expect(ended.json).toMatchObject({ status: "failed", needs: null, end: { nodeId: "stopped" }, result: { error: { code: "approval.rejected" } } });
   }, SLOW);
 
-  test("a stuck step: exit 4, its kept error and the three resolutions, then Mark done", () => {
+  test("a stuck step: needs stuck, its kept error and the three resolutions, then Mark done", () => {
     const { runId } = start("stuck", "stuck-0000000d", {}).json;
     const stuck = follow(runId);
-    expect(stuck.exitCode).toBe(4);
     expect(stuck.json).toMatchObject({
       needs: "stuck",
       intervention: { nodeId: "build", reason: "stuck", attempt: 1, maxAttempts: 1, outcomes: ["ok"], error: { code: "command.exit" } },
@@ -261,12 +259,12 @@ describe.skipIf(!follows())(`following a run under a real spore ${version ?? ""}
     ]);
 
     expect(spore("resolve", runId, "--complete", "ok", "--db", db).exitCode).toBe(0);
-    expect(follow(runId).exitCode).toBe(0);
+    expect(follow(runId).json).toMatchObject({ status: "completed", needs: null });
   }, SLOW);
 
   test("the run line, the live view and the drawing of a stuck run, read from its pinned artifact", () => {
     const { runId } = start("stuck", "stuck-00000016", {}).json;
-    expect(follow(runId).exitCode).toBe(4);
+    expect(follow(runId).json).toMatchObject({ needs: "stuck" });
     // The helper finds this spore on PATH, as the mod's call does, and keeps what it reads in a scratch data folder.
     const helper = (...args: string[]) => {
       const child = Bun.spawnSync([HELPER, ...args], { cwd: project, env: { ...env(), PATH: `${dirname(SPORE)}:${PATH}`, CLAUDE_PLUGIN_DATA: join(project, "data") } });
@@ -295,14 +293,13 @@ describe.skipIf(!follows())(`following a run under a real spore ${version ?? ""}
     expect(plain.stdout).toContain("│ build │");
 
     expect(spore("resolve", runId, "--complete", "ok", "--db", db).exitCode).toBe(0);
-    expect(follow(runId).exitCode).toBe(0);
+    expect(follow(runId).json).toMatchObject({ status: "completed", needs: null });
     expect(JSON.parse(helper("line", runId, "--db", db, "--json").stdout)).toMatchObject({ text: "stuck-00000016 completed at done, from build on ok", needsYou: false, ended: true });
   }, SLOW);
 
-  test("a person's manual work: exit 6, the actor label and the claim line", () => {
+  test("a person's manual work: needs external-ready, the actor label and the claim line", () => {
     const { runId } = start("manual", "manual-0000000e", {}).json;
     const ready = follow(runId);
-    expect(ready.exitCode).toBe(6);
     expect(ready.json).toMatchObject({ needs: "external-ready", position: { nodeId: "review" }, step: { kind: "external", actor: "person", state: "ready" } });
     expect(ready.json.commands).toContain(`spore step claim ${runId} --actor person`);
     spore("cancel", runId);
@@ -325,9 +322,9 @@ describe.skipIf(!follows())(`following a run under a real spore ${version ?? ""}
   test("the session-start line names each unfinished run, where it is and what it waits for", () => {
     // A follow drives every run that is due, so each run is started just before its own follow.
     const decide = start("decide", "decide-00000013", { task: "one" }).json.runId;
-    expect(follow(decide).exitCode).toBe(3);
+    expect(follow(decide).json).toMatchObject({ needs: "signal" });
     const stuck = start("stuck", "stuck-00000014", {}).json.runId;
-    expect(follow(stuck).exitCode).toBe(4);
+    expect(follow(stuck).json).toMatchObject({ needs: "stuck" });
     const fresh = start("decide", "decide-00000015", { task: "two" }).json.runId;
 
     // The helper finds this spore on PATH, as the mod's call does.
@@ -355,9 +352,9 @@ describe.skipIf(!follows())(`following a run under a real spore ${version ?? ""}
     for (const runId of [decide, stuck, fresh]) spore("cancel", runId);
   }, SLOW);
 
-  test("a cancel: the follow returns exit 7 with the reason, and a second cancel changes nothing", () => {
+  test("a cancel: the follow returns status cancelled with the reason, and a second cancel changes nothing", () => {
     const { runId } = start("decide", "decide-00000011", { task: "add a flag" }).json;
-    expect(follow(runId).exitCode).toBe(3);
+    expect(follow(runId).json).toMatchObject({ needs: "signal" });
 
     const cancelled = spore("cancel", runId, "--json", "--reason", "not needed");
     expect(cancelled.exitCode).toBe(0);
@@ -365,17 +362,15 @@ describe.skipIf(!follows())(`following a run under a real spore ${version ?? ""}
     expect(spore("cancel", runId, "--json", "--reason", "not needed").json).toMatchObject({ disposition: "duplicate", status: "cancelled" });
 
     const ended = follow(runId);
-    expect(ended.exitCode).toBe(7);
     expect(ended.json).toMatchObject({ status: "cancelled", needs: null, cancel: { reason: "not needed" } });
     expect(spore("list", "--unfinished", "--json").json.runs.map((row: { runId: string }) => row.runId)).not.toContain(runId);
   }, SLOW);
 
-  test("an interactive step that waits for the person: exit 6 with its message, and cancel closes its pane", () => {
+  test("an interactive step that waits for the person: needs held with its message, and cancel closes its pane", () => {
     // Claude asks a question in the pane.
     herdr.everyStatus("blocked");
     const { runId } = start("watched", "watched-00000012", {}).json;
     const held = follow(runId);
-    expect(held.exitCode).toBe(6);
     expect(held.json).toMatchObject({
       needs: "held",
       position: { nodeId: "implement" },
@@ -388,14 +383,14 @@ describe.skipIf(!follows())(`following a run under a real spore ${version ?? ""}
     expect(cancelled.json).toMatchObject({ status: "cancelled", stops: [{ exit: 0 }] });
     expect(herdr.calls()).toContainEqual(["pane", "close", pane!]);
     expect(existsSync(`/proc/${pid}`) || alive(pid)).toBe(false);
-    expect(follow(runId).exitCode).toBe(7);
+    expect(follow(runId).json).toMatchObject({ status: "cancelled", needs: null });
   }, SLOW);
 
   test("following again after the pane waited for the person keeps watching, and returns when its answer lands", async () => {
     herdr.everyStatus("blocked");
     const { runId } = start("watched", "watched-00000013", {}).json;
     const held = follow(runId);
-    expect(held.exitCode).toBe(6);
+    expect(held.json).toMatchObject({ needs: "held", step: { waiting: "person" } });
     const { herdrAgent } = held.json.step.holder;
 
     // What the skill runs next, in the background.
@@ -415,7 +410,7 @@ describe.skipIf(!follows())(`following a run under a real spore ${version ?? ""}
     expect(reported.stdout.toString()).toBe("accepted\n");
     herdr.status(herdrAgent, "idle");
 
-    expect(await again.exited).toBe(0);
+    await again.exited;
     const ended = JSON.parse(await new Response(again.stdout).text());
     expect(ended).toMatchObject({ runId, status: "completed", needs: null });
     herdr.everyStatus("idle");

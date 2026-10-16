@@ -97,22 +97,22 @@ spore continue <runId> --wait --json --db <db>
 
 Keep `--db` after the other arguments, so the line starts `spore continue <runId> --wait`. Then end the turn with one line: the workflow, the key, the run, the database, and that you will say when the run needs the person or ends.
 
-When the command returns, its stdout is one JSON object: the run's status (`runId`, `status`, `position`, `waiting`, `intervention`, `quarantine`, `step`, `result`, `end`, `cancel`, `db`) with `needs` and `commands`. Its stderr holds progress lines. React by the exit code, in one line, offering what the row says right there. Every outcome, resolution or command you offer comes from this object, never typed or guessed: when the person names another outcome, say the node does not route it and offer the listed ones as the only choices.
+When the command returns, its stdout is one JSON object: the run's status (`runId`, `status`, `position`, `waiting`, `intervention`, `quarantine`, `step`, `result`, `end`, `cancel`, `db`) with `needs` and `commands`, `needs` being null once the run has ended. Its stderr holds progress lines. React by that object's `status` and `needs`, not by the exit code: spore exits 0 whenever it printed the status, whatever the run needs, as `gh run watch` exits 0 and `gh run view --json status,conclusion` says how the run went. The run's own exit codes come only with `--exit-status`, which is for scripts and which this line does not pass. Take the first row that fits, and say it in one line, offering what the row says right there. Every outcome, resolution or command you offer comes from this object, never typed or guessed: when the person names another outcome, say the node does not route it and offer the listed ones as the only choices.
 
 Every JSON or text value below goes on the command line in single quotes, on one line, with each `'` inside written as `'\''`.
 
-| Exit | The run | Say | Offer |
+| The answer | The run | Say | Offer |
 |---|---|---|---|
-| 0 | completed | the end node (`end.nodeId`) and the `result` | nothing |
-| 1 | failed | the end node and `result.error`'s `code` and `message` | nothing |
-| 7 | was cancelled | the reason, `cancel.reason`, when there is one | nothing |
-| 3 | waits for a decision | **A decision** below | the outcomes |
-| 4 | is stuck | **A stuck step** below | Retry, Mark done, Fail |
-| 5 | is quarantined | the quarantine's code and details | `spore release <runId>`: run it on a yes, then follow again |
-| 6 | needs someone, by `needs` | **An async step** below | as there |
-| 2 | was refused | the error's `code` and `message`; `run.not-found` means the run is not in that database | nothing |
-| 130 | was not followed to the end: the follow was stopped | that the run stays where it was | `/ml-workflow:continue <runId>` |
-| other | — | the last lines spore printed | nothing |
+| `status` `completed` | completed | the end node (`end.nodeId`) and the `result` | nothing |
+| `status` `failed` | failed | the end node and `result.error`'s `code` and `message` | nothing |
+| `status` `cancelled` | was cancelled | the reason, `cancel.reason`, when there is one | nothing |
+| `needs` `signal` | waits for a decision | **A decision** below | the outcomes |
+| `needs` `stuck` | is stuck | **A stuck step** below | Retry, Mark done, Fail |
+| `needs` `quarantined` | is quarantined | the quarantine's code and details | `spore release <runId>`: run it on a yes, then follow again |
+| `needs` `external-ready`, `held` or `capability-missing` | needs someone, by `needs` | **An async step** below | as there |
+| `error`, exit 2 | was refused | the error's `code` and `message`; `run.not-found` means the run is not in that database | nothing |
+| no answer, exit 130 | was not followed to the end: the follow was stopped | that the run stays where it was | `/ml-workflow:continue <runId>` |
+| anything else | — | the last lines spore printed | nothing |
 
 A usage error (exit 2) about `--wait` means this `spore` predates following, as the v0.2.0 release does: say that the run was started and waits where it is, that ml-workflow follows runs with `spore continue --wait`, which a `spore` built from runspore's main branch has until a release does, and give `cargo install --git https://github.com/Web-tree/runspore --locked --force runspore-cli`. Run it only on a yes.
 
