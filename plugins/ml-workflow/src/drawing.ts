@@ -31,7 +31,15 @@ type GvEdge = Attrs & { _gvid: number; tail: number; head: number };
 type GvGraph = Attrs & { objects?: GvNode[]; edges?: GvEdge[] };
 
 /** One node and one arrow of the graph, as the display draws them. */
-export type Graph = { nodes: string[]; edges: { from: string; to: string; on: string; label: string }[]; dot: string };
+export type Graph = {
+  nodes: string[];
+  edges: { from: string; to: string; on: string; label: string }[];
+  dot: string;
+  /** Each node's label on one line, its ID when it has none. */
+  labels: Record<string, string>;
+  /** The graph's `start` node, when it names one of its nodes. */
+  start: string | null;
+};
 
 let graphviz: any;
 async function gv(): Promise<any> {
@@ -57,9 +65,11 @@ export async function display(source: string, here: string | null = null, taken:
     '  edge [fontname="Helvetica", fontsize=10];',
   ];
   const nodes: string[] = [];
+  const labels: Record<string, string> = {};
   for (const node of read.objects ?? []) {
     nodes.push(node.name);
     const own = pick(node);
+    labels[node.name] = own.label ? own.label.replace(/\\[nlr]/g, " ").replace(/\s+/g, " ").trim() || node.name : node.name;
     if (node.kind === "complete" || node.kind === "fail") own.peripheries = "2";
     if (node.name === here) {
       own.style = own.style ? `${own.style},filled,bold` : "rounded,filled,bold";
@@ -82,7 +92,8 @@ export async function display(source: string, here: string | null = null, taken:
     lines.push(`  ${quote(from)} -> ${quote(to)} [${attrs(own)}];`);
   }
   lines.push("}");
-  return { nodes, edges, dot: lines.join("\n") + "\n" };
+  const start = typeof read.start === "string" && nodes.includes(read.start) ? read.start : null;
+  return { nodes, edges, dot: lines.join("\n") + "\n", labels, start };
 }
 
 function pick(from: Attrs): Record<string, string> {
@@ -209,6 +220,8 @@ function bezier(p: [number, number][], t: number): [number, number] {
   ];
 }
 
+const RANK_ROWS = 6;
+
 // The bit of each of a Braille cell's 2×4 dots, by column and row.
 const DOT_BIT = [
   [0x01, 0x02, 0x04, 0x40],
@@ -232,7 +245,12 @@ export function dots(plain: string, graph: Graph, here: string | null, taken: Ar
   }
   for (const node of nodes) sx = Math.max(sx, (node.label.length + 4) / Math.max(width, 0.1));
   const cols = Math.ceil(width * sx) + 4;
-  const sy = sx / 2.5;
+  // Rows are scaled on their own, so a narrow graph is not drawn as tall as a wide one is wide:
+  // the nearest two rows of nodes come RANK_ROWS rows apart, a box's three and three for the arrow.
+  const levels = [...new Set(nodes.map((node) => Math.round(node.y * 100)))].sort((a, b) => a - b);
+  let gap = Infinity;
+  for (let i = 1; i < levels.length; i++) gap = Math.min(gap, (levels[i]! - levels[i - 1]!) / 100);
+  const sy = Number.isFinite(gap) ? RANK_ROWS / gap : sx / 2.5;
   const rows = Math.ceil(height * sy) + 3;
   const bits = Array.from({ length: rows }, () => new Array<number>(cols).fill(0));
   const hot = Array.from({ length: rows }, () => new Array<boolean>(cols).fill(false));
@@ -318,6 +336,42 @@ function runs(row: Span[]): Span[] {
   if (last) {
     last.text = last.text.trimEnd();
     if (!last.text) out.pop();
+  }
+  return out;
+}
+
+/**
+ * The compact tree of the graph, one row per arrow, as `argo watch` prints a workflow: the start
+ * node first, then each node under the arrow into it, `─ <label> ─▶` when the arrow has a label. A
+ * node already in the tree is named again after `↻` and not followed, so a loop ends there; nodes
+ * the start does not reach follow as trees of their own. Styled as the dot drawing.
+ */
+export function tree(graph: Graph, here: string | null, taken: Arrow | null): Span[][] {
+  const out: Span[][] = [];
+  const seen = new Set<string>();
+  const nodeSpans = (id: string, again: boolean): Span[] =>
+    again ? [{ text: `↻ ${graph.labels[id] ?? id}`, style: "label" }] : [{ text: graph.labels[id] ?? id, style: id === here ? "here" : "node" }];
+  const walk = (id: string, indent: string) => {
+    graph.edges
+      .filter((edge) => edge.from === id)
+      .forEach((edge, i, all) => {
+        const isLast = i === all.length - 1;
+        const isTaken = taken !== null && edge.from === taken.from && edge.to === here && edge.on === taken.outcome;
+        const again = seen.has(edge.to);
+        seen.add(edge.to);
+        const row: Span[] = [{ text: `${indent}${isLast ? "└" : "├"}`, style: "edge" }];
+        if (edge.label) row.push({ text: "─ ", style: isTaken ? "taken" : "edge" }, { text: edge.label, style: isTaken ? "taken-label" : "label" }, { text: " ─▶ ", style: isTaken ? "taken" : "edge" });
+        else row.push({ text: "─▶ ", style: isTaken ? "taken" : "edge" });
+        out.push([...row, ...nodeSpans(edge.to, again)]);
+        if (!again) walk(edge.to, `${indent}${isLast ? "    " : "│   "}`);
+      });
+  };
+  const roots = graph.start ? [graph.start, ...graph.nodes] : graph.nodes;
+  for (const root of roots) {
+    if (seen.has(root)) continue;
+    seen.add(root);
+    out.push(nodeSpans(root, false));
+    walk(root, "");
   }
   return out;
 }

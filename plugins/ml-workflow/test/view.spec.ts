@@ -205,6 +205,35 @@ test("the view marks the current node and the arrow just taken in the files, and
   expect(rows.some((row) => row.includes("│ Implement (Claude) │"))).toBe(true);
   expect(report.dots.flat().filter((span: any) => span.style === "here").map((span: any) => span.text).join("")).toContain("Implement (Claude)");
   expect(report.dots.flat().filter((span: any) => span.style === "taken-label").map((span: any) => span.text).join("").trim()).toBe("red ×3");
+  // Four rows of nodes, six rows apart: the drawing fits a short pane.
+  expect(report.dots.length).toBeLessThanOrEqual(24);
+  expect(report.tree.map((row: any[]) => row.map((span) => span.text).join(""))).toEqual([
+    "Implement (Claude)",
+    "└─▶ Run the tests",
+    "    ├─ red ×3 ─▶ ↻ Implement (Claude)",
+    "    ├─ ok ─▶ Approve (you)",
+    "    │   ├─ rejected ─▶ ↻ Implement (Claude)",
+    "    │   └─ approved ─▶ done",
+    "    └─ exhausted ─▶ Tests keep failing (you)",
+    "        ├─ keep-going ─▶ ↻ Implement (Claude)",
+    "        └─ stop ─▶ stopped",
+  ]);
+  const styled = (style: string) => report.tree.flat().filter((span: any) => span.style === style).map((span: any) => span.text);
+  expect(styled("here")).toEqual(["Implement (Claude)"]);
+  expect(styled("taken-label")).toEqual(["red ×3"]);
+});
+
+test("a narrow workflow's dot drawing is not drawn taller for being narrow", () => {
+  writeFileSync(
+    join(dir, "files", "workflow.dot"),
+    'digraph nightly { dialect = "runspore/0.2"; start = "build"; build [label="Build"]; test [label="Run the tests"]; publish [kind="await-signal", label="Publish? (you)"]; done [kind="complete"]; build -> test; test -> publish [on="ok"]; publish -> done [on="approved"]; }\n',
+  );
+  writeFileSync(join(dir, "files", "settings.json"), "{}\n");
+  status("run_n", { position: at("publish", 1, ["test", "ok"]) });
+  const { report } = helper(["view", "run_n", "--json"], { CLAUDE_SPORE_FONTS: "" });
+  expect(report.dots.length).toBeLessThanOrEqual(24);
+  expect(report.dots.flat().filter((span: any) => span.style === "here").map((span: any) => span.text).join("")).toContain("Publish? (you)");
+  expect(report.tree.map((row: any[]) => row.map((span) => span.text).join(""))).toEqual(["Build", "└─▶ Run the tests", "    └─ ok ─▶ Publish? (you)", "        └─ approved ─▶ done"]);
 });
 
 test("a node on one line is that line; a node without an action or instructions shows its block alone", () => {

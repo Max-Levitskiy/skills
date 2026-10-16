@@ -5,7 +5,7 @@ import { copyFileSync, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { dataDir } from "./doctor.ts";
-import { display, dots, layout, picture, plainText, pngSize, writeWhole, type Arrow, type Graph } from "./drawing.ts";
+import { display, dots, layout, picture, plainText, pngSize, tree, writeWhole, type Arrow, type Graph } from "./drawing.ts";
 import { duration } from "./unfinished.ts";
 
 // Each spore call is cut off here: the mod polls once a second.
@@ -83,6 +83,7 @@ export async function view(argv: string[]): Promise<number> {
     facts: factsOf(status),
     picture: pictured,
     dots: drawing,
+    tree: tree(graph, here, taken),
     dot: dotLines(source, here, taken),
     settings: here ? settingsLines(settings, here) : [],
     instructions: instructionsPath && text !== null ? { file: instructionsPath, head: text.split("\n").filter((l) => l.trim()).slice(0, 3), text } : null,
