@@ -84,7 +84,7 @@ function world(on: On, version: World['version'], doctor: Answer = { exitCode: 0
   })
   on('tool.call', { tool: 'Bash' }, () => ({ result: { stdout: '', stderr: '', interrupted: false } }))
   // The engine's own band, empty: what the mod's band passes to when no run line shows.
-  on('ui.render', { component: 'AbovePrompt' }, ($, e) => h($.ui.resolve(e).Box, {}) as RenderElement)
+  on('ui.render', { component: 'AbovePrompt' }, ($, e) => h($.ui.resolve(e).Box, { key: 'engine' }) as RenderElement)
   on('skill.prompt', ($, e) => ({ text: e.text }))
   on('ui.open', ($, e) => {
     w.opens.push(e.id)
@@ -267,7 +267,9 @@ test('a start whose helper does not answer with JSON goes through for the skill 
 
 // The menu (docs/spec.md, p.11).
 const OPEN = 'The workflow menu is open.'
-const PANE = { plugin: 'ml-workflow', component: 'Pane', requestId: 'ml-workflow-menu', props: { bodyColumns: 80 } as never } as const
+// A pane's props, whole, as the engine hands them to a pane seated above the prompt.
+const paneProps = (title: string, bodyColumns: number) => ({ title, isFocused: true, bodyColumns, placement: 'inline', scroll: { offset: 0, bodyRows: 40 }, view: {} }) as const
+const PANE = { plugin: 'ml-workflow', component: 'Pane', requestId: 'ml-workflow-menu', props: paneProps('Workflows', 80) } as const
 
 test("the menu skill runs the helper's menu and opens the pane in place of its text", async ($, on) => {
   const w = world(on, NEW)
@@ -342,8 +344,12 @@ test('a helper that gives no rows leaves its first error line in the pane', asyn
 // The run line and the live view (docs/spec.md, p.24).
 const DB = '/repo/.spore/runspore.db'
 const FOLLOW = `spore continue run_a --wait --json --db ${DB}`
-const BAND = { plugin: 'ml-workflow', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: true, maxRows: 10, bodyColumns: 100 } as never } as const
-const VIEW_PANE = { plugin: 'ml-workflow', component: 'Pane', requestId: 'run-run_a', props: { bodyColumns: 100 } as never } as const
+const BAND = {
+  plugin: 'ml-workflow',
+  component: 'AbovePrompt',
+  props: { hasSurvey: false, isWorking: true, maxRows: 10, bodyColumns: 100, scroll: { offset: 0, bodyRows: 9 }, view: {} },
+} as const
+const VIEW_PANE = { plugin: 'ml-workflow', component: 'Pane', requestId: 'run-run_a', props: paneProps('coding-loop-0238a2a3', 100) } as const
 
 function lineOf(text: string, fields: { needsYou?: boolean; ended?: boolean } = {}): Ran {
   const line = { runId: 'run_a', db: DB, name: 'coding-loop-0238a2a3', text, needsYou: false, ended: false, ...fields }
@@ -374,7 +380,7 @@ test('a Bash call following a run shows its line above the prompt, with the view
   const clock = mock.clock(on)
   const w = world(on, NEW)
   w.line.run_a = lineOf(RUNNING)
-  await $.tool.call({ tool: 'Bash', command: FOLLOW } as never)
+  await $.tool.call({ tool: 'Bash', command: FOLLOW })
   await clock.settle()
   expect(lineCalls(w).map(argv => argv.slice(1))).toEqual([['line', 'run_a', '--db', DB, '--json']])
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
@@ -388,7 +394,7 @@ test('a run that waits for a person says "needs you"', async ($, on) => {
   const clock = mock.clock(on)
   const w = world(on, NEW)
   w.line.run_a = lineOf('coding-loop-0238a2a3 at approve, visit 1, from test on ok', { needsYou: true })
-  await $.tool.call({ tool: 'Bash', command: 'spore continue run_a --wait --json' } as never)
+  await $.tool.call({ tool: 'Bash', command: 'spore continue run_a --wait --json' })
   await clock.settle()
   expect(lineCalls(w).map(argv => argv.slice(1))).toEqual([['line', 'run_a', '--json']])
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
@@ -400,7 +406,7 @@ test('other commands follow nothing, and nothing is polled', async ($, on) => {
   const clock = mock.clock(on)
   const w = world(on, NEW)
   await $.session.start(START)
-  await $.tool.call({ tool: 'Bash', command: 'spore status run_a --json' } as never)
+  await $.tool.call({ tool: 'Bash', command: 'spore status run_a --json' })
   await clock.advance(5000)
   expect(lineCalls(w)).toEqual([])
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
@@ -412,7 +418,7 @@ test('the line is polled once a second while it shows; an ended run leaves the b
   const clock = mock.clock(on)
   const w = world(on, NEW)
   w.line.run_a = lineOf(RUNNING)
-  await $.tool.call({ tool: 'Bash', command: FOLLOW } as never)
+  await $.tool.call({ tool: 'Bash', command: FOLLOW })
   await clock.settle()
   await clock.advance(1000)
   await clock.advance(1000)
@@ -437,7 +443,7 @@ test("the view button opens the pane run-<runId> drawing the helper's view", asy
   const w = world(on, NEW)
   w.line.run_a = lineOf(RUNNING)
   w.view.run_a = VIEWED
-  await $.tool.call({ tool: 'Bash', command: FOLLOW } as never)
+  await $.tool.call({ tool: 'Bash', command: FOLLOW })
   await clock.settle()
   const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
   await band.press({ key: 'view:run_a' })
@@ -461,7 +467,7 @@ test('a picture check the terminal denies switches the session to the dot drawin
   w.view.run_a = VIEWED
   w.line.run_a = lineOf(RUNNING)
   w.blit = { deny: 'the Image draws its alt here: the terminal draws no placeholder images' }
-  const answer = await $.tool.call({ tool: 'mcp__ml-workflow__open_view', runId: 'run_a', db: DB } as never)
+  const answer = await $.tool.call({ tool: 'mcp__ml-workflow__open_view', runId: 'run_a', db: DB })
   expect(answer.result).toBe('The live view of run_a is open.')
   const pane = await $.ui.mount({ ...VIEW_PANE, surface: 'terminal' })
   expect(await pane.find({ key: 'picture' })).toBeDefined()
@@ -478,7 +484,7 @@ test('an open view polls its run; once the run ended it gets its last view and t
   const w = world(on, NEW)
   w.view.run_a = VIEWED
   w.line.run_a = lineOf(RUNNING)
-  await $.tool.call({ tool: 'mcp__ml-workflow__open_view', runId: 'run_a' } as never)
+  await $.tool.call({ tool: 'mcp__ml-workflow__open_view', runId: 'run_a' })
   await clock.advance(1000)
   expect(lineCalls(w)).toHaveLength(1)
   const ended = lineOf('coding-loop-0238a2a3 completed at done, from approve on approved', { ended: true })
