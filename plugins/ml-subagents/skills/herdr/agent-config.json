@@ -1,0 +1,92 @@
+{
+  "$schema": "../../../ml-agent-config/agent-config.schema.json",
+  "version": 2,
+  "name": "herdr",
+  "schema": {
+    "version": 1,
+    "keys": {
+      "agents": {
+        "description": "Named subagent presets, layered over the built-in ones (claude, codex, omp, gemini, opencode, droid, copilot, cursor). An entry with a built-in's name overrides it field by field",
+        "layer": "global",
+        "default": {},
+        "type": "object",
+        "additionalProperties": { "$ref": "#/$defs/preset" }
+      },
+      "defaults.agent": {
+        "description": "The preset `start` launches when none is named",
+        "layer": "global",
+        "default": "claude",
+        "type": "string",
+        "minLength": 1
+      },
+      "defaults.split": {
+        "description": "Split direction when starting next to an explicit anchor pane or tab",
+        "layer": "global",
+        "default": "right",
+        "type": "string",
+        "enum": ["right", "down"]
+      },
+      "defaults.focus": {
+        "description": "Whether starting a subagent takes the user's focus",
+        "layer": "global",
+        "default": false,
+        "type": "boolean"
+      },
+      "defaults.bootTimeoutMs": {
+        "description": "Milliseconds to wait for a started agent to become ready",
+        "layer": "global",
+        "default": 30000,
+        "type": "integer",
+        "minimum": 3001,
+        "maximum": 300000
+      },
+      "defaults.replyTimeoutMs": {
+        "description": "Milliseconds to wait for one reply",
+        "layer": "global",
+        "default": 300000,
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 3598000
+      },
+      "defaults.readLines": {
+        "description": "Pane lines read back when collecting a reply",
+        "layer": "global",
+        "default": 80,
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 1000
+      }
+    },
+    "$defs": {
+      "preset": {
+        "description": "One launchable subagent: the argv herdr starts, plus overrides of the launch defaults",
+        "type": "object",
+        "properties": {
+          "command": {
+            "description": "The canonical executable and its arguments, e.g. [\"claude\", \"--permission-mode\", \"plan\"]. Optional only when overriding a built-in preset",
+            "type": "array",
+            "items": { "type": "string" },
+            "minItems": 1
+          },
+          "kind": { "description": "The managed agent kind; inferred from a canonical command name", "type": "string", "minLength": 1 },
+          "description": { "description": "One line shown by `presets`", "type": "string", "minLength": 1 },
+          "cwd": { "description": "Working directory; ~ expands, a relative path resolves from the repo root", "type": "string", "minLength": 1 },
+          "env": {
+            "description": "Extra environment for the agent",
+            "type": "object",
+            "additionalProperties": { "type": "string" }
+          },
+          "session": { "description": "The herdr session to launch in; unset means the caller's own", "type": "string", "minLength": 1 },
+          "split": { "description": "Split direction next to an anchor pane", "type": "string", "enum": ["right", "down"] },
+          "focus": { "description": "Whether starting it takes the user's focus", "type": "boolean" },
+          "bootTimeoutMs": { "description": "Milliseconds to wait for the agent to become ready", "type": "integer", "minimum": 3001, "maximum": 300000 },
+          "replyTimeoutMs": { "description": "Milliseconds to wait for one reply", "type": "integer", "minimum": 1, "maximum": 3598000 },
+          "readLines": { "description": "Pane lines read back for a reply", "type": "integer", "minimum": 1, "maximum": 1000 },
+          "replyMarker": { "description": "Legacy screen marker; accepted, unused", "type": "string", "minLength": 1 },
+          "composerMarker": { "description": "Legacy screen marker; accepted, unused", "type": "string", "minLength": 1 },
+          "chrome": { "description": "Legacy screen patterns; accepted, unused", "type": "array", "items": { "type": "string" } }
+        }
+      }
+    }
+  }
+}

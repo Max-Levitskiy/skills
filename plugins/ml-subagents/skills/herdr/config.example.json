@@ -1,49 +1,31 @@
 {
-  "//": "Optional ACS presets; global -> repo -> local. No authentication is established by this file.",
-  "//migration": "0.9.3 adapter uses managed start/prompt. Legacy replyMarker/composerMarker/chrome are ignored. Default launch creates a workspace; use --anchor-pane for a split.",
-  "version": 1,
+  "//": "Example only; every key is optional. Write it with `herdr-agent.ts config write <layer>` or",
+  "//1": "`agent-config write herdr --layer <layer>`, never by hand: write stamps schemaVersion and checks each value.",
+  "//2": "Layers: global ~/.agents/config/herdr/config.json, repo <repo>/.agents/config/herdr/config.json",
+  "//3": "(committed), user-repo, and local <repo>/.agents/config/herdr/config.local.json (gitignored).",
+  "//4": "The declared keys are in agent-config.json; `agent-config describe herdr` lists them.",
+  "//5": "No authentication is established by this file. Default launch creates a workspace; use --anchor-pane for a split.",
+
   "agents": {
-    "claude": {
-      "command": [
-        "claude"
-      ],
-      "kind": "claude"
-    },
+    "claude": { "command": ["claude"], "kind": "claude" },
     "reviewer": {
-      "command": [
-        "claude",
-        "--permission-mode",
-        "plan"
-      ],
+      "command": ["claude", "--permission-mode", "plan"],
       "description": "Reviewer with requested plan permission mode",
       "split": "down",
       "replyTimeoutMs": 600000
     },
     "scratch": {
-      "command": [
-        "claude"
-      ],
+      "command": ["claude"],
       "cwd": "~/tmp",
       "description": "Scratch cwd; inspect its startup instructions/hooks before use"
     },
     "codex": {
-      "command": [
-        "codex",
-        "--search"
-      ],
+      "command": ["codex", "--search"],
       "kind": "codex",
       "description": "Codex with web search",
-      "env": {
-        "RUST_LOG": "warn"
-      }
+      "env": { "RUST_LOG": "warn" }
     },
-    "farm": {
-      "command": [
-        "claude"
-      ],
-      "session": "agents",
-      "focus": false
-    }
+    "farm": { "command": ["claude"], "session": "agents", "focus": false }
   },
   "defaults": {
     "agent": "claude",
