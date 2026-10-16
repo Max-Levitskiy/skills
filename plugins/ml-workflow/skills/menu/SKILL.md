@@ -17,8 +17,8 @@ ml-workflow needs Claude Code 2.1.290 or later. Compare the version above with 2
 
 ## 2. Open the menu
 
-The menu is a pane that ml-workflow's mod draws. The mod normally opens it as this skill starts, and you then read "The workflow menu is open." instead of this text. Reading this text means the mod could not open it from there, so open it with the mod's tool:
+The menu is a pane that ml-workflow's mod draws. When the person types `/ml-workflow:menu`, the mod normally opens it and this skill does not run. Reading this text means the mod could not open it from there, so open it with the mod's tool:
 
-Call `mcp__ml-workflow__open_menu`, loading it with ToolSearch first when its schema is not loaded. It takes no input. Reply with what it answered, in one line, and stop: the person picks from the pane, and each pick runs the sub-skill it names.
+Call `mcp__ml-workflow__open_menu`, loading it with ToolSearch first when its schema is not loaded. It takes no input. Reply with what it answered, in one line, and stop; when the pane waits undrawn the answer names the keys that show it, so keep them: the person picks from the pane, and each pick runs the sub-skill it names.
 
 When no such tool exists, the mod is not loaded in this session: reply "ml-workflow's menu is not loaded in this session. Run `/reload-plugins`, then try again." and stop.

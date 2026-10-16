@@ -27,6 +27,8 @@ type World = {
   view: Record<string, Answer>
   blit: { deny?: string }
   blits: string[]
+  // The opens and the helper's runs in the order they came: an open the person asked for comes first.
+  order: string[]
 }
 
 const FINE = JSON.stringify({ ok: true, spore: { path: '/bin/spore', version: '0.2.1' }, problems: [], launcher: 'offer' })
@@ -62,6 +64,7 @@ function world(on: On, version: World['version'], doctor: Answer = { exitCode: 0
     view: {},
     blit: {},
     blits: [],
+    order: [],
   }
   on('session.version', () => ({ value: w.version }))
   on('session.start', ($, e) => ({ cwd: e.cwd }))
@@ -72,6 +75,7 @@ function world(on: On, version: World['version'], doctor: Answer = { exitCode: 0
   on('process.run', ($, e) => {
     w.runs.push([...e.argv])
     const [command, runId = ''] = e.argv.slice(1)
+    w.order.push(`run ${command}`)
     const missing: Ran = { exitCode: 1, stdout: '', stderr: '' }
     const answer =
       command === 'unfinished' ? w.unfinished : command === 'menu' ? w.menu : command === 'line' ? (w.line[runId] ?? missing) : command === 'view' ? (w.view[runId] ?? missing) : w.doctor
@@ -88,6 +92,7 @@ function world(on: On, version: World['version'], doctor: Answer = { exitCode: 0
   on('skill.prompt', ($, e) => ({ text: e.text }))
   on('ui.open', ($, e) => {
     w.opens.push(e.id)
+    w.order.push(`open ${e.id}`)
     return w.open
   })
   on('ui.close', ($, e) => {
@@ -271,30 +276,55 @@ const OPEN = 'The workflow menu is open.'
 const paneProps = (title: string, bodyColumns: number) => ({ title, isFocused: true, bodyColumns, placement: 'inline', scroll: { offset: 0, bodyRows: 40 }, view: {} }) as const
 const PANE = { plugin: 'ml-workflow', component: 'Pane', requestId: 'ml-workflow-menu', props: paneProps('Workflows', 80) } as const
 
-test("the menu skill runs the helper's menu and opens the pane in place of its text", async ($, on) => {
+const MENU_COMMAND = { command: 'ml-workflow:menu', args: '' } as const
+
+// A session starts before anything is typed, and the mod keeps what it found of the version; what
+// the start ran is left out of the world.
+async function started($: { session: { start: (e: typeof START) => Promise<unknown> } }, w: World) {
+  await $.session.start(START)
+  w.runs = []
+  w.order = []
+  w.logs = []
+}
+
+test('typed, the menu command opens the pane before it runs the helper, and the skill does not run', async ($, on) => {
   const w = world(on, NEW)
-  expect((await $.skill.prompt({ skill: 'ml-workflow:menu', text: 'MENU BODY' })).text).toBe(OPEN)
+  await started($, w)
+  expect((await $.command.run(MENU_COMMAND)).text).toBe(OPEN)
+  expect(w.order).toEqual(['open ml-workflow-menu', 'run menu'])
   expect(w.runs.map(argv => argv.slice(1))).toEqual([['menu', '--json']])
   expect(w.runs[0]![0]!.endsWith('/bin/claude-spore')).toBe(true)
-  expect(w.opens).toEqual(['ml-workflow-menu'])
+  expect(w.commands).toEqual([])
 })
 
-test('a pane that waits undrawn says why', async ($, on) => {
+test('a pane that waits undrawn says why, and the keys that show it', async ($, on) => {
   const w = world(on, NEW)
+  await started($, w)
   w.open = { value: { isPlaced: false, reason: 'the terminal is 90 columns wide' } }
-  expect((await $.skill.prompt({ skill: 'ml-workflow:menu', text: 'MENU BODY' })).text).toBe('The workflow menu is open but not shown yet: the terminal is 90 columns wide')
+  expect((await $.command.run(MENU_COMMAND)).text).toBe(
+    'The workflow menu is open but not shown yet: the terminal is 90 columns wide. Type /ml-workflow:menu and press Enter to show it.',
+  )
 })
 
-test("an open the engine refuses leaves the skill's own text, which calls open_menu", async ($, on) => {
+test('an open the engine refuses runs the skill, which calls open_menu', async ($, on) => {
   const w = world(on, NEW)
+  await started($, w)
   w.open = { deny: 'no pane from here' }
-  expect((await $.skill.prompt({ skill: 'ml-workflow:menu', text: 'MENU BODY' })).text).toBe('MENU BODY')
+  await $.command.run(MENU_COMMAND)
+  expect(w.commands).toEqual([['ml-workflow:menu', '']])
 })
 
-test("on an older Claude Code the menu skill's own text runs, and nothing opens", async ($, on) => {
+test('on an older Claude Code the menu skill runs, and nothing opens', async ($, on) => {
   const w = world(on, { version: '2.1.289', base: '2.1.289' })
+  await $.session.start(START)
+  await $.command.run(MENU_COMMAND)
+  expect(w.commands).toEqual([['ml-workflow:menu', '']])
+  expect(w.opens).toEqual([])
+})
+
+test("the menu skill's text goes through untouched", async ($, on) => {
+  const w = world(on, NEW)
   expect((await $.skill.prompt({ skill: 'ml-workflow:menu', text: 'MENU BODY' })).text).toBe('MENU BODY')
-  expect(w.runs).toEqual([])
   expect(w.opens).toEqual([])
 })
 
@@ -312,9 +342,17 @@ test('the open_menu tool opens the same pane', async ($, on) => {
   expect(w.opens).toEqual(['ml-workflow-menu'])
 })
 
+test('an open_menu that waits undrawn names the command that shows the menu', async ($, on) => {
+  const w = world(on, NEW)
+  w.open = { value: { isPlaced: false, reason: 'unasked below 144 columns (120 now)' } }
+  const answer = await $.tool.call({ tool: 'mcp__ml-workflow__open_menu' })
+  expect(answer.result).toBe('The workflow menu is open but not shown yet: unasked below 144 columns (120 now). Type /ml-workflow:menu and press Enter to show it.')
+})
+
 test("the pane draws one Select per row with the helper's labels; a pick closes it and runs the option's command", async ($, on) => {
   const w = world(on, NEW)
-  await $.skill.prompt({ skill: 'ml-workflow:menu', text: 'MENU BODY' })
+  await started($, w)
+  await $.command.run(MENU_COMMAND)
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   expect((await ui.findAll({ type: 'Select' })).map(select => select.key)).toEqual(['run:run_a', 'author'])
   const run = await ui.find({ key: 'run:run_a' })
@@ -334,8 +372,9 @@ test("the pane draws one Select per row with the helper's labels; a pick closes 
 
 test('a helper that gives no rows leaves its first error line in the pane', async ($, on) => {
   const w = world(on, NEW)
+  await started($, w)
   w.menu = { exitCode: 2, stdout: '', stderr: 'claude-spore: unknown command "menu"\n' }
-  expect((await $.skill.prompt({ skill: 'ml-workflow:menu', text: 'MENU BODY' })).text).toBe(OPEN)
+  expect((await $.command.run(MENU_COMMAND)).text).toBe(OPEN)
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   expect((await ui.find({ type: 'Text' }))?.text).toBe('The menu could not be built: claude-spore: unknown command "menu"')
   await ui.unmount()
@@ -469,8 +508,10 @@ test("the view button opens the pane run-<runId> drawing the helper's view", asy
   await $.tool.call({ tool: 'Bash', command: FOLLOW })
   await clock.settle()
   const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  w.order = []
   await band.press({ key: 'view:run_a' })
   expect(w.opens).toEqual(['run-run_a'])
+  expect(w.order.slice(0, 2)).toEqual(['open run-run_a', 'run view'])
   expect(w.runs.filter(argv => argv[1] === 'view').map(argv => argv.slice(1))).toEqual([['view', 'run_a', '--db', DB, '--json']])
   const pane = await $.ui.mount({ ...VIEW_PANE, surface: 'terminal' })
   expect(await pane.find({ type: 'Text', text: LIVE.facts })).toBeDefined()
@@ -527,16 +568,47 @@ test('an open view polls its run; once the run ended it gets its last view and t
 test("the menu's View opens the live view, and runs no command", async ($, on) => {
   mock.clock(on)
   const w = world(on, NEW)
+  await started($, w)
   w.view.run_a = VIEWED
   w.menu = {
     exitCode: 0,
     stdout: JSON.stringify({ db: DB, rows: [{ key: 'run:run_a', label: 'coding-loop-0238a2a3 at implement', options: [{ label: 'View', command: 'ml-workflow:view', args: 'run_a' }] }] }),
     stderr: '',
   }
-  await $.skill.prompt({ skill: 'ml-workflow:menu', text: 'MENU BODY' })
+  await $.command.run(MENU_COMMAND)
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   await ui.select({ key: 'run:run_a', value: '0' })
   expect(w.commands).toEqual([])
   expect(w.opens).toEqual(['ml-workflow-menu', 'run-run_a'])
+  expect(w.closes).toEqual(['ml-workflow-menu'])
+  expect(w.order.slice(2, 4)).toEqual(['open run-run_a', 'run view'])
   await ui.unmount()
+})
+
+test('typed with a run ID, the view command opens the pane before it reads the run, and the skill does not run', async ($, on) => {
+  mock.clock(on)
+  const w = world(on, NEW)
+  await started($, w)
+  w.view.run_a = VIEWED
+  expect((await $.command.run({ command: 'ml-workflow:view', args: 'run_a' })).text).toBe('The live view of run_a is open.')
+  expect(w.order.slice(0, 2)).toEqual(['open run-run_a', 'run view'])
+  expect(w.runs.filter(argv => argv[1] === 'view').map(argv => argv.slice(1))).toEqual([['view', 'run_a', '--json']])
+  expect(w.commands).toEqual([])
+})
+
+test('typed without a run ID, the view command runs the skill, which finds the run', async ($, on) => {
+  const w = world(on, NEW)
+  await started($, w)
+  await $.command.run({ command: 'ml-workflow:view', args: '' })
+  expect(w.commands).toEqual([['ml-workflow:view', '']])
+  expect(w.opens).toEqual([])
+})
+
+test('a view that waits undrawn names the command that shows it', async ($, on) => {
+  mock.clock(on)
+  const w = world(on, NEW)
+  w.view.run_a = VIEWED
+  w.open = { value: { isPlaced: false, reason: 'unasked below 144 columns (120 now)' } }
+  const answer = await $.tool.call({ tool: 'mcp__ml-workflow__open_view', runId: 'run_a', db: DB })
+  expect(answer.result).toBe('The live view of run_a is open but not shown yet: unasked below 144 columns (120 now). Type /ml-workflow:view run_a and press Enter to show it.')
 })

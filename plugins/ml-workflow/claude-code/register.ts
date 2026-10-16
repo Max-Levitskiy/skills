@@ -9,14 +9,22 @@ import type { EngineInterface, Register, RenderElement, UiOpenResult } from 'cla
 
 import { BUN_MINIMUM, CLAUDE_CODE_MINIMUM, isOlder, PLUGIN_VERSION } from '../src/version'
 import type { Menu, MenuOption } from '../types'
-import { openView, registerLive, registerViewTool } from './live'
+import { openView, registerLive, registerViewTool, RUN_ID, viewed } from './live'
 
 // The version this session loaded, fixed when the mod loads: the helper on disk may be newer.
 const VERSION = PLUGIN_VERSION
 
 const PANE = 'ml-workflow-menu'
 const OPEN = 'The workflow menu is open.'
-const menuRows = atom({ plugin: 'ml-workflow', key: 'menu' } as const, { rows: [], problem: null } as Menu)
+// The keys that show the menu at any width: an open the person typed is placed however narrow.
+const SHOW = 'Type /ml-workflow:menu and press Enter to show it.'
+const READING: Menu = { rows: [], problem: null, isReading: true }
+const menuRows = atom({ plugin: 'ml-workflow', key: 'menu' } as const, READING)
+
+// Whether this Claude Code is older than the minimum, as session start found. Kept in the module so
+// a typed command's hook opens its pane before anything awaits: an open after an await is not the
+// person's, and waits undrawn below 144 columns.
+let isTooOld = false
 
 type Ran = { exitCode: number; stdout: string; stderr: string }
 type Doctor = { ran?: Ran; isGone?: boolean }
@@ -65,9 +73,12 @@ function parsed(ran: Ran): { problems: { message: string }[] } | undefined {
   }
 }
 
-// The menu (docs/spec.md, p.11): the helper's rows go into the session's state, then the pane opens.
-// It rejects when the engine refuses the open.
+// The menu (docs/spec.md, p.11): the pane opens first, before anything awaits, so a typed command
+// places it at any width; it reads its rows while it shows "Reading the workflows…". It rejects
+// when the engine refuses the open.
 async function openMenu($: EngineInterface): Promise<UiOpenResult> {
+  const result = await $.ui.open({ id: PANE, title: 'Workflows', focus: true, closeOnEscape: true })
+  await update($, menuRows, () => READING)
   let menu: Menu
   try {
     const ran = await $.process.run([helper($), 'menu', '--json'], { timeoutMs: 9000 })
@@ -76,7 +87,7 @@ async function openMenu($: EngineInterface): Promise<UiOpenResult> {
     menu = { rows: [], problem: String(error) }
   }
   await update($, menuRows, () => menu)
-  return $.ui.open({ id: PANE, title: 'Workflows', focus: true, closeOnEscape: true })
+  return result
 }
 
 function rowsOf(ran: Ran): Menu {
@@ -88,18 +99,24 @@ function rowsOf(ran: Ran): Menu {
 }
 
 function opened(result: UiOpenResult): string {
-  return result.isPlaced ? OPEN : `The workflow menu is open but not shown yet: ${result.reason}`
+  return result.isPlaced ? OPEN : `The workflow menu is open but not shown yet: ${result.reason}. ${SHOW}`
 }
 
 // A pick hands off to the option's sub-skill, as if the person typed it; View opens the live view
-// itself.
+// itself, in the pick, before anything awaits, so it is placed at any width.
 function pick($: EngineInterface, option: MenuOption | undefined): void {
   if (!option) return
+  const failed = (error: unknown) => $.ui.log(`ml-workflow: /${option.command} did not run: ${String(error)}`)
+  if (option.command === 'ml-workflow:view') {
+    const viewing = openView($, option.args, null)
+    void $.ui.close({ id: PANE }).catch(failed)
+    void viewing.catch(failed)
+    return
+  }
   void (async () => {
     await $.ui.close({ id: PANE })
-    if (option.command === 'ml-workflow:view') await openView($, option.args, null)
-    else await $.command.run({ command: option.command, args: option.args })
-  })().catch(error => $.ui.log(`ml-workflow: /${option.command} did not run: ${String(error)}`))
+    await $.command.run({ command: option.command, args: option.args })
+  })().catch(failed)
 }
 
 export const register: Register = on => {
@@ -117,7 +134,8 @@ export const register: Register = on => {
       .catch(error => $.ui.log(`ml-workflow: the open_menu tool was not registered: ${String(error)}`))
     await registerViewTool($)
     const { version, base } = await $.session.version()
-    if (isOlder(base ?? version, CLAUDE_CODE_MINIMUM)) {
+    isTooOld = isOlder(base ?? version, CLAUDE_CODE_MINIMUM)
+    if (isTooOld) {
       $.ui.log(`ml-workflow needs Claude Code ${CLAUDE_CODE_MINIMUM} or later; this is ${version}. Run: claude update`)
     } else {
       // Side by side: both wait on spore, and the person waits for both.
@@ -127,20 +145,33 @@ export const register: Register = on => {
     return next(e)
   })
 
-  // `/ml-workflow:menu` opens the pane instead of its text. On an older Claude Code, or an open the
-  // engine refuses, the skill's own text runs: it says so, or calls `open_menu`.
+  // Typed, `/ml-workflow:menu` opens the pane from the command's own hook, so the person's command
+  // places it at any width, and the skill does not run. On an older Claude Code, or an open the
+  // engine refuses, the skill runs: it says so, or calls `open_menu`.
+  on('command.run', { command: 'ml-workflow:menu' }, async ($, e, next) => {
+    if (isTooOld) return next(e)
+    try {
+      return { text: opened(await openMenu($)) }
+    } catch {
+      return next(e)
+    }
+  })
+
+  // Typed with a run ID, `/ml-workflow:view` opens the live view the same way; without one the skill
+  // runs, to find the run.
+  on('command.run', { command: 'ml-workflow:view' }, async ($, e, next) => {
+    const runId = e.args.trim()
+    if (isTooOld || !RUN_ID.test(runId)) return next(e)
+    try {
+      return { text: viewed(runId, await openView($, runId, null)) }
+    } catch {
+      return next(e)
+    }
+  })
+
   // Before every start the skill gets the doctor's answer, so it checks nothing twice.
   on('skill.prompt', async ($, e, next) => {
     const computed = await next(e)
-    if (e.skill === 'ml-workflow:menu') {
-      const { version, base } = await $.session.version()
-      if (isOlder(base ?? version, CLAUDE_CODE_MINIMUM)) return computed
-      try {
-        return { text: opened(await openMenu($)) }
-      } catch {
-        return computed
-      }
-    }
     if (e.skill !== 'ml-workflow:start') return computed
     const { ran } = await doctor($)
     if (!ran || !parsed(ran)) return computed
@@ -164,7 +195,8 @@ export const register: Register = on => {
   // One Select per row, the helper's labels as they came.
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const ui = $.ui.resolve(e)
-    const { rows, problem } = await read($, menuRows)
+    const { rows, problem, isReading } = await read($, menuRows)
+    if (isReading) return h(ui.Text, { dimColor: true }, 'Reading the workflows…') as RenderElement
     if (!rows.length || !('Select' in ui)) return h(ui.Text, { dimColor: true }, `The menu could not be built${problem ? `: ${problem}` : '.'}`) as RenderElement
     const selects = rows.map((row, i) =>
       h(ui.Select, {

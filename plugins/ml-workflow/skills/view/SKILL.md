@@ -40,6 +40,6 @@ This skill only shows. It sends no signal, resolution or run.
 
 ## 4. Open the view
 
-The live view is a pane that ml-workflow's mod draws. Call `mcp__ml-workflow__open_view` with `{"runId": "<runId>", "db": "<db>"}`, loading it with ToolSearch first when its schema is not loaded. Reply with what it answered, in one line, and stop: the pane follows the run by itself while it is open.
+The live view is a pane that ml-workflow's mod draws. Call `mcp__ml-workflow__open_view` with `{"runId": "<runId>", "db": "<db>"}`, loading it with ToolSearch first when its schema is not loaded. Reply with what it answered, in one line, and stop; when the pane waits undrawn the answer names the keys that show it, so keep them. The pane follows the run by itself while it is open.
 
 When no such tool exists, the mod is not loaded in this session. Run `claude-spore view <runId> --db <db>` and show what it printed in a code block: the run's facts, the drawing, and the lines of its files, the current node's marked `>` and the arrow just taken `*`. Then say that `/reload-plugins` loads the mod, which draws the view in a pane and keeps it up to date.

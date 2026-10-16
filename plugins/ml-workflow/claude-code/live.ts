@@ -39,6 +39,15 @@ const STYLE: Record<Span['style'], Record<string, unknown>> = {
 
 const paneOf = (runId: string) => `run-${runId}`
 
+/** A run ID as spore gives it, `run_…`. */
+export const RUN_ID = /^[A-Za-z0-9_-]{1,60}$/
+
+/** What an open of the view says, and for one that waits undrawn the keys that show it. */
+export function viewed(runId: string, result: UiOpenResult): string {
+  if (result.isPlaced) return `The live view of ${runId} is open.`
+  return `The live view of ${runId} is open but not shown yet: ${result.reason}. Type /ml-workflow:view ${runId} and press Enter to show it.`
+}
+
 /** `spore continue <runId> --wait`, and the `--db` after it, in a Bash command: the run it follows. */
 export function following(command: string): { runId: string; db: string | null } | null {
   const match = /\bspore\s+continue\s+(['"]?)([A-Za-z0-9_-]+)\1\s+--wait\b([^;&|\n]*)/.exec(command)
@@ -66,13 +75,23 @@ async function follow($: EngineInterface, runId: string, db: string | null) {
   await tick($)
 }
 
-/** Opens the run's live view; rejects when the engine refuses the open. */
-export async function openView($: EngineInterface, runId: string, db: string | null): Promise<UiOpenResult> {
+/**
+ * Opens the run's live view; rejects when the engine refuses the open. The pane opens first, before
+ * anything awaits, so a press or a typed command places it at any width; it reads the run after.
+ */
+export async function openView($: EngineInterface, runId: string, db: string | null, title = runId): Promise<UiOpenResult> {
+  const opening = $.ui.open({ id: paneOf(runId), title, focus: true, closeOnEscape: true })
   open.set(runId, db)
   settled.delete(runId)
+  let result: UiOpenResult
+  try {
+    result = await opening
+  } catch (error) {
+    open.delete(runId)
+    throw error
+  }
   const view: LiveView = (await helperJson($, ['view', runId, ...dbArgs(db)])) ?? { runId, db, error: { code: 'helper', message: 'claude-spore view gave no answer' } }
   await update($, views, all => ({ ...all, [runId]: view }))
-  const result = await $.ui.open({ id: paneOf(runId), title: view.line?.name ?? runId, focus: true, closeOnEscape: true })
   await poll($)
   if (view.picture && (await read($, pictures)) === null) $.clock.after(500, () => void checkPictures($, runId))
   return result
@@ -163,10 +182,9 @@ export function registerLive(on: On) {
 
   on('tool.call', { tool: 'mcp__ml-workflow__open_view' }, async ($, e) => {
     const { runId, db } = e as { runId?: unknown; db?: unknown }
-    if (typeof runId !== 'string' || !/^[A-Za-z0-9_-]{1,60}$/.test(runId)) return { result: 'open_view needs a runId, the run_… ID spore gave.' }
+    if (typeof runId !== 'string' || !RUN_ID.test(runId)) return { result: 'open_view needs a runId, the run_… ID spore gave.' }
     try {
-      const result = await openView($, runId, typeof db === 'string' && db ? db : null)
-      return { result: result.isPlaced ? `The live view of ${runId} is open.` : `The live view of ${runId} is open but not shown yet: ${result.reason}` }
+      return { result: viewed(runId, await openView($, runId, typeof db === 'string' && db ? db : null)) }
     } catch (error) {
       return { result: `The live view could not open: ${String(error)}` }
     }
@@ -202,7 +220,7 @@ export function registerLive(on: On) {
           ui.Box,
           { flexShrink: 0 },
           h(ui.Text, {}, ' '),
-          h(ui.Button, { key: `view:${run.runId}`, label: 'view', ...(i === 0 ? { hotkey: 'v' } : {}), onPress: () => void openView($, run.runId, run.db) }),
+          h(ui.Button, { key: `view:${run.runId}`, label: 'view', ...(i === 0 ? { hotkey: 'v' } : {}), onPress: () => void openView($, run.runId, run.db, line.name).catch(() => undefined) }),
         ),
       )
     })

@@ -8,8 +8,8 @@ export type MenuOption = { label: string; command: string; args: string }
 /** One row of the menu, drawn as one Select. */
 export type MenuRow = { key: string; label: string; options: MenuOption[] }
 
-/** The rows, or why there are none: the helper's first stderr line, or that it gave no rows. */
-export type Menu = { rows: MenuRow[]; problem: string | null }
+/** The rows, or why there are none: the helper's first stderr line, or that it gave no rows; `isReading` while the open pane waits for them. */
+export type Menu = { rows: MenuRow[]; problem: string | null; isReading?: boolean }
 
 /** `claude-spore line --json`: one run line, and the shorter forms of its text for a narrow band. */
 export type RunLine = { runId: string; db: string | null; name: string; text: string; shorter?: string[]; needsYou: boolean; ended: boolean }
