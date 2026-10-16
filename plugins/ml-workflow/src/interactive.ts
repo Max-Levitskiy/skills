@@ -38,6 +38,11 @@ const RESULT_LIMIT = 63 * 1024;
 
 const PROCESS_WAIT_MS = 10_000;
 
+// How long `start` tries again to start Claude in a pane whose shell is not at its prompt yet: the
+// `--timeout` of `agent start` (`CLAUDE_SPORE_SHELL_WAIT_MS`, for the specs).
+const SHELL_WAIT_MS = Number(process.env.CLAUDE_SPORE_SHELL_WAIT_MS) || 60_000;
+const SHELL_RETRY_MS = 500;
+
 function failure(code: string, message: string): Failure {
   return { error: { code, message }, retryable: false };
 }
@@ -80,6 +85,25 @@ async function until<T>(get: () => T | null, ms: number): Promise<T | null> {
     const value = get();
     if (value !== null || Date.now() >= end) return value;
     await Bun.sleep(200);
+  }
+}
+
+/**
+ * Starts Claude in a new pane. herdr refuses a pane whose shell has not reached its prompt yet ("is
+ * not an available shell"), so a start that never reached Claude, with no process holding the
+ * session, is tried again for up to SHELL_WAIT_MS inside this try, as Kubernetes restarts a
+ * container that never ran without counting it against `backoffLimit`.
+ */
+async function startInPane(name: string, pane: string, args: string[], session: string) {
+  const end = Date.now() + SHELL_WAIT_MS;
+  for (;;) {
+    try {
+      startClaude(name, pane, args);
+      return;
+    } catch (error) {
+      if (Date.now() >= end || sessionProcess(session) !== null) throw error;
+    }
+    await Bun.sleep(SHELL_RETRY_MS);
   }
 }
 
@@ -203,7 +227,7 @@ export async function start(): Promise<number> {
   };
   try {
     pane = openPane(name, process.cwd(), env);
-    startClaude(name, pane, claudeFlags(params, mode, session));
+    await startInPane(name, pane, claudeFlags(params, mode, session), session);
   } catch (error) {
     return give(`herdr: ${(error as Error).message}`);
   }

@@ -4,6 +4,8 @@
 //   state.json      the panes ({cwd, env}) and the live agents ({pane, pid});
 //   status/<name>   an agent's state as a test set it, else status/_every, else `idle`;
 //   down            when present, every call fails as an unreachable server would;
+//   shell-late      a count: that many `agent start` calls fail as a pane whose shell is not at
+//                   its prompt yet, the way a slow shell made the real one fail;
 //   server.json     what `status server --json` prints, when a test set it;
 //   calls.jsonl     one line per call: its args.
 // Otherwise `status server --json` prints `test/fixtures/herdr/status-server.json`, a real herdr's
@@ -88,6 +90,14 @@ if (group === "agent" && command === "start") {
   const paneId = flag("--pane")!;
   const pane = state.panes[paneId] ?? fail("pane_not_found");
   if (live(name)) fail("agent_name_taken");
+  const late = join(dir, "shell-late");
+  const refusals = existsSync(late) ? Number(readFileSync(late, "utf8")) : 0;
+  if (refusals > 0) {
+    writeFileSync(late, String(refusals - 1));
+    // herdr's own message; the code is the fake's, since `start` goes by Claude's process instead.
+    console.error(JSON.stringify({ error: { code: "agent_start_failed", message: `agent target pane ${paneId} is not an available shell` } }));
+    process.exit(1);
+  }
   const claudeArgs = args.slice(args.indexOf("--") + 1);
   const child = spawn("claude", claudeArgs, {
     cwd: pane.cwd,

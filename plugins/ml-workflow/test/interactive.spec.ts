@@ -1,6 +1,7 @@
 // `claude-spore start|probe|watch|report|stop`, the interactive Claude step (docs/spec.md, p.17),
 // driven through the executable with the fake `claude` and `herdr` first on PATH.
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { hostname } from "node:os";
 import { join } from "node:path";
@@ -211,6 +212,35 @@ describe("start", () => {
     const { exitCode, stderr } = start({ workDir: undefined, env: { RUNSPORE_WORK_DIR: undefined } });
     expect(exitCode).toBe(2);
     expect(stderr).toContain("RUNSPORE_WORK_DIR not set");
+  });
+
+  // `start` retries only while no process holds the session, so these runs are their own: another
+  // checkout's specs may run the default one's Claude at the same moment.
+  const ownRun = () => `run_${randomUUID().replaceAll("-", "")}`;
+
+  test("a pane whose shell is slow to its prompt still gets Claude, in the same try", () => {
+    herdr.shellLate(2);
+    const { exitCode, result, stderr } = start({ run: ownRun() });
+
+    expect(stderr).toBe("");
+    expect(exitCode).toBe(0);
+    expect(result.pid).toBeInteger();
+    expect(herdrCalls("workspace", "create")).toHaveLength(1);
+    expect(herdrCalls("agent", "start")).toHaveLength(3);
+    expect(herdrCalls("pane", "close")).toHaveLength(0);
+    expect(claude.calls()).toHaveLength(1);
+    expect(herdrCalls("agent", "prompt")).toHaveLength(1);
+  });
+
+  test("a pane whose shell never comes up fails the try once the wait is over, and is closed", () => {
+    herdr.shellLate(1000);
+    const { exitCode, stderr } = start({ run: ownRun(), env: { CLAUDE_SPORE_SHELL_WAIT_MS: "1200" } });
+
+    expect(exitCode).toBe(1);
+    expect(stderr).toContain("is not an available shell");
+    expect(herdrCalls("agent", "start").length).toBeGreaterThan(1);
+    expect(herdrCalls("pane", "close")).toHaveLength(1);
+    expect(claude.calls()).toHaveLength(0);
   });
 
   test("with herdr not answering it exits 1, a retryable failure", () => {
