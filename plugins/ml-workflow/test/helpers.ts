@@ -152,6 +152,12 @@ export class FakeHerdr {
 
   constructor() {
     mkdirSync(join(this.dir, "status"));
+    mkdirSync(join(this.dir, "lose"));
+  }
+
+  /** Makes every agent's next `count` prompts lost, as a Claude not yet ready for input loses them. */
+  loseEvery(count: number) {
+    writeFileSync(join(this.dir, "lose", "_every"), String(count));
   }
 
   /** Sets the state herdr shows for the agent. */

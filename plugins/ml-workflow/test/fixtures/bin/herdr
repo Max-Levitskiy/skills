@@ -3,6 +3,9 @@
 // in $FAKE_HERDR_DIR:
 //   state.json      the panes ({cwd, env}) and the live agents ({pane, pid});
 //   status/<name>   an agent's state as a test set it, else status/_every, else `idle`;
+//   lose/<name>     how many of the agent's next prompts are lost, as one typed into a Claude not
+//                   yet ready for input is, else lose/_every; any other prompt lands: it is added
+//                   to the session's transcript as a user turn, as Claude Code adds it;
 //   down            when present, every call fails as an unreachable server would;
 //   shell-late      a count: that many `agent start` calls fail as a pane whose shell is not at
 //                   its prompt yet, the way a slow shell made the real one fail;
@@ -13,11 +16,12 @@
 // `agent start` starts the `claude` on PATH, detached, in the pane's folder with the pane's
 // environment, so the helper finds a real process; `pane close` kills it.
 import { spawn } from "node:child_process";
-import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 type Pane = { cwd: string; env: Record<string, string> };
-type State = { next: number; panes: Record<string, Pane>; agents: Record<string, { pane: string; pid: number }> };
+type Agent = { pane: string; pid: number; session?: string };
+type State = { next: number; panes: Record<string, Pane>; agents: Record<string, Agent> };
 
 const dir = process.env.FAKE_HERDR_DIR;
 if (!dir) {
@@ -63,6 +67,21 @@ const shown = (name: string, agent: { pane: string }) => {
   const status = file ? readFileSync(file, "utf8").trim() : "idle";
   return { name, agent: "claude", pane_id: agent.pane, agent_status: status };
 };
+/** The transcript the fake `claude` keeps for the session, under $CLAUDE_CONFIG_DIR. */
+const transcript = (session: string | undefined) => {
+  const projects = join(process.env.CLAUDE_CONFIG_DIR ?? "", "projects");
+  if (!session || !existsSync(projects)) return null;
+  const folder = readdirSync(projects).find((f) => existsSync(join(projects, f, `${session}.jsonl`)));
+  return folder === undefined ? null : join(projects, folder, `${session}.jsonl`);
+};
+/** Whether this prompt to the agent is lost, counting it off. */
+const lost = (name: string) => {
+  const file = [join(dir, "lose", name), join(dir, "lose", "_every")].find((f) => existsSync(f));
+  const left = file ? Number(readFileSync(file, "utf8")) : 0;
+  if (left <= 0) return false;
+  writeFileSync(file!, String(left - 1));
+  return true;
+};
 
 const [group, command] = args;
 if (group === "status" && command === "server") {
@@ -106,16 +125,27 @@ if (group === "agent" && command === "start") {
     stdio: "ignore",
   });
   child.unref();
-  state.agents[name] = { pane: paneId, pid: child.pid! };
+  const at = claudeArgs.findIndex((arg) => arg === "--session-id" || arg === "--resume");
+  const session = at >= 0 ? claudeArgs[at + 1] : undefined;
+  state.agents[name] = { pane: paneId, pid: child.pid!, session };
   save();
   // The real one returns once the agent is ready for input.
   await Bun.sleep(300);
+  for (let i = 0; i < 30 && !transcript(session) && alive(child.pid!); i++) await Bun.sleep(100);
   out({ agent: shown(name, state.agents[name]!) });
 }
 
-if (group === "agent" && (command === "get" || command === "prompt")) {
+if (group === "agent" && command === "get") {
   const name = args[2]!;
   const agent = live(name) ?? fail("agent_not_found");
+  out({ agent: shown(name, agent) });
+}
+
+if (group === "agent" && command === "prompt") {
+  const name = args[2]!;
+  const agent = live(name) ?? fail("agent_not_found");
+  const file = transcript(agent.session);
+  if (file && !lost(name)) appendFileSync(file, `${JSON.stringify({ type: "user", message: { role: "user", content: args[3] } })}\n`);
   out({ agent: shown(name, agent) });
 }
 
