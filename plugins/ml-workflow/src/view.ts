@@ -48,7 +48,7 @@ export async function line(argv: string[]): Promise<number> {
   if (!args || args.rest.length !== 1) return usage("line");
   const status = await readStatus(args.rest[0]!, args.values["--db"]);
   if ("error" in status) return failed(status, args.flags.has("--json"));
-  const shown = lineOf(status);
+  const shown = lineOf(status, await decided(status));
   if (args.flags.has("--json")) console.log(JSON.stringify(shown));
   else console.log((shown.needsYou ? "needs you  " : "") + shown.text);
   return 0;
@@ -61,7 +61,7 @@ export async function view(argv: string[]): Promise<number> {
   if ("error" in status) return failed(status, args.flags.has("--json"));
   const json = args.flags.has("--json");
   const files = new Files(status);
-  const shown = lineOf(status);
+  const shown = lineOf(status, await decided(status));
   const { here, taken } = moment(status);
   const source = await files.read("workflow.dot");
   const settings = await files.read("settings.json");
@@ -144,9 +144,10 @@ export async function draw(argv: string[]): Promise<number> {
 /**
  * The run line's words (docs/spec.md, p.24): where the run is and for how long first, as
  * `kubectl get pods` leads with STATUS and AGE. `shorter` is the same line with the arrow cut down,
- * then without it, for a band too narrow for the whole line.
+ * then without it, for a band too narrow for the whole line. A run whose decision was sent and not
+ * yet acted on (`decided`) does not need the person.
  */
-export function lineOf(status: Status): Line {
+export function lineOf(status: Status, decided = false): Line {
   const key = status.startKey || status.runId;
   const ended = ENDED.has(status.status ?? "");
   let parts: [string, Arrow | null, string];
@@ -167,7 +168,7 @@ export function lineOf(status: Status): Line {
   const text = `${head}${arrow ? `, from ${arrow.from} on ${arrow.outcome}` : ""}${tail}`;
   const shorter = arrow ? [`${head}, from ${arrow.from}:${arrow.outcome}${tail}`, `${head}${tail}`] : [];
   const step = status.step;
-  const needsYou = !ended && Boolean(status.waiting || status.intervention || status.quarantine || (step?.state === "ready" && step.actor === "person"));
+  const needsYou = !ended && Boolean((status.waiting && !decided) || status.intervention || status.quarantine || (step?.state === "ready" && step.actor === "person"));
   return { runId: status.runId, db: status.db ?? null, name: key, text, shorter, needsYou, ended };
 }
 
@@ -399,6 +400,22 @@ async function readStatus(runId: string, db: string | undefined): Promise<Status
   if (error?.code) return { runId, db: null, error: { code: String(error.code), message: String(error.message ?? "") } };
   const message = ran.stderr.trim().split("\n")[0] || (ran.code === null ? "spore is not on PATH" : `spore status exited ${ran.code}`);
   return { runId, db: null, error: { code: "spore.unavailable", message } };
+}
+
+/**
+ * Whether the decision the run waits for was already sent. Spore's status keeps `waiting` until a
+ * worker applies the stored signal; only `list` says the run then needs `working`, not `signal`
+ * (skills#68). Asked only while the run waits; a `list` that fails keeps the wait.
+ */
+async function decided(status: Status): Promise<boolean> {
+  if (!status.waiting || !status.db) return false;
+  const ran = await spore(["list", "--unfinished", "--json", "--db", status.db]);
+  try {
+    const row = JSON.parse(ran.stdout).runs?.find((r: { runId?: string }) => r.runId === status.runId);
+    return ran.code === 0 && typeof row?.needs === "string" && row.needs !== "signal";
+  } catch {
+    return false;
+  }
 }
 
 function failed(failure: Failure, json: boolean): number {
