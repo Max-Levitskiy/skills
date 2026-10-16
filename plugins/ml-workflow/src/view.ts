@@ -33,7 +33,7 @@ type Status = {
   step?: { state?: string | null; actor?: string | null } | null;
 };
 
-export type Line = { runId: string; db: string | null; text: string; needsYou: boolean; ended: boolean };
+export type Line = { runId: string; db: string | null; name: string; text: string; needsYou: boolean; ended: boolean };
 type Failure = { runId: string; db: null; error: { code: string; message: string } };
 type Marked = { n: number; text: string; mark: "here" | "taken" | null };
 
@@ -154,7 +154,7 @@ export function lineOf(status: Status): Line {
   }
   const step = status.step;
   const needsYou = !ended && Boolean(status.waiting || status.intervention || status.quarantine || (step?.state === "ready" && step.actor === "person"));
-  return { runId: status.runId, db: status.db ?? null, text, needsYou, ended };
+  return { runId: status.runId, db: status.db ?? null, name: key, text, needsYou, ended };
 }
 
 // The live view's facts line: status, node, visit, try and loop count.
@@ -209,7 +209,7 @@ export function dotLines(source: string, here: string | null, taken: Arrow | nul
   const nodeStatement = new RegExp(String.raw`^\s*${ID}\s*(\[|;|$)`);
   const chain = new RegExp(String.raw`^\s*${ID}((?:\s*->\s*${ID})+)\s*(\[.*)?`);
   const idIn = new RegExp(ID, "g");
-  return source.split("\n").map((text, i) => {
+  return source.replace(/\n$/, "").split("\n").map((text, i) => {
     const line = text.replace(/^\s*(\/\/|#).*$/, "");
     let mark: Marked["mark"] = null;
     const node = nodeStatement.exec(line);

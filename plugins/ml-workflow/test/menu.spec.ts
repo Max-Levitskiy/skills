@@ -76,7 +76,7 @@ const row = (runId: string, fields: Record<string, unknown>) => ({ runId, workfl
 
 const opt = (label: string, skill: string, args = "") => ({ label, command: `ml-workflow:${skill}`, args });
 const act = (runId: string, label: string, action: string) => opt(label, "act", `${runId} ${action}`);
-const tail = (runId: string) => [opt("View", "status", runId), opt("Cancel", "cancel", runId)];
+const tail = (runId: string) => [opt("View", "view", runId), opt("Cancel", "cancel", runId)];
 
 const NO_WORKFLOWS = [
   { key: "start", label: "Start a workflow", options: [opt("Start a bundled example", "start")] },
@@ -190,7 +190,7 @@ test("without --json each row and its options are printed with their commands", 
     stdout: [
       "coding-loop-12121212 at approve, waiting for your decision for 2 h",
       "  Decide: /ml-workflow:act run_l decide",
-      "  View: /ml-workflow:status run_l",
+      "  View: /ml-workflow:view run_l",
       "  Cancel: /ml-workflow:cancel run_l",
       "Start a workflow",
       "  Start a bundled example: /ml-workflow:start",

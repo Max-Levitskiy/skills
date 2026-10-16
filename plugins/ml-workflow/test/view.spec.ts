@@ -109,6 +109,7 @@ test("a running run: node and visit, the arrow just taken, the try and the loop 
   expect(report).toEqual({
     runId: "run_a",
     db: DB,
+    name: "coding-loop-0238a2a3",
     text: "coding-loop-0238a2a3 at implement, visit 3, from test on red, try 1/3, red 2/3 in a row",
     needsYou: false,
     ended: false,
@@ -170,8 +171,8 @@ test("the view marks the current node and the arrow just taken in the files, and
   expect(exitCode).toBe(0);
   expect(report.facts).toBe("running, at implement, visit 3, try 1/3, red 2/3 in a row");
   expect(report.line.text).toBe("coding-loop-0238a2a3 at implement, visit 3, from test on red, try 1/3, red 2/3 in a row");
-  const dot = readFileSync(join(EXAMPLE, "workflow.dot"), "utf8").split("\n");
-  expect(report.dot).toHaveLength(dot.length);
+  const dot = readFileSync(join(EXAMPLE, "workflow.dot"), "utf8").trimEnd().split("\n");
+  expect(report.dot.map((l: any) => l.text)).toEqual(dot);
   expect(report.dot.filter((l: any) => l.mark).map((l: any) => [l.mark, l.text.trim()])).toEqual([
     ["here", 'implement   [label="Implement (Claude)"];'],
     ["taken", 'test        -> implement   [on="red", label="red ×3"];'],

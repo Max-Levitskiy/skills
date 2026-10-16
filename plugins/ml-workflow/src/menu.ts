@@ -79,8 +79,8 @@ function runRow({ row, status }: Run, now: number): MenuRow {
     default:
       options = [go];
   }
-  // View shows the run's state in words until the live view (p.24) is built.
-  return { key: `run:${id}`, label, options: [...options, option("View", "status", id), option("Cancel", "cancel", id)] };
+  // The mod opens the live view (p.24) itself for View; typed, the view sub-skill does.
+  return { key: `run:${id}`, label, options: [...options, option("View", "view", id), option("Cancel", "cancel", id)] };
 }
 
 /** `.spore/workflows/` beside the database spore names, else in the nearest `.spore/` from here. */
