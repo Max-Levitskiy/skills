@@ -31,6 +31,8 @@ export type LiveView = {
   facts?: string
   picture?: { file: string; width: number; height: number } | null
   dots?: Span[][]
+  /** The compact tree, drawn when the dot drawing does not fit the pane. */
+  tree?: Span[][]
   dot?: FileLine[]
   settings?: FileLine[]
   instructions?: { file: string; head: string[]; text: string } | null
