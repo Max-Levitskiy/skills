@@ -43,9 +43,9 @@ const paneOf = (runId: string) => `run-${runId}`
 export const RUN_ID = /^[A-Za-z0-9_-]{1,60}$/
 
 /** What an open of the view says, and for one that waits undrawn the keys that show it. */
-export function viewed(runId: string, result: UiOpenResult): string {
+export function viewed(runId: string, result: UiOpenResult, show = `Type /ml-workflow:view ${runId} and press Enter to show it.`): string {
   if (result.isPlaced) return `The live view of ${runId} is open.`
-  return `The live view of ${runId} is open but not shown yet: ${result.reason}. Type /ml-workflow:view ${runId} and press Enter to show it.`
+  return `The live view of ${runId} is open but not shown yet: ${result.reason}. ${show}`
 }
 
 /** `spore continue <runId> --wait`, and the `--db` after it, in a Bash command: the run it follows. */
@@ -157,6 +157,13 @@ async function refresh($: EngineInterface, runId: string, db: string | null) {
   if (line?.ended) settled.add(runId)
 }
 
+// The keys that show a view that waits when its run line is the newest: a press is the person's ask,
+// which places a pane at any width. ctrl+x tab gives the band the keys, and `v` is that line's view button.
+async function keysOnBand($: EngineInterface, runId: string): Promise<string | undefined> {
+  const newest = (await read($, followed)).find(run => run.line)
+  return newest?.runId === runId ? 'Press ctrl+x tab, then v, to show it.' : undefined
+}
+
 // Registered from the plugin's one session.start handler (register.ts): the engine takes one per event.
 export async function registerViewTool($: EngineInterface): Promise<void> {
   await $.tool
@@ -184,7 +191,8 @@ export function registerLive(on: On) {
     const { runId, db } = e as { runId?: unknown; db?: unknown }
     if (typeof runId !== 'string' || !RUN_ID.test(runId)) return { result: 'open_view needs a runId, the run_… ID spore gave.' }
     try {
-      return { result: viewed(runId, await openView($, runId, typeof db === 'string' && db ? db : null)) }
+      const result = await openView($, runId, typeof db === 'string' && db ? db : null)
+      return { result: viewed(runId, result, result.isPlaced ? undefined : await keysOnBand($, runId)) }
     } catch (error) {
       return { result: `The live view could not open: ${String(error)}` }
     }

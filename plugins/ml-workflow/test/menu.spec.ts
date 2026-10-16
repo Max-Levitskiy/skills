@@ -83,13 +83,13 @@ const NO_WORKFLOWS = [
   { key: "author", label: "Write or change a workflow", options: [opt("Write a new workflow", "author")] },
 ];
 
-test("each run is a row of what it needs, newest first, then starting and writing a workflow", () => {
+test("each run is a row of what it needs, those that need the person first, then starting and writing a workflow", () => {
   listed([
+    row("run_c", { startKey: "coding-loop-33333333", nodeId: "implement", needs: "working", since: ago(14 * MIN) }),
     row("run_a", { startKey: "coding-loop-11111111", nodeId: "approve", needs: "signal", since: ago(2 * 60 * MIN) }),
     row("run_b", { startKey: "coding-loop-22222222", nodeId: "test", needs: "stuck", since: ago(40_000) }),
-    row("run_c", { startKey: "coding-loop-33333333", nodeId: "implement", needs: "working", since: ago(14 * MIN) }),
   ]);
-  status("run_b", { intervention: { nodeId: "test", reason: "stuck", attempt: "3", maxAttempts: "3" } });
+  status("run_b", { intervention: { nodeId: "test", reason: "stuck", attempt: "3", maxAttempts: "3", error: { code: "command.exit", message: "exit code 1" } } });
   status("run_c", { running: { attempt: "2", maxAttempts: "3", state: "queued" } });
   const { exitCode, report } = menu();
   expect(exitCode).toBe(0);
@@ -99,7 +99,7 @@ test("each run is a row of what it needs, newest first, then starting and writin
       { key: "run:run_a", label: "coding-loop-11111111 at approve, waiting for your decision for 2 h", options: [act("run_a", "Decide", "decide"), ...tail("run_a")] },
       {
         key: "run:run_b",
-        label: "coding-loop-22222222 at test, stuck after attempt 3 of 3 for 40 s",
+        label: "coding-loop-22222222 at test, stuck after attempt 3 of 3 for 40 s: command.exit: exit code 1",
         options: [act("run_b", "Retry", "retry"), act("run_b", "Mark done", "done"), act("run_b", "Fail", "fail"), ...tail("run_b")],
       },
       { key: "run:run_c", label: "coding-loop-33333333 at implement, attempt 2 of 3, paused 14 min ago", options: [opt("Continue", "continue", "run_c"), ...tail("run_c")] },

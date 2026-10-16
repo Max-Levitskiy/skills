@@ -114,31 +114,39 @@ A plugin cannot ship standing allow rules. Each sub-skill pre-approves `Bash(spo
   - `act <runId> <action>`: one action of a menu row that needs Claude, a decision, a resolution, a release, abandoning or showing a step, or opening its pane (p.11). The menu hands off to it; nobody needs to type it;
   - `view [<runId>]`: opens a run's live view (p.24), as the run line's `view` button and the menu's View do.
 - **Opening the pop-up.** The mod hooks `command.run` for `ml-workflow:menu`, opens the pane with `$.ui.open` before anything else and answers "The workflow menu is open.", so the skill does not run. If opening from that hook is refused, the skill runs and tells Claude to call the mod tool `open_menu`.
-- **Placed at any width (skills#105).** Claude Code places a pane the person asked for at any width, docked beside a fullscreen transcript from 110 columns and inline above the prompt below that, and an unasked one only from 144 columns. An open counts as asked only when it comes from the hook of a command the person typed, or from the handler of a Button or Select they worked, before that hook or handler awaits anything; a tool's open, a timer's, or one after an `await` is unasked. So the menu opens from its typed command's own hook, the live view from that hook, the `view` button's press and the menu's View pick, each calling `$.ui.open` first and reading the helper after, the way k9s lays its views out to whatever terminal it gets instead of refusing to draw. A pane that still waits undrawn (opened through `open_menu` or `open_view`) is said with the exact keys that show it: "Type /ml-workflow:menu and press Enter to show it.", or the same with `/ml-workflow:view <runId>`.
+- **Placed at any width (skills#105).** Claude Code places a pane the person asked for at any width, docked beside a fullscreen transcript from 110 columns and inline above the prompt below that, and an unasked one only from 144 columns. An open counts as asked only when it comes from the hook of a command the person typed, or from the handler of a Button or Select they worked, before that hook or handler awaits anything; a tool's open, a timer's, or one after an `await` is unasked. So the menu opens from its typed command's own hook, the live view from that hook, the `view` button's press and the menu's View pick, each calling `$.ui.open` first and reading the helper after, the way k9s lays its views out to whatever terminal it gets instead of refusing to draw. A pane that still waits undrawn (opened through `open_menu` or `open_view`) is said with the exact keys that show it: "Type /ml-workflow:menu and press Enter to show it.", or the same with `/ml-workflow:view <runId>`; for a view whose run line is the newest on the band, "Press ctrl+x tab, then v, to show it." (ctrl+x tab gives the band the keys, and `v` presses its view button).
 - **The menu widget** is a pane with a `Select` ([C05][c05]).
 - **The mod stays thin.** The helper works out what the mod shows (the start line, the menu rows, the run line text, the drawings) and returns it as JSON from subcommands named in implementation. The mod only calls the helper and renders what comes back, so the helper's tests cover the logic.
 
 ## The session-start line (p.9)
 
-`spore list --unfinished --json` must answer within the 10 s hook budget. The mod prints one line per unfinished run, the way `git status` names an unfinished rebase as soon as you look: where the run is, what it waits for, and the command that picks it up, for example `coding-loop-0238a2a3 at implement, attempt 2 of 3, paused 14 min ago; /ml-workflow:menu to pick it up`. With no unfinished run, or on any error, it prints nothing. The lines name `/ml-workflow:menu`, which offers what each run needs (skills#65); they named `/ml-workflow:continue` before the menu was built.
+`spore list --unfinished --json` must answer within the 10 s hook budget. The mod prints one line per unfinished run, the way `git status` names an unfinished rebase as soon as you look and `gh run list` shows each run with its conclusion: where the run is, what it waits for and, for a stuck or quarantined one, why; then one hint with the command that picks them up. For example:
+
+```text
+coding-loop-11111111 at test, stuck after attempt 3 of 3 for 40 s: command.exit: exit code 1
+coding-loop-0238a2a3 at implement, attempt 2 of 3, paused 14 min ago
+/ml-workflow:menu to pick them up
+```
+
+With no unfinished run, or on any error, it prints nothing. The hint names `/ml-workflow:menu`, which offers what each run needs (skills#65); the lines named `/ml-workflow:continue` before the menu was built, and each carried the hint until checkpoint F (skills#109).
 
 How it does this (skills#89):
 
-- **`claude-spore unfinished [--json]`** works out the lines. It runs `spore list --unfinished --json` from the session's folder, so it reads the database spore finds from there, and `spore status <runId> --json --no-probe --db <db>` for each row, side by side, each cut off after 4 s. `--no-probe` and the read-only commands change nothing and create no database. It prints one line per run, newest first; with `--json`, `{"db", "lines"}`. A `spore` that is missing or cannot list gives no line, `db` null and exit 1; a status that fails leaves its run a line without the attempt. In a Claude that spore started for a step (`RUNSPORE_RUN_ID` or `RUNSPORE_WORK_DIR` set) it asks spore nothing and prints no line: that session is the step, not the person's.
-- **A line** is `<start key, else run ID> at <node>, <state> <age>; /ml-workflow:menu to pick it up`, the age being since the run last changed (`since`) in its largest unit (`40 s`, `14 min`, `2 h`, `3 d`). By `needs`:
+- **`claude-spore unfinished [--json]`** works out the lines. It runs `spore list --unfinished --json` from the session's folder, so it reads the database spore finds from there, and `spore status <runId> --json --no-probe --db <db>` for each row, side by side, each cut off after 4 s. `--no-probe` and the read-only commands change nothing and create no database. It prints one line per run, those that need the person first (`needs` `signal`, `stuck` or `quarantined`, or `external-ready` for the actor `person`), each part in spore's order, newest first; then the hint `/ml-workflow:menu to pick it up` (`them` for several), left out when every run is running by itself (`working` at a node, `running.state` `started`). With `--json`, `{"db", "lines"}`, the hint the last line. A `spore` that is missing or cannot list gives no line, `db` null and exit 1; a status that fails leaves its run a line without the attempt. In a Claude that spore started for a step (`RUNSPORE_RUN_ID` or `RUNSPORE_WORK_DIR` set) it asks spore nothing and prints no line: that session is the step, not the person's.
+- **A line** is `<start key, else run ID> at <node>, <state> <age>`, the age being since the run last changed (`since`) in its largest unit (`40 s`, `14 min`, `2 h`, `3 d`). By `needs`:
 
   | `needs` | State |
   |---|---|
   | `working`, its try claimed (`running.state` `started`) | `attempt n of m, running for <age>` |
   | `working`, otherwise | `attempt n of m, paused <age> ago`: nobody runs the try, as after the session that followed the run closed (p.10) |
   | `signal` | `waiting for your decision for <age>` |
-  | `stuck` | `stuck after attempt n of m for <age>` (from `intervention`) |
+  | `stuck` | `stuck after attempt n of m for <age>: <code>: <words>` (from `intervention` and its kept `error`'s `code` and `message`) |
   | `held` | `held by its pane (<herdr agent>) for <age>`, or by the step's actor |
   | `external-ready` | `waiting for <actor> to claim it for <age>` |
-  | `quarantined` | `quarantined for <age>` |
+  | `quarantined` | `quarantined for <age>: <code>: <words>` (from `quarantine`'s `code` and `details`) |
   | `capability-missing` | `at a step this spore cannot run for <age>` |
 
-  A run at no node reads `<key>, not started yet, created <age> ago`. `attempt n of m` comes from `running` or `intervention`, and is left out when the status does not give it.
+  A run at no node reads `<key>, not started yet, created <age> ago`. `attempt n of m` comes from `running` or `intervention`, and is left out when the status does not give it. `<words>` is the first line of the message or details, cut at the last whole word within 60 characters and ended `…`; either part is left out when spore gives none, and with neither so is the `: `.
 - **The mod** runs `claude-spore unfinished --json` beside the doctor at session start, only when a person is at the prompt (`isInteractive`) and the Claude Code version fits, and writes each line after the doctor's problems. Anything but a `lines` list prints nothing.
 
 ## Following a run (p.10)
@@ -191,13 +199,13 @@ How it does this (skills#64):
 | `quarantined` | Shows the reason, offers release | `spore release` |
 | any | View / Cancel | the live view; the `cancel` sub-skill |
 
-Unfinished runs come first, newest first. Workflows under `.spore/workflows/` (by graph id) run `ml-workflow:start`. "Write a new workflow" and "change a workflow" run `ml-workflow:author`. A row hands off with `$.command.run`; after an action that lets the run move, the row hands to `continue` ([C08][c08], [C11][c11] R3, R4, R12).
+Unfinished runs come first, those that need the person ahead of the rest, each part newest first. Workflows under `.spore/workflows/` (by graph id) run `ml-workflow:start`. "Write a new workflow" and "change a workflow" run `ml-workflow:author`. A row hands off with `$.command.run`; after an action that lets the run move, the row hands to `continue` ([C08][c08], [C11][c11] R3, R4, R12).
 
 How it does this (skills#65):
 
 - **`claude-spore menu [--json]`** works out the rows. It lists the runs as `unfinished` does (p.9), from the session's folder, with the same 4 s limit per call, and asks spore nothing inside a step. With `--json` it prints `{"db", "rows"}`; without, each row's label and under it each option with its command. It exits 0, and 2 on a usage error.
 - **A row** is `{"key", "label", "options"}`, and an option `{"label", "command", "args"}`: the sub-skill to run, without its slash, and its arguments. The rows, in order:
-  - one per unfinished run, keyed `run:<runId>`, labelled with the run's session-start line without its `; /ml-workflow:menu …` ending. A run held by another holder adds `, its lease ends in <age>` (or `ended <age> ago`) from `step.deadlineMs`; a quarantined run adds `: <quarantine.code>`;
+  - one per unfinished run, in the order of the session-start lines (p.9), keyed `run:<runId>`, labelled with the run's session-start line, a stuck or quarantined one's reason included. A run held by another holder adds `, its lease ends in <age>` (or `ended <age> ago`) from `step.deadlineMs`;
   - `spore`, "spore could not list the runs", with "Check spore" (`ml-workflow:status`), when spore is missing or cannot list;
   - `start`, "Start a workflow", one option per workflow by graph id (`ml-workflow:start <id>`), sorted; with none, "Start a bundled example" (`ml-workflow:start` with no argument, which offers them);
   - `author`, "Write or change a workflow": "Write a new workflow" (`ml-workflow:author`) and, when the project has a workflow, "Change a workflow" (`ml-workflow:author --change`).
@@ -215,7 +223,7 @@ How it does this (skills#65):
   | `quarantined` | Release (`release`) |
 
   then View and Cancel on every run. Continue is `ml-workflow:continue <runId>`, Cancel `ml-workflow:cancel <runId>`, and View `ml-workflow:view <runId>`, which the mod does itself: it opens the run's live view (p.24) rather than running the sub-skill.
-- **The mod** registers the tool `open_menu` at session start. `ml-workflow:menu`'s `command.run` hook and the tool each open the pane `ml-workflow-menu` with focus, closing on Esc, then run `claude-spore menu --json` and keep the rows in the session's state; until they arrive the pane says "Reading the workflows…". A helper that does not answer with rows leaves one line in the pane, "The menu could not be built", with the helper's first stderr line. The pane draws one `Select` per row, its label the row's and its options the row's, the first with `autoFocus`. A pick closes the pane and runs `$.command.run({ command, args })` with the option's command and arguments; a View pick opens the live view instead. The hook and the tool answer "The workflow menu is open." when the pane is placed, and the reason and the keys that show it when it waits undrawn; on a refused open, or a Claude Code older than the minimum, the hook runs the skill, which tells Claude to call `open_menu`.
+- **The mod** registers the tool `open_menu` at session start. `ml-workflow:menu`'s `command.run` hook and the tool each open the pane `ml-workflow-menu` with focus, closing on Esc, then run `claude-spore menu --json` and keep the rows in the session's state; until they arrive the pane says "Reading the workflows…". A helper that does not answer with rows leaves one line in the pane, "The menu could not be built", with the helper's first stderr line. The pane draws one `Select` per row, its label the row's and its options the row's, its value the first option, so no row ends in an empty value (`: none ▾`), the first with `autoFocus`. A pick closes the pane and runs `$.command.run({ command, args })` with the option's command and arguments; a View pick opens the live view instead. The hook and the tool answer "The workflow menu is open." when the pane is placed, and the reason and the keys that show it when it waits undrawn; on a refused open, or a Claude Code older than the minimum, the hook runs the skill, which tells Claude to call `open_menu`.
 
 ## The start flow (p.12)
 
