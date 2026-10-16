@@ -11,8 +11,8 @@ let dir: string;
 let bin: string;
 
 const DB = "/repo/.spore/runspore.db";
-const NOW = Date.now();
-const ago = (ms: number) => String(NOW - ms);
+// Read the clock per row: a time taken once when the file loads drifts by the time the earlier tests take.
+const ago = (ms: number) => String(Date.now() - ms);
 const MIN = 60_000;
 const ONE = "/ml-workflow:menu to pick it up";
 const SEVERAL = "/ml-workflow:menu to pick them up";
