@@ -4,7 +4,10 @@
 //   state.json      the panes ({cwd, env}) and the live agents ({pane, pid});
 //   status/<name>   an agent's state as a test set it, `idle` when absent;
 //   down            when present, every call fails as an unreachable server would;
+//   server.json     what `status server --json` prints, when a test set it;
 //   calls.jsonl     one line per call: its args.
+// Otherwise `status server --json` prints `test/fixtures/herdr/status-server.json`, a real herdr's
+// answer that `test/herdr.spec.ts` compares with the herdr on PATH.
 // `agent start` starts the `claude` on PATH, detached, in the pane's folder with the pane's
 // environment, so the helper finds a real process; `pane close` kills it.
 import { spawn } from "node:child_process";
@@ -60,7 +63,12 @@ const shown = (name: string, agent: { pane: string }) => {
 };
 
 const [group, command] = args;
-if (group === "status" && command === "server") out({ server: { running: true, compatible: true } });
+if (group === "status" && command === "server") {
+  const set = join(dir, "server.json");
+  const recorded = join(import.meta.dir, "..", "herdr", "status-server.json");
+  process.stdout.write(readFileSync(existsSync(set) ? set : recorded, "utf8"));
+  process.exit(0);
+}
 
 if (group === "workspace" && command === "create") {
   const pane = `w${state.next++}:p1`;

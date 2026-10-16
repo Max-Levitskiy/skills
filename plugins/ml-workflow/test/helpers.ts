@@ -1,5 +1,6 @@
 // Shared by the specs: the helper run as a subprocess with the fake `claude` and `herdr` first on
 // PATH.
+import { setDefaultTimeout } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -7,6 +8,10 @@ import { dirname, join } from "node:path";
 export const HELPER = join(import.meta.dir, "..", "bin", "claude-spore");
 export const FAKE_BIN = join(import.meta.dir, "fixtures", "bin");
 export const PLUGIN_BIN = join(import.meta.dir, "..", "bin");
+
+// A test runs real processes: a spore call takes about 0.3s on a fast Mac, so a test of eight
+// calls is near Bun's 5s default on a CI runner. The limit stays to catch a hang.
+setDefaultTimeout(30_000);
 
 /** PATH with the fake `claude` and `herdr`, then `claude-spore`, then the Bun running the specs. */
 export const PATH = [FAKE_BIN, PLUGIN_BIN, dirname(process.execPath), process.env.PATH].join(":");
@@ -158,6 +163,11 @@ export class FakeHerdr {
   down(down = true) {
     if (down) writeFileSync(join(this.dir, "down"), "");
     else rmSync(join(this.dir, "down"), { force: true });
+  }
+
+  /** Sets what `status server --json` prints in place of the recorded answer. */
+  server(answer: string) {
+    writeFileSync(join(this.dir, "server.json"), answer);
   }
 
   state(): { panes: Record<string, { cwd: string; env: Record<string, string> }>; agents: Record<string, { pane: string; pid: number }> } {

@@ -2,7 +2,7 @@
 // a workflow folder's `settings.json`. It builds nothing; `spore validate` checks the rest.
 import { basename, join } from "node:path";
 
-import { reachable } from "./herdr.ts";
+import { serverStatus } from "./herdr.ts";
 import { checkParams, PARAMETERS, type Problem } from "./params.ts";
 import { isObject } from "./schema.ts";
 
@@ -16,28 +16,31 @@ export async function check(args: string[]): Promise<number> {
     return 2;
   }
   const folder = rest[0]!;
-  const { problems, steps } = await checkFolder(folder);
+  const { problems, steps, herdr } = await checkFolder(folder);
   const errors = problems.filter((p) => p.severity === "error");
   const warnings = problems.filter((p) => p.severity === "warning");
   if (json) {
     const strip = ({ severity, ...rest }: NodeProblem) => rest;
-    console.log(JSON.stringify({ ok: errors.length === 0, errors: errors.map(strip), warnings: warnings.map(strip) }));
+    const report = { ok: errors.length === 0, errors: errors.map(strip), warnings: warnings.map(strip) };
+    console.log(JSON.stringify(herdr === null ? report : { ...report, herdr }));
   } else {
     for (const p of problems) console.log(`${p.severity}: ${p.node ?? folder}: ${p.message}`);
     if (errors.length === 0) {
+      if (herdr !== null) console.log(`${folder}: herdr server running, ${herdr}`);
       console.log(`${folder}: ${steps} Claude ${steps === 1 ? "step" : "steps"} checked, no errors`);
     }
   }
   return errors.length > 0 ? 2 : 0;
 }
 
-async function checkFolder(folder: string): Promise<{ problems: NodeProblem[]; steps: number }> {
+/** The problems, the Claude steps, and what herdr answered when the folder has an interactive step. */
+async function checkFolder(folder: string): Promise<{ problems: NodeProblem[]; steps: number; herdr: string | null }> {
   let settings: unknown;
   try {
     settings = JSON.parse(await Bun.file(join(folder, "settings.json")).text());
   } catch (error) {
     const message = `cannot read ${join(folder, "settings.json")}: ${(error as Error).message}`;
-    return { problems: [{ severity: "error", code: "workflow.unreadable", message, node: null }], steps: 0 };
+    return { problems: [{ severity: "error", code: "workflow.unreadable", message, node: null }], steps: 0, herdr: null };
   }
   const actions = isObject(settings) && isObject(settings.actions) ? settings.actions : {};
   const nodes = isObject(settings) && isObject(settings.nodes) ? settings.nodes : {};
@@ -55,15 +58,17 @@ async function checkFolder(folder: string): Promise<{ problems: NodeProblem[]; s
     const outcomes = Array.isArray(action.outcomes) ? action.outcomes.map(String) : ["ok"];
     for (const problem of nodeProblems(node, outcomes)) problems.push({ ...problem, node: nodeId });
   }
-  if (interactive && !reachable()) {
+  if (!interactive) return { problems, steps, herdr: null };
+  const server = serverStatus();
+  if (!server.running) {
     problems.push({
       severity: "error",
       code: "herdr.unreachable",
-      message: "the workflow has interactive Claude steps, and no herdr server answers `herdr status server --json`; start herdr first",
+      message: `the workflow has interactive Claude steps, and no herdr server answers \`herdr status server --json\` (${server.answer}); start herdr first`,
       node: null,
     });
   }
-  return { problems, steps };
+  return { problems, steps, herdr: server.answer };
 }
 
 /** `run` or `start` for a `command` running `claude-spore run` or `start`, by name or by a path to it. */
