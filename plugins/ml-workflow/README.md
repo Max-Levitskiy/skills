@@ -43,7 +43,7 @@ Each sub-skill approves `spore` and `claude-spore` for the turn it runs in. To s
 | Typed | Does | Built |
 |---|---|---|
 | `/ml-workflow:menu` | the unfinished runs and what each needs, the workflows to start, writing or changing one | stub |
-| `/ml-workflow:start <workflow> [--key <key>]` | checks the workflow, drafts its inputs, starts the run and follows it | built |
+| `/ml-workflow:start <workflow> [--key <key>]` | checks the workflow, drafts its inputs, starts the run and follows it; offers to copy a shipped workflow the project lacks | built |
 | `/ml-workflow:status [<runId>]` | the unfinished runs and what each needs, or one run's state in words | built |
 | `/ml-workflow:continue [<runId>]` | follows a run, and offers what it needs when it stops for you: the decision, the stuck step's Retry, Mark done or Fail, the release, the claim line | built |
 | `/ml-workflow:cancel [<runId>] [--reason <text>]` | cancels a run after a one-line confirmation | built |
@@ -100,6 +100,8 @@ A step you want to watch and type into runs Claude in a [herdr](https://herdr.de
 ## Writing a workflow
 
 `/ml-workflow:author` asks what the workflow should do, from start to finish, and shows the whole draft as a numbered list. You correct it in plain words; it asks only what changes the outcome (who does each step, where each ending goes, loop limits, approvals, inputs, steps unsafe to repeat, running several at once) and fills in the rest. On save it runs `spore init` if needed, writes `.spore/workflows/<name>/`, runs `spore validate` and `claude-spore check` and fixes its own errors, then lists every default it filled in. It never commits. `/ml-workflow:author <workflow>` changes a workflow in place, keeping comments, hand-written instructions and render attributes.
+
+**The shipped workflows.** The plugin ships the reference coding loop, `coding-loop`, and `parallel-coding-loop`, the same loop with a git worktree per run. `/ml-workflow:start coding-loop` in a project that lacks it offers to copy it to `.spore/workflows/coding-loop/`, running `spore init` first if needed, and asks of each Claude step whether it runs in the background or in a herdr pane you watch. `/ml-workflow:start` with no workflow in a project that has none offers both. The copy is yours to commit and change; `claude-spore example list` and `claude-spore example copy <name> <folder> [--watch <node>]` do the same by hand.
 
 Saying you'll run several at once adds a first step that makes a git worktree per run, beside the repository, and runs every later step in it. The guide the interview follows, and the two folders it copies, are in [skills/author/references/](skills/author/references/).
 

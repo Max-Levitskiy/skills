@@ -38,6 +38,22 @@ The arguments are `<workflow>`, then optionally `--key <key>`. `<workflow>` is a
 
 The project's workflows live in `workflows/` inside the `.spore` folder that holds the database; `spore list --unfinished --json` gives the database's path as `db`. Find the workflow's folder: for a name, the folder there whose `workflow.dot` declares `digraph "<name>"`, usually the folder of that name; for a folder, itself; for a `workflow.dot`, the folder holding it. With no `<workflow>`, list the workflows in that `workflows/` folder and ask which to start.
 
+### A workflow the project lacks
+
+ml-workflow ships workflows of its own; `claude-spore example list --json` prints them as `{"examples": [{"name", "description", "claudeSteps"}]}`. When a name finds no folder, or there is no `<workflow>` and the project has no workflows, read that list:
+
+- A name that is one of them: offer to copy it, in one message, and end the turn. Say that this project has no workflow `<name>` and that ml-workflow ships one, with its `description` in a line; ask "Copy it to `<project>/.spore/workflows/<name>/`?"; and for each of its `claudeSteps`, ask "Run `<node>` in the background, or in a herdr pane where you watch it and type into it?", proposing the background.
+- No `<workflow>`: name each one with its `description`, and ask whether to copy one, with the same question for each Claude step of the one chosen.
+- A name that is none of them: say there is no workflow of that name, list the project's workflows and the shipped ones, and stop.
+
+On a no, say nothing was copied or started, and stop. On a yes:
+
+1. When `db` is not inside a `.spore/` folder, run `spore init`. If it refuses, show its message and stop.
+2. Run `claude-spore example copy <name> <the .spore folder>/workflows/<name> --watch <node>`, with one `--watch` for each Claude step the person wants in a pane. On a non-zero exit, show what it printed, and stop.
+3. Say the folder it wrote, that `git status` shows it uncommitted, and that `/ml-workflow:author <name>` changes it. Then go on below with that folder.
+
+### Check it
+
 Run both checks, and show each one's report as it printed it:
 
 1. `spore validate <workflow>`: the workflow and its actions.
