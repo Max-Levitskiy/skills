@@ -3,7 +3,14 @@
 Run [Runspore](https://github.com/Web-tree/runspore) workflows from inside Claude Code. A job such as "Claude implements, the tests run, red goes back to Claude a few times, then I approve" runs as a durable workflow: it keeps going, or pauses cleanly, when your Claude session closes, crashes or the machine goes down, and any new session picks it up.
 
 ```bash
-/plugin install ml-workflow@max-skills
+claude plugin marketplace add Max-Levitskiy/skills   # once, adds the max-skills marketplace
+claude plugin install ml-workflow@max-skills
+```
+
+To try it in one project without changing your own plugin set, install it there with `--scope project`:
+
+```bash
+claude plugin install ml-workflow@max-skills --scope project
 ```
 
 **This release starts, follows, continues and cancels runs, does background and watched Claude steps, writes workflows by interview, and installs or updates `spore` when you say yes.** The menu, the session-start line and the run line arrive in the next releases. [docs/spec.md](docs/spec.md) is the whole design and says what is built.
