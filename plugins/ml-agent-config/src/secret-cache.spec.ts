@@ -2,7 +2,7 @@
 // every `*.test.ts` in the plugin as a hooks module test, where `bun:test` and Node are not there.
 
 import { describe, expect, test } from "bun:test";
-import { resolveCredential, type CredentialRef } from "./credentials";
+import { cacheVarValue, resolveCredential, type CredentialRef } from "./credentials";
 import { SECRET_CACHE_VAR, cacheKey, cachedSecret, parseCache } from "./secret-cache";
 
 describe("secret cache", () => {
@@ -37,6 +37,23 @@ describe("secret cache", () => {
         if (value === undefined) delete process.env[name];
         else process.env[name] = value;
       }
+    }
+  });
+
+  test("a cacheVar answers only when it holds a value, so an unseeded one leaves the reference cacheable", () => {
+    const saved = process.env.AC_SPEC_TOKEN;
+    try {
+      const withVar = { ...reference, cacheVar: "AC_SPEC_TOKEN" } as CredentialRef;
+      delete process.env.AC_SPEC_TOKEN;
+      expect(cacheVarValue(withVar)).toBeUndefined();
+      process.env.AC_SPEC_TOKEN = "  ";
+      expect(cacheVarValue(withVar)).toBeUndefined();
+      process.env.AC_SPEC_TOKEN = "from-cachevar";
+      expect(cacheVarValue(withVar)).toBe("from-cachevar");
+      expect(cacheVarValue(reference as CredentialRef)).toBeUndefined();
+    } finally {
+      if (saved === undefined) delete process.env.AC_SPEC_TOKEN;
+      else process.env.AC_SPEC_TOKEN = saved;
     }
   });
 

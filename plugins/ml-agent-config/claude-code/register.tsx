@@ -17,7 +17,7 @@ import type { EngineInterface, Register } from 'claude-code'
 
 import { cacheKey, parseCache } from '../src/secret-cache'
 import type { Component, Json, OnePassword, Panel, Screen, Setting, Unlock } from '../types'
-import { HARNESS, OWN, blockedParent, firstLine, withValue, type Plan } from './cli'
+import { HARNESS, OWN, blockedParent, firstLine, withValue, type Plan, type Reference } from './cli'
 import { PANE, editAt, editing, inheritedFields, referenceAt, firstEdit, firstKey, firstSetting, layerNames, readDescribe, savedAt, selected, switchLevel, top } from './panel'
 import { draw } from './screens'
 import { ORDER } from './ui/levels'
@@ -171,22 +171,27 @@ async function find($: EngineInterface, names: string[]): Promise<Plan | undefin
   return undefined
 }
 
+// References whose cacheVar answered an unlock's load. The variable's value cannot be read here, so
+// the load is what tells: the harness holds it, every child reads it there, and 1Password is not
+// asked for these this session. One whose variable is unset, as in a fresh terminal pane, is
+// unlocked like any other, so the token comes from the config and not only from the parent shell.
+const answeredByVariable = new Set<string>()
+
+function variableKey(reference: Reference): string {
+  return JSON.stringify([reference.cacheVar ?? null, cacheKey(reference)])
+}
+
 // Only well-formed references count: a component that needs setup may hold anything here yet.
-/**
- * The 1Password keys an unlock would ask for: uncached, and with no cacheVar. A reference with one
- * keeps its own cache in that variable, and load answers it from there when it holds a value, which
- * is not a 1Password secret to keep under the op:// reference. The variable's value cannot be read
- * here, so such a reference is left to it.
- */
+/** The 1Password keys an unlock would ask for: uncached, and not answered by their cacheVar. */
 async function toAsk($: EngineInterface, plan: Plan): Promise<string[]> {
   if (!plan.ready) return []
   const keys = onePasswordKeys(plan, parseCache(await $.env.get('AGENT_CONFIG_SECRETS')))
-  return keys.filter(key => !plan.config.credentials![key]!.cacheVar)
+  return keys.filter(key => !answeredByVariable.has(variableKey(plan.config.credentials![key]!)))
 }
 
-/** The 1Password keys the session cache is for: the ones with no cacheVar of their own. */
+/** The 1Password keys the session cache is for: the ones their cacheVar does not answer. */
 function cacheableKeys(plan: Plan): string[] {
-  return onePasswordKeys(plan, {}).filter(key => !plan.config.credentials![key]!.cacheVar)
+  return onePasswordKeys(plan, {}).filter(key => !answeredByVariable.has(variableKey(plan.config.credentials![key]!)))
 }
 
 export function onePasswordKeys(plan: Plan, cache: Record<string, string>): string[] {
@@ -228,30 +233,37 @@ export async function unlock($: EngineInterface, plan: Plan): Promise<Unlock | u
   } catch {
     secrets = {}
   }
+  // A key its own cacheVar answered (load says no reference) holds no 1Password secret to keep, and
+  // is not asked for again; the rest go on as asked.
+  const byVariable = keys.filter(key => plan.config.credentials![key]!.cacheVar && secrets[`credentials.${key}`] && resolved[`credentials.${key}`] === null)
+  for (const key of byVariable) answeredByVariable.add(variableKey(plan.config.credentials![key]!))
+  const asked = keys.filter(key => !byVariable.includes(key))
+  if (asked.length === 0) return undefined
+  const askedRefs = asked.map(key => refs[keys.indexOf(key)]!)
   // Each secret is kept only under the reference load says it resolved, and only when that is the
-  // reference asked for: one changed meanwhile, even and back again, or answered by a cacheVar, is not.
-  const changed = keys.filter((key, index) => resolved[`credentials.${key}`] !== refs[index])
+  // reference asked for: one changed meanwhile, even and back again, is not.
+  const changed = asked.filter((key, index) => resolved[`credentials.${key}`] !== askedRefs[index])
   if (Object.keys(secrets).length > 0 && changed.length > 0) {
-    return { name: plan.name, keys, refs, isCached: false, reason: 'a reference changed while 1Password was asked' }
+    return { name: plan.name, keys: asked, refs: askedRefs, isCached: false, reason: 'a reference changed while 1Password was asked' }
   }
-  const missing = keys.filter(key => !secrets[`credentials.${key}`])
+  const missing = asked.filter(key => !secrets[`credentials.${key}`])
   const result: Unlock =
     missing.length === 0
-      ? { name: plan.name, keys, refs, isCached: true }
-      : { name: plan.name, keys, refs, isCached: false, reason: ran.stderr.trim().split('\n')[0] || `no value for ${missing.join(', ')}` }
+      ? { name: plan.name, keys: asked, refs: askedRefs, isCached: true }
+      : { name: plan.name, keys: asked, refs: askedRefs, isCached: false, reason: ran.stderr.trim().split('\n')[0] || `no value for ${missing.join(', ')}` }
   const isKept = await onCache(async () => {
     // Forget pressed while 1Password was asked: what came back is dropped, as everything cached was.
     if (epoch !== forgets) return false
     if (result.isCached) {
       // Into the cache as it is now: another unlock may have added to it while this one asked.
       const latest = parseCache(await $.env.get('AGENT_CONFIG_SECRETS'))
-      for (const key of keys) latest[cacheKey(plan.config.credentials![key]!)] = secrets[`credentials.${key}`]!
+      for (const key of asked) latest[cacheKey(plan.config.credentials![key]!)] = secrets[`credentials.${key}`]!
       await $.env.set('AGENT_CONFIG_SECRETS', JSON.stringify(latest))
     }
     await update($, unlocks, list => [...list.filter(one => one.name !== plan.name), result])
     return true
   })
-  return isKept ? result : { name: plan.name, keys, refs, isCached: false, reason: 'forgotten while 1Password was asked' }
+  return isKept ? result : { name: plan.name, keys: asked, refs: askedRefs, isCached: false, reason: 'forgotten while 1Password was asked' }
 }
 
 async function showsBanner($: EngineInterface): Promise<boolean> {
@@ -305,6 +317,7 @@ function onCache<T>(work: () => Promise<T>): Promise<T> {
 async function forget($: EngineInterface): Promise<void> {
   await onCache(async () => {
     forgets += 1
+    answeredByVariable.clear()
     await $.env.set('AGENT_CONFIG_SECRETS', undefined)
     await update($, unlocks, () => [])
     await update($, notice, () => null)
@@ -900,7 +913,7 @@ export const register: Register = on => {
       if (!plan.ready) return { text: summary(plan, []) }
       const result = await unlock($, plan)
       if (result?.isCached) await announceCache($, plan.name)
-      if (!result) return { text: `${name}: nothing to unlock; its 1Password secrets are cached or it has none.` }
+      if (!result) return { text: `${name}: nothing to unlock; its 1Password secrets are cached, set in their cacheVar, or it has none.` }
     }
     return { text: summary(plan, await read($, unlocks), await uncached($, plan)) }
   })

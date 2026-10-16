@@ -117,8 +117,10 @@ function world(on: On, loadExit = 0): World {
       if (loadExit === -1) throw new Error('timed out after 120000ms')
       if (loadExit === -2) return ran(0, '{"secrets":{"credentials.api')
       if (loadExit === -3) return ran(0, 'null')
-      // With --with-references, beside each secret the reference it was resolved from, as the CLI does.
-      const reference = (w.apiKey as { cacheVar?: string }).cacheVar ? null : cacheKey(w.apiKey as typeof REF)
+      // With --with-references, beside each secret the reference it was resolved from, as the CLI does:
+      // none when the reference's cacheVar holds a value in the harness, which answers instead.
+      const cacheVar = (w.apiKey as { cacheVar?: string }).cacheVar
+      const reference = cacheVar && w.env[cacheVar] ? null : cacheKey(w.apiKey as typeof REF)
       const secrets = Object.fromEntries(keys.map(key => [key, 's3cret']))
       if (w.changeBackAfterLoad) w.apiKey = before
       return loadExit === 0
@@ -267,14 +269,28 @@ test('one approved 1Password read is cached for the session and not asked again'
   expect(parseCache(w.env[SECRET_CACHE_VAR])[cacheKey(REF)]).toBe('s3cret')
 })
 
-test('a reference with a cacheVar is left to it, not unlocked into the session cache', async ($, on) => {
+test('a reference whose cacheVar holds a value is left to it, and not asked for again', async ($, on) => {
   const w = world(on)
   w.apiKey = { ...REF, cacheVar: 'DEMO_TOKEN' }
+  w.env.DEMO_TOKEN = 'seeded'
   await $.skill.prompt({ skill: 'demo', text: 'A' })
-  expect(loads(w)).toHaveLength(0)
+  await $.skill.prompt({ skill: 'demo', text: 'B' })
+  expect(loads(w)).toHaveLength(1)
   expect(w.env[SECRET_CACHE_VAR]).toBeUndefined()
   const { text } = await $.command.run({ command: 'agent-config', args: 'demo', ...COMMAND })
   expect(text).not.toContain('1Password: cached')
+  expect(text).not.toContain('1Password: not cached')
+})
+
+test('a reference whose cacheVar is unset, as in a fresh pane, is unlocked into the session cache', async ($, on) => {
+  const w = world(on)
+  w.apiKey = { ...REF, cacheVar: 'DEMO_TOKEN' }
+  await $.skill.prompt({ skill: 'demo', text: 'A' })
+  await $.skill.prompt({ skill: 'demo', text: 'B' })
+  expect(loads(w)).toHaveLength(1)
+  expect(parseCache(w.env[SECRET_CACHE_VAR])[cacheKey(REF)]).toBe('s3cret')
+  const { text } = await $.command.run({ command: 'agent-config', args: 'demo', ...COMMAND })
+  expect(text).toContain('1Password: cached for this session (apiKey).')
 })
 
 test('a reference changed and changed back while 1Password is asked is not cached under the first', async ($, on) => {
@@ -288,6 +304,7 @@ test('a reference changed and changed back while 1Password is asked is not cache
 
 test('a cacheVar added while 1Password is asked leaves the reference to it', async ($, on) => {
   const w = world(on)
+  w.env.DEMO_TOKEN = 'seeded'
   w.changeOnLoad = { ...REF, cacheVar: 'DEMO_TOKEN' }
   await $.skill.prompt({ skill: 'demo', text: 'A' })
   expect(w.env[SECRET_CACHE_VAR]).toBeUndefined()
