@@ -1,0 +1,16 @@
+#!/bin/sh
+# The test step of watched-coding-loop: runs this project's tests with the first
+# test command it finds. Exit 0 is green, 1 is red (the action's exitOutcomes).
+# It runs in the action's working folder, the project root.
+if [ -f package.json ]; then
+  npm test || exit 1
+elif [ -f Cargo.toml ]; then
+  cargo test || exit 1
+elif [ -f go.mod ]; then
+  go test ./... || exit 1
+elif [ -f Makefile ] && grep -q '^test:' Makefile; then
+  make test || exit 1
+else
+  echo "run-tests: no package.json, Cargo.toml, go.mod or Makefile test target in $(pwd)" >&2
+  exit 1
+fi

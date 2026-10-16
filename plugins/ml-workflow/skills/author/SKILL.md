@@ -2,7 +2,7 @@
 name: author
 description: Write a new Runspore workflow, or change one in place, through a short interview — the whole draft first, then only the questions that change the outcome, then save, validate and check.
 argument-hint: "[<workflow> | --change]"
-allowed-tools: Bash(claude --version) Bash(spore *) Bash(claude-spore *)
+allowed-tools: Bash(claude --version) Bash(spore *) Bash(claude-spore *) Bash(chmod +x *)
 disable-model-invocation: true
 ---
 
@@ -39,4 +39,4 @@ Read [references/authoring.md](references/authoring.md) and follow it. Its `exam
 - `--change`: list the workflows under `.spore/workflows/` and ask which to change (its §8).
 - `<workflow>`: change that workflow (its §8).
 
-Write files only after the person says save. Never commit, stage or push.
+Write files only after the person says save. Never commit, stage or push. `chmod +x` is for the helper programs the guide writes (its §5.8), nothing else.
