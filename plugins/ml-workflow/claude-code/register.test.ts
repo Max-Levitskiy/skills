@@ -199,20 +199,21 @@ test('a helper that times out shows nothing', async ($, on) => {
   expect(w.logs).toEqual([])
 })
 
-const RUN = 'coding-loop-0238a2a3 at implement, attempt 2 of 3, paused 14 min ago; /ml-workflow:menu to pick it up'
-const DECISION = 'coding-loop-11111111 at approve, waiting for your decision for 2 h; /ml-workflow:menu to pick it up'
-const TWO: Ran = { exitCode: 0, stdout: JSON.stringify({ db: '/repo/.spore/runspore.db', lines: [RUN, DECISION] }), stderr: '' }
+const DECISION = 'coding-loop-11111111 at approve, waiting for your decision for 2 h'
+const RUN = 'coding-loop-0238a2a3 at implement, attempt 2 of 3, paused 14 min ago'
+const HINT = '/ml-workflow:menu to pick them up'
+const TWO: Ran = { exitCode: 0, stdout: JSON.stringify({ db: '/repo/.spore/runspore.db', lines: [DECISION, RUN, HINT] }), stderr: '' }
 
-test('session start writes each unfinished run as one line', async ($, on) => {
+test("session start writes the helper's lines as they came: one per unfinished run, then the hint", async ($, on) => {
   const w = world(on, NEW, undefined, TWO)
   expect(await $.session.start(START)).toEqual({ cwd: '/repo' })
-  expect(w.logs).toEqual([RUN, DECISION])
+  expect(w.logs).toEqual([DECISION, RUN, HINT])
 })
 
 test("the doctor's problems come before the runs", async ($, on) => {
   const w = world(on, NEW, { exitCode: 1, stdout: PROBLEMS, stderr: '' }, TWO)
   await $.session.start(START)
-  expect(w.logs).toEqual([RELOAD, MISSING, RUN, DECISION])
+  expect(w.logs).toEqual([RELOAD, MISSING, DECISION, RUN, HINT])
 })
 
 test('runs that cannot be listed show nothing', async ($, on) => {
@@ -357,6 +358,8 @@ test("the pane draws one Select per row with the helper's labels; a pick closes 
   expect((await ui.findAll({ type: 'Select' })).map(select => select.key)).toEqual(['run:run_a', 'author'])
   const run = await ui.find({ key: 'run:run_a' })
   expect(run?.props.label).toBe(ROWS[0]!.label)
+  // Each row shows its first option, so none ends in an empty value.
+  expect((await ui.findAll({ type: 'Select' })).map(select => select.props.value)).toEqual(['0', '0'])
   expect(run?.props.options).toEqual([
     { value: '0', label: 'Decide' },
     { value: '1', label: 'View' },
@@ -563,6 +566,19 @@ test('an open view polls its run; once the run ended it gets its last view and t
   expect(lineCalls(w)).toHaveLength(2)
   expect(w.runs.filter(argv => argv[1] === 'view')).toHaveLength(views)
   await pane.unmount()
+})
+
+test('a view that waits undrawn names the keys that show it: v on the newest run line, else its command', async ($, on) => {
+  const clock = mock.clock(on)
+  const w = world(on, NEW)
+  w.view.run_a = VIEWED
+  w.line.run_a = lineOf(RUNNING)
+  w.open = { value: { isPlaced: false, reason: 'the terminal is 90 columns wide' } }
+  const waits = 'The live view of run_a is open but not shown yet: the terminal is 90 columns wide.'
+  expect((await $.tool.call({ tool: 'mcp__ml-workflow__open_view', runId: 'run_a', db: DB })).result).toBe(`${waits} Type /ml-workflow:view run_a and press Enter to show it.`)
+  await $.tool.call({ tool: 'Bash', command: FOLLOW })
+  await clock.settle()
+  expect((await $.tool.call({ tool: 'mcp__ml-workflow__open_view', runId: 'run_a', db: DB })).result).toBe(`${waits} Press ctrl+x tab, then v, to show it.`)
 })
 
 test("the menu's View opens the live view, and runs no command", async ($, on) => {

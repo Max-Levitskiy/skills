@@ -98,6 +98,7 @@ function rowsOf(ran: Ran): Menu {
   return { rows: [], problem: ran.stderr.split('\n')[0] || null }
 }
 
+// A pane opened unasked waits on a narrow terminal; one the person asks for is placed at any width.
 function opened(result: UiOpenResult): string {
   return result.isPlaced ? OPEN : `The workflow menu is open but not shown yet: ${result.reason}. ${SHOW}`
 }
@@ -192,7 +193,7 @@ export const register: Register = on => {
     }
   })
 
-  // One Select per row, the helper's labels as they came.
+  // One Select per row, the helper's labels as they came, showing its first option, never an empty value.
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const ui = $.ui.resolve(e)
     const { rows, problem, isReading } = await read($, menuRows)
@@ -203,6 +204,7 @@ export const register: Register = on => {
         key: row.key,
         label: row.label,
         options: row.options.map((option, n) => ({ value: String(n), label: option.label })),
+        value: '0',
         ...(i === 0 ? { autoFocus: true } : {}),
         onSelect: (value: string) => pick($, row.options[Number(value)]),
       }),

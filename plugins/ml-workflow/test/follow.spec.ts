@@ -319,7 +319,7 @@ describe.skipIf(!follows())(`following a run under a real spore ${version ?? ""}
     for (const runId of [first, second]) spore("cancel", runId);
   }, SLOW);
 
-  test("the session-start line names each unfinished run, where it is and what it waits for", () => {
+  test("the session-start lines name each unfinished run, those that need the person first, where it is, what it waits for and why", () => {
     // A follow drives every run that is due, so each run is started just before its own follow.
     const decide = start("decide", "decide-00000013", { task: "one" }).json.runId;
     expect(follow(decide).json).toMatchObject({ needs: "signal" });
@@ -333,9 +333,10 @@ describe.skipIf(!follows())(`following a run under a real spore ${version ?? ""}
     const answer = JSON.parse(child.stdout.toString());
     expect(answer.db).toBe(db);
     expect(answer.lines).toEqual([
-      expect.stringMatching(/^decide-00000015, not started yet, created \d+ (s|min) ago; \/ml-workflow:menu to pick it up$/),
-      expect.stringMatching(/^stuck-00000014 at build, stuck after attempt 1 of 1 for \d+ (s|min); \/ml-workflow:menu to pick it up$/),
-      expect.stringMatching(/^decide-00000013 at approve, waiting for your decision for \d+ (s|min); \/ml-workflow:menu to pick it up$/),
+      expect.stringMatching(/^stuck-00000014 at build, stuck after attempt 1 of 1 for \d+ (s|min): command\.exit(: .+)?$/),
+      expect.stringMatching(/^decide-00000013 at approve, waiting for your decision for \d+ (s|min)$/),
+      expect.stringMatching(/^decide-00000015, not started yet, created \d+ (s|min) ago$/),
+      "/ml-workflow:menu to pick them up",
     ]);
 
     // The menu offers each run what it needs, and starts the project's workflows by graph id.
@@ -343,7 +344,7 @@ describe.skipIf(!follows())(`following a run under a real spore ${version ?? ""}
     expect({ exitCode: menu.exitCode, stderr: menu.stderr.toString() }).toEqual({ exitCode: 0, stderr: "" });
     const rows = JSON.parse(menu.stdout.toString()).rows as { key: string; options: { label: string; args: string }[] }[];
     const labels = (key: string) => rows.find((row) => row.key === key)?.options.map((option) => option.label);
-    expect(rows.map((row) => row.key)).toEqual([`run:${fresh}`, `run:${stuck}`, `run:${decide}`, "start", "author"]);
+    expect(rows.map((row) => row.key)).toEqual([`run:${stuck}`, `run:${decide}`, `run:${fresh}`, "start", "author"]);
     expect(labels(`run:${fresh}`)).toEqual(["Continue", "View", "Cancel"]);
     expect(labels(`run:${stuck}`)).toEqual(["Retry", "Mark done", "Fail", "View", "Cancel"]);
     expect(labels(`run:${decide}`)).toEqual(["Decide", "View", "Cancel"]);

@@ -73,7 +73,6 @@ function runRow({ row, status }: Run, now: number): MenuRow {
       options = [act("Show the step", "show")];
       break;
     case "quarantined":
-      if (status?.quarantine?.code) label += `: ${status.quarantine.code}`;
       options = [act("Release", "release")];
       break;
     default:

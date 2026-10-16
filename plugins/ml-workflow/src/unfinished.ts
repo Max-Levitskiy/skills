@@ -1,7 +1,7 @@
-// `claude-spore unfinished`: the session-start line (docs/spec.md, p.9). One line per unfinished run
-// of the database spore finds from here, saying where it is and what it waits for, so a new session
-// shows a run its last one left without being asked, as `git status` shows an unfinished rebase.
-// The menu (src/menu.ts) labels its rows with the same words.
+// `claude-spore unfinished`: the session-start lines (docs/spec.md, p.9). One line per unfinished run
+// of the database spore finds from here, saying where it is, what it waits for and why, then one
+// hint naming the menu, so a new session shows a run its last one left without being asked, as
+// `git status` shows an unfinished rebase. The menu (src/menu.ts) labels its rows with the same words.
 
 const USAGE = "usage: claude-spore unfinished [--json]";
 
@@ -9,19 +9,24 @@ const USAGE = "usage: claude-spore unfinished [--json]";
 // mod's 10 s.
 const LIMIT_MS = 4000;
 
+// The kept error's words in a line stop here.
+const GIST = 60;
+
 export type Row = { runId: string; startKey?: string | null; nodeId?: string | null; needs?: string | null; since?: string | null; actor?: string | null };
 type Attempt = { attempt?: string | number; maxAttempts?: string | number; state?: string };
+type Kept = { code?: string | null; message?: string | null };
 export type Status = {
   running?: Attempt | null;
-  intervention?: Attempt | null;
+  intervention?: (Attempt & { error?: Kept | null }) | null;
   step?: { actor?: string | null; deadlineMs?: string | number | null; holder?: { herdrAgent?: string | null } | null } | null;
-  quarantine?: { code?: string | null } | null;
+  quarantine?: { code?: string | null; details?: unknown } | null;
 };
 export type Run = { row: Row; status: Status | null };
 
 /**
- * The unfinished runs, newest first, each with its status. `runs` is null when spore is missing or
- * cannot list, and empty inside a step, where spore is asked nothing.
+ * The unfinished runs, those that need the person first, each part newest first, each with its
+ * status. `runs` is null when spore is missing or cannot list, and empty inside a step, where spore
+ * is asked nothing.
  */
 export async function unfinishedRuns(): Promise<{ db: string | null; runs: Run[] | null }> {
   // A Claude that spore started for a step is not the person's session: its run is the one it works.
@@ -31,7 +36,18 @@ export async function unfinishedRuns(): Promise<{ db: string | null; runs: Run[]
   const db: string | null = typeof listed?.db === "string" ? listed.db : null;
   if (!rows || !db) return { db: null, runs: null };
   const statuses = await Promise.all(rows.map((row) => spore(["status", row.runId, "--json", "--no-probe", "--db", db])));
-  return { db, runs: rows.map((row, i) => ({ row, status: statuses[i] ?? null })) };
+  const runs = rows.map((row, i) => ({ row, status: statuses[i] ?? null }));
+  return { db, runs: [...runs.filter(needsPerson), ...runs.filter((run) => !needsPerson(run))] };
+}
+
+/** A decision, a stuck step, a quarantine, or a step for the person to claim: the run waits for them. */
+function needsPerson({ row }: Run): boolean {
+  return ["signal", "stuck", "quarantined"].includes(row.needs ?? "") || (row.needs === "external-ready" && row.actor === "person");
+}
+
+// A try a worker holds goes on by itself: nothing to pick up.
+function isRunning({ row, status }: Run): boolean {
+  return Boolean(row.nodeId) && row.needs === "working" && status?.running?.state === "started";
 }
 
 export async function unfinished(argv: string[]): Promise<number> {
@@ -42,7 +58,9 @@ export async function unfinished(argv: string[]): Promise<number> {
   }
   const { db, runs } = await unfinishedRuns();
   const now = Date.now();
-  const lines = (runs ?? []).map(({ row, status }) => `${describe(row, status, now)}; /ml-workflow:menu to pick it up`);
+  const lines = (runs ?? []).map(({ row, status }) => describe(row, status, now));
+  const waiting = (runs ?? []).filter((run) => !isRunning(run)).length;
+  if (waiting) lines.push(`/ml-workflow:menu to pick ${waiting === 1 ? "it" : "them"} up`);
   if (json) console.log(JSON.stringify({ db, lines }));
   else for (const text of lines) console.log(text);
   return db ? 0 : 1;
@@ -73,7 +91,8 @@ function state(row: Row, status: Status | null, age: string | null): string {
       return `waiting for your decision${lasting}`;
     case "stuck": {
       const tries = attempts(status?.intervention);
-      return `stuck${tries ? ` after ${tries}` : ""}${lasting}`;
+      const error = status?.intervention?.error;
+      return `stuck${tries ? ` after ${tries}` : ""}${lasting}${why(error?.code, error?.message)}`;
     }
     case "held": {
       const pane = status?.step?.holder?.herdrAgent;
@@ -83,12 +102,21 @@ function state(row: Row, status: Status | null, age: string | null): string {
     case "external-ready":
       return `waiting for ${row.actor || "its actor"} to claim it${lasting}`;
     case "quarantined":
-      return `quarantined${lasting}`;
+      return `quarantined${lasting}${why(status?.quarantine?.code, status?.quarantine?.details)}`;
     case "capability-missing":
       return `at a step this spore cannot run${lasting}`;
     default:
       return `${row.needs ?? "unfinished"}${lasting}`;
   }
+}
+
+// `: command.exit: connection refused`, the kept error's code and the first line of its words, cut
+// short; nothing when spore keeps neither.
+function why(code: string | null | undefined, words: unknown): string {
+  const line = typeof words === "string" ? words.trim().split("\n")[0]!.trim() : "";
+  const gist = line.length > GIST ? `${line.slice(0, GIST).replace(/\s+\S*$/, "")}…` : line;
+  const parts = [code, gist].filter(Boolean);
+  return parts.length ? `: ${parts.join(": ")}` : "";
 }
 
 // "attempt 2 of 3", or nothing when the status does not say.
