@@ -562,7 +562,7 @@ test('a dot drawing taller than the pane gives way to the compact tree; the curr
   expect(await short.find({ type: 'Text', text: 'row 0' })).toBeUndefined()
   expect(await short.find({ type: 'Text', text: 'Run the tests' })).toBeDefined()
   expect(await short.find({ key: 'here' })).toBeDefined()
-  expect(await short.find({ type: 'Text', text: 'Implement (Claude)' })).toMatchObject({ props: { backgroundColor: '#ffd43b' } })
+  expect(await short.find({ type: 'Text', text: /^Implement \(Claude\)$/ })).toMatchObject({ props: { backgroundColor: '#ffd43b' } })
   expect(await short.find({ type: 'Text', text: '  2    implement [label="Implement (Claude)"];' })).toMatchObject({ props: { wrap: 'wrap' } })
   await short.unmount()
   const tall = await $.ui.mount({ ...VIEW_PANE, surface: 'terminal' })

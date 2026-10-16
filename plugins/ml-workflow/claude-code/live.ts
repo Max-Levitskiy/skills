@@ -284,14 +284,16 @@ export function registerLive(on: On) {
       const isTree = !isFit && Boolean(view.tree?.length)
       const rows = isTree ? view.tree! : dots
       // The row `reveal` scrolls to: the middle one of the current node's, its label's in a box.
+      // A Text carries no key, so that row sits in a Box keyed `here`.
       const hereRows = rows.flatMap((row, i) => (row.some(span => span.style === 'here') ? [i] : []))
       const hereRow = hereRows[Math.floor(hereRows.length / 2)]
       drawing = h(
         ui.Box,
         { flexDirection: 'column', flexShrink: 0 },
-        ...rows.map((row, i) =>
-          h(ui.Text, { ...(i === hereRow ? { key: 'here' } : {}), wrap: isTree ? 'wrap' : 'truncate-end' }, ...row.map(span => h(ui.Text, STYLE[span.style], span.text))),
-        ),
+        ...rows.map((row, i) => {
+          const text = h(ui.Text, { wrap: isTree ? 'wrap' : 'truncate-end' }, ...row.map(span => h(ui.Text, STYLE[span.style], span.text)))
+          return i === hereRow ? h(ui.Box, { key: 'here' }, text) : text
+        }),
       )
     }
     const isFull = (await read($, full)).includes(runId)
