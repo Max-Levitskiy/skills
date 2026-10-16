@@ -13,7 +13,7 @@ To try it in one project without changing your own plugin set, install it there 
 claude plugin install ml-workflow@max-skills --scope project
 ```
 
-**This release starts, follows, continues and cancels runs, does background and watched Claude steps, writes workflows by interview, and installs or updates `spore` when you say yes.** The menu, the session-start line and the run line arrive in the next releases. [docs/spec.md](docs/spec.md) is the whole design and says what is built.
+**This release starts, follows, continues and cancels runs, names each unfinished run when a session starts, does background and watched Claude steps, writes workflows by interview, and installs or updates `spore` when you say yes.** The menu and the run line arrive in the next releases. [docs/spec.md](docs/spec.md) is the whole design and says what is built.
 
 ## Requirements
 
@@ -59,6 +59,14 @@ Each sub-skill approves `spore` and `claude-spore` for the turn it runs in. To s
 The stub checks the Claude Code version and says it is not built yet. It is typed only, and so is `author`, which writes files; Claude may load the other four on its own, and each asks you before it sends a decision, a resolution, a release or a cancel, or starts a run. They read the database spore finds itself, `$RUNSPORE_DB` or the nearest `.spore/runspore.db` above the current folder, and name it.
 
 **Following a run.** `start` and `continue` run `spore continue <runId> --wait --json` in the background and end the turn. When the run needs you or ends, Claude says so in one line and offers what to do right there: the outcomes of a decision, Retry, Mark done or Fail for a stuck step, the release of a quarantine, the claim line of a step waiting for its actor, or that a watched step waits for you in its pane. After you act it follows again; a watched step needs nothing typed here, so Claude says it once and keeps following until the pane's answer lands. Closing Claude stops the follow; the run stays where it was, and `/ml-workflow:continue` picks it up. Only outcomes the run lists are offered.
+
+**Unfinished runs at session start.** A new session in a project with unfinished runs shows one line per run before you type anything, the way `git status` tells you about an unfinished rebase:
+
+```text
+coding-loop-0238a2a3 at implement, attempt 2 of 3, paused 14 min ago; /ml-workflow:continue to follow it
+```
+
+With none, or when `spore` cannot list them, it shows nothing.
 
 Following and cancelling need a `spore` with `continue --wait` and `cancel`, which the v0.2.0 release predates. Until a release has them, build `spore` from runspore's main branch: `cargo install --git https://github.com/Web-tree/runspore --locked --force runspore-cli`.
 

@@ -12,7 +12,7 @@ Each part is built by one ticket of skills#59. This table says what exists in th
 |---|---|---|
 | Skeleton: packaging, minimum versions, `claude-spore --version`, the mod registering, sub-skill stubs, README rules, CI | p.1, p.2, p.6 | built (skills#60) |
 | Getting and checking `spore`, the launcher, helper/mod version match | p.3, p.4, p.5 | built (skills#61) |
-| Entry points, menu, session-start line, following a run | p.7–p.12 | `start`, `status`, `continue` and `cancel`, and following a run (skills#64); `menu` is a stub that checks the host version and says it is not built, and the session-start line is not built |
+| Entry points, menu, session-start line, following a run | p.7–p.12 | `start`, `status`, `continue` and `cancel`, and following a run (skills#64); the session-start line (skills#89); `menu` is a stub that checks the host version and says it is not built |
 | Profile kinds, node parameters, `claude-spore check` | p.13–p.15 | built (skills#62; the herdr check skills#63) |
 | Background Claude step: `claude-spore run`, session table, repair, facts | p.16, p.18, p.19, p.20 | built (skills#62) |
 | Interactive Claude step: `start`, `probe`, `watch`, `report`, `stop` | p.17 | built (skills#63; closing the pane as the run leaves the node, skills#92) |
@@ -117,7 +117,26 @@ A plugin cannot ship standing allow rules. Each sub-skill pre-approves `Bash(spo
 
 ## The session-start line (p.9)
 
-`spore list --unfinished --json` must answer within the 10 s hook budget. If runs are listed, the mod prints one line naming `/ml-workflow:menu`, for example `1 run waiting: coding-loop at approve (decision), 2 h — /ml-workflow:menu`. With no unfinished run, or on any error, it prints nothing.
+`spore list --unfinished --json` must answer within the 10 s hook budget. The mod prints one line per unfinished run, the way `git status` names an unfinished rebase as soon as you look: where the run is, what it waits for, and the command that picks it up, for example `coding-loop-0238a2a3 at implement, attempt 2 of 3, paused 14 min ago; /ml-workflow:continue to follow it`. With no unfinished run, or on any error, it prints nothing. The lines name `/ml-workflow:continue` until the menu is built.
+
+How it does this (skills#89):
+
+- **`claude-spore unfinished [--json]`** works out the lines. It runs `spore list --unfinished --json` from the session's folder, so it reads the database spore finds from there, and `spore status <runId> --json --no-probe --db <db>` for each row, side by side, each cut off after 4 s. `--no-probe` and the read-only commands change nothing and create no database. It prints one line per run, newest first; with `--json`, `{"db", "lines"}`. A `spore` that is missing or cannot list gives no line, `db` null and exit 1; a status that fails leaves its run a line without the attempt. In a Claude that spore started for a step (`RUNSPORE_RUN_ID` or `RUNSPORE_WORK_DIR` set) it asks spore nothing and prints no line: that session is the step, not the person's.
+- **A line** is `<start key, else run ID> at <node>, <state> <age>; /ml-workflow:continue to follow it`, the age being since the run last changed (`since`) in its largest unit (`40 s`, `14 min`, `2 h`, `3 d`). By `needs`:
+
+  | `needs` | State |
+  |---|---|
+  | `working`, its try claimed (`running.state` `started`) | `attempt n of m, running for <age>` |
+  | `working`, otherwise | `attempt n of m, paused <age> ago`: nobody runs the try, as after the session that followed the run closed (p.10) |
+  | `signal` | `waiting for your decision for <age>` |
+  | `stuck` | `stuck after attempt n of m for <age>` (from `intervention`) |
+  | `held` | `held by its pane (<herdr agent>) for <age>`, or by the step's actor |
+  | `external-ready` | `waiting for <actor> to claim it for <age>` |
+  | `quarantined` | `quarantined for <age>` |
+  | `capability-missing` | `at a step this spore cannot run for <age>` |
+
+  A run at no node reads `<key>, not started yet, created <age> ago`. `attempt n of m` comes from `running` or `intervention`, and is left out when the status does not give it.
+- **The mod** runs `claude-spore unfinished --json` beside the doctor at session start, only when a person is at the prompt (`isInteractive`) and the Claude Code version fits, and writes each line after the doctor's problems. Anything but a `lines` list prints nothing.
 
 ## Following a run (p.10)
 
@@ -467,6 +486,7 @@ A SIGKILL of the Claude process alone leaves its `continue --wait` running as an
 - **The bundled examples' copies** (`test/example.spec.ts`): `example list` names every folder with its comment and its Claude steps; a copy without `--watch` is the example file for file; `--watch implement` changes only that action, to the watched form; each refusal writes nothing; and every example, copied with `implement` in the background or watched, passes the real `spore validate` and `claude-spore check` with no warning.
 - **The sub-skills** (`test/skills.spec.ts`): each `SKILL.md` names its own sub-skill, pre-approves `Bash(spore *)` and `Bash(claude-spore *)` (p.6), `author` also `Bash(chmod +x *)`, and reads the Claude Code version first (p.2); only `menu` and `author` are typed only. `start` and `continue` each carry the reaction table of p.10 and what it offers, word for word the same. What the skills say is checked by the end-to-end run (p.25).
 - **Following a run** (`test/follow.spec.ts`) drives the real `spore` with the commands the skills run and checks that each answer holds what the reaction of p.10 reads: a fresh run from `spore start --json`, and `input.invalid` creating none; `continue --wait --json` with exit 0, 3, 4, 6 and 7 and the fields of each row, `--db` after the subcommand included; a decision sent with `--id <activationId>`, the same decision again a no-op and another one `signal.id-reused`; an interactive step whose pane waits for the person returning exit 6 with `step.waiting` `person` and "implement waits for you in its pane", and the follow after it watching on until the pane's answer completes the run (exit 0); several unfinished runs listed by `list --unfinished`; and `spore cancel` ending a held interactive step, its pane closed by `claude-spore stop`. It needs a `spore` with `continue --wait` and `cancel`, and is skipped without one, unless `REQUIRE_SPORE=1`.
+- **The session-start line** (`test/unfinished.spec.ts`) runs `claude-spore unfinished` against a fake `spore` that answers `list --unfinished` and `status` as each test says: one line per `needs`, the attempt, no line on any error, and none inside a step. `test/follow.spec.ts` checks the lines against the real `spore` for a run not started, a stuck one and one waiting for a decision.
 - **The real `spore`** is the one the `SPORE` variable names, else `spore` on PATH. A spec that needs it is skipped, with the reason printed, when that `spore` is not 0.2, unless `REQUIRE_SPORE=1`, which CI sets.
 - **CI** runs both seams; once the helper drives `spore`, against the newest `spore` release and against 0.2.0. Until a runspore release has async commands, `continue --wait` and `cancel` (the v0.2.0 tag predates them), CI builds `spore` from a pinned runspore commit instead. The interactive step's real-`spore` spec needs a `spore` whose `capabilities` list `command` among `asyncKinds`; it is skipped without one, unless `REQUIRE_SPORE=1`. It also runs the helper under Bun 1.1 and expects exit 2.
 - **The end-to-end check** is p.25, gated, before a release.
