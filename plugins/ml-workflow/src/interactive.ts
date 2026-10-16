@@ -2,7 +2,7 @@
 // It runs as a spore async command: `start` opens Claude in a herdr pane and prints the holder
 // handle, Claude hands its answer to `report` from the pane, and the watch prints that answer.
 import { spawn } from "node:child_process";
-import { copyFileSync, existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -283,8 +283,17 @@ export async function watch(): Promise<number> {
   const file = resultFile(work, step.attempt);
   const poll = Number(process.env.CLAUDE_SPORE_WATCH_POLL_MS) || 1000;
   const result = () => (existsSync(file) ? readFileSync(file, "utf8").trim() : null);
+  // What the watches of this attempt saw last: the pane `busy`, or the person `told`. It outlives a
+  // watch, so the one the next `continue --wait` starts does not tell the person again.
+  const seenFile = join(work, `${step.attempt}.watch`);
+  let seen = existsSync(seenFile) ? readFileSync(seenFile, "utf8").trim() : "";
+  const see = (state: "" | "busy" | "told") => {
+    if (seen === state) return;
+    if (state) writeFileSync(seenFile, `${state}\n`);
+    else rmSync(seenFile, { force: true });
+    seen = state;
+  };
 
-  let told = false;
   for (;;) {
     carryOver(work, step.attempt);
     if (handle.herdrAgent === null) {
@@ -326,16 +335,19 @@ export async function watch(): Promise<number> {
           // herdr refused the prompt: try again at the next poll.
         }
         if (sent) {
-          told = false;
+          // The pane has not started on the message yet: what the watches saw before no longer holds.
+          see("");
           await Bun.sleep(poll);
           continue;
         }
       }
-      if (quiet || agent.status === "blocked") {
-        if (!told) console.log(JSON.stringify({ needs: "person", message: `${node} waits for you in its pane` }));
-        told = true;
+      // Quiet counts only once the pane was busy: a pane that has not started on its message yet
+      // shows idle too.
+      if (seen !== "told" && (agent.status === "blocked" || (quiet && seen === "busy"))) {
+        console.log(JSON.stringify({ needs: "person", message: `${node} waits for you in its pane` }));
+        see("told");
       } else if (agent.status === "working") {
-        told = false;
+        see("busy");
       }
     }
     await Bun.sleep(poll);

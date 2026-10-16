@@ -159,6 +159,11 @@ export class FakeHerdr {
     writeFileSync(join(this.dir, "status", agent), status);
   }
 
+  /** Sets the state herdr shows for every agent without its own, for a spec that cannot know the name. */
+  everyStatus(status: "idle" | "working" | "blocked" | "done" | "unknown") {
+    writeFileSync(join(this.dir, "status", "_every"), status);
+  }
+
   /** Makes every call fail, or answer again. */
   down(down = true) {
     if (down) writeFileSync(join(this.dir, "down"), "");

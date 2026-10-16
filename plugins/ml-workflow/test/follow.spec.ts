@@ -6,7 +6,7 @@ import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { FakeClaude, FakeHerdr, PATH, remove, scratch, SPORE, SPORE_TIMEOUT_MS, sporeVersion } from "./helpers.ts";
+import { FakeClaude, FakeHerdr, HELPER, PATH, remove, scratch, SPORE, SPORE_TIMEOUT_MS, sporeVersion } from "./helpers.ts";
 
 const version = sporeVersion("follow.spec.ts");
 setDefaultTimeout(SPORE_TIMEOUT_MS);
@@ -303,6 +303,8 @@ describe.skipIf(!follows())(`following a run under a real spore ${version ?? ""}
   }, SLOW);
 
   test("an interactive step that waits for the person: exit 6 with its message, and cancel closes its pane", () => {
+    // Claude asks a question in the pane.
+    herdr.everyStatus("blocked");
     const { runId } = start("watched", "watched-00000012", {}).json;
     const held = follow(runId);
     expect(held.exitCode).toBe(6);
@@ -319,6 +321,36 @@ describe.skipIf(!follows())(`following a run under a real spore ${version ?? ""}
     expect(herdr.calls()).toContainEqual(["pane", "close", pane!]);
     expect(existsSync(`/proc/${pid}`) || alive(pid)).toBe(false);
     expect(follow(runId).exitCode).toBe(7);
+  }, SLOW);
+
+  test("following again after the pane waited for the person keeps watching, and returns when its answer lands", async () => {
+    herdr.everyStatus("blocked");
+    const { runId } = start("watched", "watched-00000013", {}).json;
+    const held = follow(runId);
+    expect(held.exitCode).toBe(6);
+    const { herdrAgent } = held.json.step.holder;
+
+    // What the skill runs next, in the background.
+    const again = Bun.spawn([SPORE, "continue", runId, "--wait", "--json", "--db", db], { cwd: project, env: env(), stdout: "pipe", stderr: "pipe" });
+    let returned = false;
+    void again.exited.then(() => (returned = true));
+    await Bun.sleep(1500);
+    expect(returned).toBe(false);
+
+    // The person answers the question, and Claude hands in its answer from the pane.
+    herdr.status(herdrAgent, "working");
+    const { pane } = herdr.state().agents[herdrAgent]!;
+    const reported = Bun.spawnSync([HELPER, "report", "--attempt", "1", "--outcome", "ok"], {
+      env: { ...env(), RUNSPORE_WORK_DIR: herdr.state().panes[pane]!.env.RUNSPORE_WORK_DIR! },
+      stdin: Buffer.from(JSON.stringify({ summary: "Added." })),
+    });
+    expect(reported.stdout.toString()).toBe("accepted\n");
+    herdr.status(herdrAgent, "idle");
+
+    expect(await again.exited).toBe(0);
+    const ended = JSON.parse(await new Response(again.stdout).text());
+    expect(ended).toMatchObject({ runId, status: "completed", needs: null });
+    herdr.everyStatus("idle");
   }, SLOW);
 });
 
