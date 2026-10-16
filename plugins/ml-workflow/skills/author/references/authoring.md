@@ -114,7 +114,7 @@ The kinds are words in the draft. The files hold plain actions:
 
 ### 5.4 A Claude step's parameters
 
-They go in the node's `input`, every one but `context` as a `$literal`. The set is closed: `format`, `schema`, `outcome`, `model`, `tools`, `skill`, `context`. Nothing else may appear there.
+They go in the node's `input`, every one but `context` as a `$literal`. The set is closed: `format`, `schema`, `outcome`, `model`, `tools`, `skill`, `keepSeconds`, `context`. Nothing else may appear there.
 
 ```json
 "input": {
@@ -132,6 +132,7 @@ They go in the node's `input`, every one but `context` as a `$literal`. The set 
 - `format` is `json`, with `schema` set to `{"$outputSchemas": {}}` and an `outputSchemas` entry for every outcome of the action. Write `format: "text"` only when the person asks for a plain-text answer on a step with one outcome; then add `"outcome": {"$literal": "<that outcome>"}` and leave out `schema` and `outputSchemas`.
 - `tools` from what the step does: the edits set `Read`, `Glob`, `Grep`, `Edit`, `Write`, `Bash` for a step that changes files; the reads set `Read`, `Glob`, `Grep` for one that reviews or answers. Show which in the draft ("can edit files", "only reads").
 - `model` and `skill` only when the person names one.
+- `keepSeconds` only on a watched step, and only when the person wants its pane to stay open after the step ends: a whole number of seconds (`{"$literal": 600}`). Without it the pane closes as the run leaves the step.
 - `context` is the data Claude sees, from the "sees:" line:
   - a run input: `{"$get": ["input", "<property>"]}`;
   - why the step is running again, for any step an edge leads back to: `{"$get": ["from"]}`, which holds the step that sent the run here, its outcome and its output;
