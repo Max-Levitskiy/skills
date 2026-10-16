@@ -125,6 +125,9 @@ const WATCHED = {
   },
 };
 
+// Each test drives a run through several real spore processes: bun's 5 s default is too tight on CI.
+const SLOW = 30_000;
+
 type Ran = { exitCode: number; stdout: string; stderr: string; json: any };
 
 // Each test runs the real spore five to ten times, and a shared CI runner can take more than Bun's
@@ -178,7 +181,7 @@ describe.skipIf(!follows())(`following a run under a real spore ${version ?? ""}
     workflow("watched", WATCHED_DOT, WATCHED, { "implement.md": "Implement the task.\n" });
     for (const name of ["decide", "stuck", "manual", "watched"]) expect(spore("validate", name).exitCode).toBe(0);
     db = spore("list", "--json").json.db;
-  });
+  }, SLOW);
 
   afterAll(() => {
     herdr.dispose();
