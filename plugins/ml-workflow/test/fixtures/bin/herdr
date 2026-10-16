@@ -2,7 +2,7 @@
 // The fake `herdr` (docs/spec.md, Testing), first on PATH in the helper's specs. Everything lives
 // in $FAKE_HERDR_DIR:
 //   state.json      the panes ({cwd, env}) and the live agents ({pane, pid});
-//   status/<name>   an agent's state as a test set it, `idle` when absent;
+//   status/<name>   an agent's state as a test set it, else status/_every, else `idle`;
 //   down            when present, every call fails as an unreachable server would;
 //   server.json     what `status server --json` prints, when a test set it;
 //   calls.jsonl     one line per call: its args.
@@ -57,8 +57,8 @@ const live = (name: string) => {
   return agent && alive(agent.pid) ? agent : null;
 };
 const shown = (name: string, agent: { pane: string }) => {
-  const file = join(dir, "status", name);
-  const status = existsSync(file) ? readFileSync(file, "utf8").trim() : "idle";
+  const file = [join(dir, "status", name), join(dir, "status", "_every")].find((f) => existsSync(f));
+  const status = file ? readFileSync(file, "utf8").trim() : "idle";
   return { name, agent: "claude", pane_id: agent.pane, agent_status: status };
 };
 

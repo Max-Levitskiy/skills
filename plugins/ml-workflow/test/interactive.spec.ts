@@ -288,9 +288,12 @@ describe("watch", () => {
     expect(watch.lines().map((l) => JSON.parse(l))).toEqual([{ outcome: "ok", output: { summary: "Done." } }]);
   });
 
-  test("quiet without the file prints the needs line, then the result when it comes", async () => {
-    const { stdout } = start();
+  test("quiet without the file after it was busy prints the needs line, then the result when it comes", async () => {
+    const { result, stdout } = start();
+    herdr.status(result.herdrAgent, "working");
     const watch = watching(stdout);
+    await Bun.sleep(200);
+    herdr.status(result.herdrAgent, "idle");
 
     expect((await watch.until(1)).map((l) => JSON.parse(l))).toEqual([NEEDS]);
     report("ok", '{"summary": "Done."}');
@@ -311,6 +314,49 @@ describe("watch", () => {
     watch.child.kill();
   });
 
+  test("a pane quiet before it was ever busy needs nobody: it has not started on its message", async () => {
+    const { stdout } = start();
+    const watch = watching(stdout);
+
+    await Bun.sleep(400);
+    expect(watch.lines()).toEqual([]);
+    report("ok", '{"summary": "Done."}');
+    expect(await watch.child.exited).toBe(0);
+    expect(watch.lines().map((l) => JSON.parse(l))).toEqual([{ outcome: "ok", output: { summary: "Done." } }]);
+  });
+
+  test("the next watch of the attempt does not tell the person again, and prints the answer when it lands", async () => {
+    const { result, stdout } = start();
+    herdr.status(result.herdrAgent, "blocked");
+    const first = watching(stdout);
+    expect((await first.until(1)).map((l) => JSON.parse(l))).toEqual([NEEDS]);
+    first.child.kill();
+    await first.child.exited;
+
+    const second = watching(stdout);
+    await Bun.sleep(400);
+    expect(second.lines()).toEqual([]);
+    herdr.status(result.herdrAgent, "working");
+    report("ok", '{"summary": "Done."}');
+    herdr.status(result.herdrAgent, "idle");
+    expect(await second.child.exited).toBe(0);
+    expect(second.lines().map((l) => JSON.parse(l))).toEqual([{ outcome: "ok", output: { summary: "Done." } }]);
+  });
+
+  test("a pane that was busy under an earlier watch and went quiet needs the person", async () => {
+    const { result, stdout } = start();
+    herdr.status(result.herdrAgent, "working");
+    const first = watching(stdout);
+    await Bun.sleep(200);
+    first.child.kill();
+    await first.child.exited;
+
+    herdr.status(result.herdrAgent, "idle");
+    const second = watching(stdout);
+    expect((await second.until(1)).map((l) => JSON.parse(l))).toEqual([NEEDS]);
+    second.child.kill();
+  });
+
   test("a later try carries an earlier try's success over", () => {
     const { stdout } = start();
     report("ok", '{"summary": "From try 1."}');
@@ -324,6 +370,7 @@ describe("watch", () => {
   test("a failure is never carried over", async () => {
     const { stdout } = start();
     writeFileSync(join(work, "1.result.json"), JSON.stringify({ error: { code: "output.invalid", message: "no" }, retryable: false }));
+    herdr.status(JSON.parse(stdout).herdrAgent, "blocked");
     const watch = watching(stdout, { attempt: 2 });
 
     expect((await watch.until(1)).map((l) => JSON.parse(l))).toEqual([NEEDS]);

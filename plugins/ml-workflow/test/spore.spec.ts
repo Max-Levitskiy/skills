@@ -205,6 +205,8 @@ describe.skipIf(!version || !runsAsync())(`an interactive step under a real spor
   });
 
   test("the pane waits for the person, then its report completes the run", () => {
+    // Claude asks a question in the pane.
+    herdr.everyStatus("blocked");
     const run = spore("--json", "run", "watched", "--input", JSON.stringify({ task: "add a flag" }));
     const parked = JSON.parse(run.stdout);
     const runId = parked.runId;
@@ -222,6 +224,7 @@ describe.skipIf(!version || !runsAsync())(`an interactive step under a real spor
       stdin: Buffer.from(JSON.stringify({ summary: "Added." })),
     });
     expect(reported.stdout.toString()).toBe("accepted\n");
+    herdr.everyStatus("idle");
 
     const worker = spore("--json", "worker", "--run", runId, "--until-parked");
     expect(worker.exitCode).toBe(0);
