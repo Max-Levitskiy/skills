@@ -1,7 +1,7 @@
 // Claude Code only: the mod. It stays thin (docs/spec.md, p.7): the helper works out what the mod
 // shows, and the mod calls it and renders the answer. It checks the host's version and runs the
-// helper's `doctor` at session start and before every start; the start line, the menu, the run
-// line and the live view join it later.
+// helper's `doctor` at session start and before every start, and at session start prints the
+// helper's line for each unfinished run; the menu, the run line and the live view join it later.
 
 import type { EngineInterface, Register } from 'claude-code'
 
@@ -13,12 +13,26 @@ const VERSION = PLUGIN_VERSION
 type Ran = { exitCode: number; stdout: string; stderr: string }
 type Doctor = { ran?: Ran; isGone?: boolean }
 
+function helper($: EngineInterface): string {
+  return `${$.plugin.root}/bin/claude-spore`
+}
+
 async function doctor($: EngineInterface): Promise<Doctor> {
-  const helper = `${$.plugin.root}/bin/claude-spore`
   try {
-    return { ran: await $.process.run([helper, 'doctor', '--json', '--plugin-version', VERSION], { timeoutMs: 8000 }) }
+    return { ran: await $.process.run([helper($), 'doctor', '--json', '--plugin-version', VERSION], { timeoutMs: 8000 }) }
   } catch (error) {
     return { isGone: /ENOENT|no such file/i.test(String(error)) }
+  }
+}
+
+// The session-start line (docs/spec.md, p.9): the helper's line for each unfinished run, none on any error.
+async function unfinished($: EngineInterface): Promise<string[]> {
+  try {
+    const { stdout } = await $.process.run([helper($), 'unfinished', '--json'], { timeoutMs: 9000 })
+    const lines: unknown = (JSON.parse(stdout) as { lines?: unknown })?.lines
+    return Array.isArray(lines) ? lines.filter((line): line is string => typeof line === 'string') : []
+  } catch {
+    return []
   }
 }
 
@@ -49,7 +63,9 @@ export const register: Register = on => {
     if (isOlder(base ?? version, CLAUDE_CODE_MINIMUM)) {
       $.ui.log(`ml-workflow needs Claude Code ${CLAUDE_CODE_MINIMUM} or later; this is ${version}. Run: claude update`)
     } else {
-      for (const line of lines(await doctor($))) $.ui.log(line)
+      // Side by side: both wait on spore, and the person waits for both.
+      const [checked, runs] = await Promise.all([doctor($), e.isInteractive ? unfinished($) : []])
+      for (const line of [...lines(checked), ...runs]) $.ui.log(line)
     }
     return next(e)
   })

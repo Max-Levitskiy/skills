@@ -4,7 +4,7 @@
 // REQUIRE_SPORE=1 (CI) makes that a failure.
 import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import { FakeClaude, FakeHerdr, HELPER, PATH, remove, scratch, SPORE, SPORE_TIMEOUT_MS, sporeVersion } from "./helpers.ts";
 
@@ -285,6 +285,27 @@ describe.skipIf(!follows())(`following a run under a real spore ${version ?? ""}
     expect(several.exitCode).toBe(2);
     expect(several.json.error.code).toBe("run.several");
     for (const runId of [first, second]) spore("cancel", runId);
+  }, SLOW);
+
+  test("the session-start line names each unfinished run, where it is and what it waits for", () => {
+    // A follow drives every run that is due, so each run is started just before its own follow.
+    const decide = start("decide", "decide-00000013", { task: "one" }).json.runId;
+    expect(follow(decide).exitCode).toBe(3);
+    const stuck = start("stuck", "stuck-00000014", {}).json.runId;
+    expect(follow(stuck).exitCode).toBe(4);
+    const fresh = start("decide", "decide-00000015", { task: "two" }).json.runId;
+
+    // The helper finds this spore on PATH, as the mod's call does.
+    const child = Bun.spawnSync([HELPER, "unfinished", "--json"], { cwd: project, env: { ...env(), PATH: `${dirname(SPORE)}:${PATH}` } });
+    expect({ exitCode: child.exitCode, stderr: child.stderr.toString() }).toEqual({ exitCode: 0, stderr: "" });
+    const answer = JSON.parse(child.stdout.toString());
+    expect(answer.db).toBe(db);
+    expect(answer.lines).toEqual([
+      expect.stringMatching(/^decide-00000015, not started yet, created \d+ (s|min) ago; \/ml-workflow:continue to follow it$/),
+      expect.stringMatching(/^stuck-00000014 at build, stuck after attempt 1 of 1 for \d+ (s|min); \/ml-workflow:continue to follow it$/),
+      expect.stringMatching(/^decide-00000013 at approve, waiting for your decision for \d+ (s|min); \/ml-workflow:continue to follow it$/),
+    ]);
+    for (const runId of [decide, stuck, fresh]) spore("cancel", runId);
   }, SLOW);
 
   test("a cancel: the follow returns exit 7 with the reason, and a second cancel changes nothing", () => {

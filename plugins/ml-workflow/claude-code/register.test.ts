@@ -8,7 +8,8 @@ import { PLUGIN_VERSION } from '../src/version'
 type Ran = { exitCode: number; stdout: string; stderr: string }
 // A helper that does not start is `{ deny }`: the engine's refusal, which rejects the mod's call with
 // that reason. A hook that throws is skipped instead, so its message never reaches the mod.
-type World = { version: { version: string; base?: string }; logs: string[]; runs: string[][]; doctor: Ran | { deny: string } }
+type Answer = Ran | { deny: string }
+type World = { version: { version: string; base?: string }; logs: string[]; runs: string[][]; doctor: Answer; unfinished: Answer }
 
 const FINE = JSON.stringify({ ok: true, spore: { path: '/bin/spore', version: '0.2.1' }, problems: [], launcher: 'offer' })
 const MISSING = 'ml-workflow needs spore 0.2.0 or later, and none is on PATH. Install it with: claude-spore install-spore'
@@ -23,9 +24,11 @@ const PROBLEMS = JSON.stringify({
   launcher: 'offer',
 })
 
+const NONE: Ran = { exitCode: 0, stdout: JSON.stringify({ db: '/repo/.spore/runspore.db', lines: [] }), stderr: '' }
+
 // Everything beneath the plugin: the engine's own answers, and the helper.
-function world(on: On, version: World['version'], doctor: World['doctor'] = { exitCode: 0, stdout: FINE, stderr: '' }): World {
-  const w: World = { version, logs: [], runs: [], doctor }
+function world(on: On, version: World['version'], doctor: Answer = { exitCode: 0, stdout: FINE, stderr: '' }, unfinished: Answer = NONE): World {
+  const w: World = { version, logs: [], runs: [], doctor, unfinished }
   on('session.version', () => ({ value: w.version }))
   on('session.start', ($, e) => ({ cwd: e.cwd }))
   on('ui.log', ($, e) => {
@@ -34,8 +37,9 @@ function world(on: On, version: World['version'], doctor: World['doctor'] = { ex
   })
   on('process.run', ($, e) => {
     w.runs.push([...e.argv])
-    if ('deny' in w.doctor) return { deny: w.doctor.deny }
-    return { value: { ...w.doctor, isStdoutTruncated: false, isStderrTruncated: false } }
+    const answer = e.argv[1] === 'unfinished' ? w.unfinished : w.doctor
+    if ('deny' in answer) return { deny: answer.deny }
+    return { value: { ...answer, isStdoutTruncated: false, isStderrTruncated: false } }
   })
   on('skill.prompt', ($, e) => ({ text: e.text }))
   return w
@@ -74,12 +78,15 @@ test('a version that is not spelled as a release is let through', async ($, on) 
   expect(w.logs).toEqual([])
 })
 
-test('session start runs the doctor with the version the session loaded', async ($, on) => {
+test('session start runs the doctor with the version the session loaded, and asks for the unfinished runs', async ($, on) => {
   const w = world(on, NEW)
   await $.session.start(START)
-  expect(w.runs).toHaveLength(1)
-  expect(w.runs[0]![0]!.endsWith('/bin/claude-spore')).toBe(true)
-  expect(w.runs[0]!.slice(1)).toEqual(['doctor', '--json', '--plugin-version', PLUGIN_VERSION])
+  expect(w.runs).toHaveLength(2)
+  for (const argv of w.runs) expect(argv[0]!.endsWith('/bin/claude-spore')).toBe(true)
+  expect(w.runs.map(argv => argv.slice(1))).toEqual([
+    ['doctor', '--json', '--plugin-version', PLUGIN_VERSION],
+    ['unfinished', '--json'],
+  ])
 })
 
 test("session start writes each of the doctor's problems as one line", async ($, on) => {
@@ -111,6 +118,49 @@ test('a helper that times out shows nothing', async ($, on) => {
   const w = world(on, NEW, { deny: 'timed out after 8000ms' })
   await $.session.start(START)
   expect(w.logs).toEqual([])
+})
+
+const RUN = 'coding-loop-0238a2a3 at implement, attempt 2 of 3, paused 14 min ago; /ml-workflow:continue to follow it'
+const DECISION = 'coding-loop-11111111 at approve, waiting for your decision for 2 h; /ml-workflow:continue to follow it'
+const TWO: Ran = { exitCode: 0, stdout: JSON.stringify({ db: '/repo/.spore/runspore.db', lines: [RUN, DECISION] }), stderr: '' }
+
+test('session start writes each unfinished run as one line', async ($, on) => {
+  const w = world(on, NEW, undefined, TWO)
+  expect(await $.session.start(START)).toEqual({ cwd: '/repo' })
+  expect(w.logs).toEqual([RUN, DECISION])
+})
+
+test("the doctor's problems come before the runs", async ($, on) => {
+  const w = world(on, NEW, { exitCode: 1, stdout: PROBLEMS, stderr: '' }, TWO)
+  await $.session.start(START)
+  expect(w.logs).toEqual([RELOAD, MISSING, RUN, DECISION])
+})
+
+test('runs that cannot be listed show nothing', async ($, on) => {
+  const failed = world(on, NEW, undefined, { exitCode: 1, stdout: JSON.stringify({ db: null, lines: [] }), stderr: '' })
+  await $.session.start(START)
+  expect(failed.logs).toEqual([])
+})
+
+test('a helper that does not answer with JSON, or times out, shows no run', async ($, on) => {
+  const garbled = world(on, NEW, undefined, { exitCode: 0, stdout: 'not json', stderr: '' })
+  await $.session.start(START)
+  garbled.unfinished = { deny: 'timed out after 9000ms' }
+  await $.session.start(START)
+  expect(garbled.logs).toEqual([])
+})
+
+test('a session with nobody at the prompt does not ask for the runs', async ($, on) => {
+  const w = world(on, NEW, undefined, TWO)
+  await $.session.start({ cwd: '/repo', surface: null, isInteractive: false })
+  expect(w.logs).toEqual([])
+  expect(w.runs.map(argv => argv[1])).toEqual(['doctor'])
+})
+
+test('on an older Claude Code the runs are not asked for', async ($, on) => {
+  const w = world(on, { version: '2.1.289', base: '2.1.289' }, undefined, TWO)
+  await $.session.start(START)
+  expect(w.runs).toEqual([])
 })
 
 test("the start skill gets the doctor's JSON above its text", async ($, on) => {
