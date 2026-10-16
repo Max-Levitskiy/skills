@@ -23,7 +23,7 @@ beforeEach(() => {
   mkdirSync(bin);
   mkdirSync(join(dir, "files"));
   // `status <run>` prints status-<run>.json, or error-<run>.json with exit 2; `inspect --run <run>
-  // --file <path>` prints files/<path>, or exit 2.
+  // --file <path>` prints files/<path>, or exit 2; `list` prints list.json, or exit 2.
   writeFileSync(
     join(bin, "spore"),
     `#!/bin/sh
@@ -37,6 +37,9 @@ case "$1" in
     file="${dir}/files/$5"
     [ -f "$file" ] || { echo "spore: artifact.no-file: no file $5" >&2; exit 2; }
     cat "$file" ;;
+  list)
+    [ -f "${dir}/list.json" ] || exit 2
+    cat "${dir}/list.json" ;;
   *) exit 2 ;;
 esac
 `,
@@ -127,8 +130,19 @@ test("a running run: node, how long it has stood there and visit, the arrow just
 test("a run waiting for a decision needs you, and says so first", () => {
   status("run_b", { status: "waiting", position: at("approve", 1, ["test", "ok"]), waiting: { nodeId: "approve", signal: "approval", sinceMs: "0", forMs: "40000" } });
   expect(helper(["line", "run_b", "--json", "--db", DB]).report).toMatchObject({ text: "coding-loop-0238a2a3 at approve for 40 s, from test on ok", needsYou: true });
-  expect(calls()).toEqual([`status run_b --json --no-probe --db ${DB}`]);
+  // Only `list` tells a decision sent from one still to make; one that cannot list keeps needs you.
+  expect(calls()).toEqual([`status run_b --json --no-probe --db ${DB}`, `list --unfinished --json --db ${DB}`]);
   expect(helper(["line", "run_b"]).stdout).toBe("needs you  coding-loop-0238a2a3 at approve for 40 s, from test on ok\n");
+});
+
+test("a decision sent and not yet acted on no longer needs you, though spore's status still shows the wait", () => {
+  status("run_b", { status: "waiting", position: at("approve", 1, ["test", "ok"]), waiting: { nodeId: "approve", signal: "approval", sinceMs: "0", forMs: "40000" } });
+  writeFileSync(join(dir, "list.json"), JSON.stringify({ db: DB, runs: [{ runId: "run_b", nodeId: "approve", needs: "working" }] }));
+  expect(helper(["line", "run_b", "--json", "--db", DB]).report).toMatchObject({ text: "coding-loop-0238a2a3 at approve for 40 s, from test on ok", needsYou: false });
+  expect(helper(["view", "run_b", "--json", "--db", DB]).report).toMatchObject({ facts: "waiting, at approve, visit 1", line: { needsYou: false } });
+
+  writeFileSync(join(dir, "list.json"), JSON.stringify({ db: DB, runs: [{ runId: "run_b", nodeId: "approve", needs: "signal" }] }));
+  expect(helper(["line", "run_b", "--json", "--db", DB]).report.needsYou).toBe(true);
 });
 
 test("a first visit says no visit, a stuck step how long it has been stuck, and a try in backoff no time", () => {
