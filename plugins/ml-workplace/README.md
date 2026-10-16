@@ -58,6 +58,10 @@ Ask Claude to set up Atlassian access and it walks you through it. The config fi
 
 Configuration follows the [Agent Config Standard](../../standards/agent-config.md), v2: atlassian declares its keys in [`skills/atlassian/agent-config.json`](skills/atlassian/agent-config.json), its config lives under `.agents/config/atlassian/`, and the token reaches the CLI on a separate file descriptor, never on stdout, argv or disk. On Claude Code, `/agent-config` opens a settings pane where you can change any answer.
 
+The token comes from that reference wherever the CLI runs. On Claude Code a 1Password reference is unlocked once per session, also when its `cacheVar` (`ATLASSIAN_TOKEN`) is not exported, as in a fresh terminal or herdr pane.
+
+**A stable command.** The plugin's `bin/atlassian` runs the CLI, and Claude Code puts it on the Bash tool's PATH, so steps and skills call `atlassian jira …`. `atlassian launcher install` copies a launcher of that name to `~/.local/bin`, so a workflow hook (`onIntervention`) or a plain terminal runs it too. The launcher reads `~/.claude/plugins/installed_plugins.json` and runs the CLI of the `ml-workplace` installation for the folder you are in, a project's own before your user one, so it never pins a versioned plugin cache path.
+
 **Upgrading from 0.4.x:** a config at the old `~/.agents/skill-config/atlassian/` path is copied to `~/.agents/config/atlassian/config.json` by agent-config's adopt step the first time the skill runs. The old file is left in place for you to delete.
 
 ### Requirements

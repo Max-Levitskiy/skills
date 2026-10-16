@@ -126,6 +126,10 @@ const WATCHED = {
 
 type Ran = { exitCode: number; stdout: string; stderr: string; json: any };
 
+// Each test runs the real spore five to ten times, and a shared CI runner can take more than Bun's
+// default 5 s for that; a follow that really hangs still fails.
+const SLOW = 30_000;
+
 describe.skipIf(!follows())(`following a run under a real spore ${version ?? ""}`, () => {
   let project: string;
   let db: string;
@@ -194,7 +198,7 @@ describe.skipIf(!follows())(`following a run under a real spore ${version ?? ""}
     // `start` works nothing: the follow takes the run's first turn.
     expect(spore("status", started.json.runId, "--json").json).toMatchObject({ status: "created", db, parent: null });
     spore("cancel", started.json.runId);
-  });
+  }, SLOW);
 
   test("a decision: exit 3, the outcomes, the instructions, then one decision per wait", () => {
     const { runId } = start("decide", "decide-0000000b", { task: "add a flag" }).json;
@@ -226,7 +230,7 @@ describe.skipIf(!follows())(`following a run under a real spore ${version ?? ""}
     expect(ended.exitCode).toBe(0);
     expect(ended.json).toMatchObject({ status: "completed", needs: null, end: { nodeId: "done" } });
     expect(JSON.stringify(ended.json.result)).toContain('"task":"add a flag"');
-  });
+  }, SLOW);
 
   test("a rejected decision with its data: exit 1, the end node and the error", () => {
     const { runId } = start("decide", "decide-0000000c", { task: "add a flag" }).json;
@@ -239,7 +243,7 @@ describe.skipIf(!follows())(`following a run under a real spore ${version ?? ""}
     const ended = follow(runId);
     expect(ended.exitCode).toBe(1);
     expect(ended.json).toMatchObject({ status: "failed", end: { nodeId: "stopped" }, result: { error: { code: "approval.rejected" } } });
-  });
+  }, SLOW);
 
   test("a stuck step: exit 4, its kept error and the three resolutions, then Mark done", () => {
     const { runId } = start("stuck", "stuck-0000000d", {}).json;
@@ -257,7 +261,7 @@ describe.skipIf(!follows())(`following a run under a real spore ${version ?? ""}
 
     expect(spore("resolve", runId, "--complete", "ok", "--db", db).exitCode).toBe(0);
     expect(follow(runId).exitCode).toBe(0);
-  });
+  }, SLOW);
 
   test("a person's manual work: exit 6, the actor label and the claim line", () => {
     const { runId } = start("manual", "manual-0000000e", {}).json;
@@ -266,7 +270,7 @@ describe.skipIf(!follows())(`following a run under a real spore ${version ?? ""}
     expect(ready.json).toMatchObject({ needs: "external-ready", position: { nodeId: "review" }, step: { kind: "external", actor: "person", state: "ready" } });
     expect(ready.json.commands).toContain(`spore step claim ${runId} --actor person`);
     spore("cancel", runId);
-  });
+  }, SLOW);
 
   test("several unfinished runs are listed newest first, and continue without an ID names them", () => {
     const first = start("decide", "decide-0000000f", { task: "one" }).json.runId;
@@ -280,7 +284,7 @@ describe.skipIf(!follows())(`following a run under a real spore ${version ?? ""}
     expect(several.exitCode).toBe(2);
     expect(several.json.error.code).toBe("run.several");
     for (const runId of [first, second]) spore("cancel", runId);
-  });
+  }, SLOW);
 
   test("a cancel: the follow returns exit 7 with the reason, and a second cancel changes nothing", () => {
     const { runId } = start("decide", "decide-00000011", { task: "add a flag" }).json;
@@ -295,7 +299,7 @@ describe.skipIf(!follows())(`following a run under a real spore ${version ?? ""}
     expect(ended.exitCode).toBe(7);
     expect(ended.json).toMatchObject({ status: "cancelled", needs: null, cancel: { reason: "not needed" } });
     expect(spore("list", "--unfinished", "--json").json.runs.map((row: { runId: string }) => row.runId)).not.toContain(runId);
-  });
+  }, SLOW);
 
   test("an interactive step that waits for the person: exit 6 with its message, and cancel closes its pane", () => {
     const { runId } = start("watched", "watched-00000012", {}).json;
@@ -314,7 +318,7 @@ describe.skipIf(!follows())(`following a run under a real spore ${version ?? ""}
     expect(herdr.calls()).toContainEqual(["pane", "close", pane!]);
     expect(existsSync(`/proc/${pid}`) || alive(pid)).toBe(false);
     expect(follow(runId).exitCode).toBe(7);
-  });
+  }, SLOW);
 });
 
 function alive(pid: number): boolean {

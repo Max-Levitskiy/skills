@@ -27,7 +27,7 @@ import {
 import { findDeclaration, listDeclarations, valueProblems, type FoundDeclaration } from "./declaration";
 import { effectiveConfig, unmetKeys, type Effective } from "./effective";
 import { buildPlan, guidePath } from "./actions";
-import { CredentialError, resolveCredential, type CredentialRef } from "./credentials";
+import { CredentialError, cacheVarValue, resolveCredential, type CredentialRef } from "./credentials";
 import { cacheKey } from "./secret-cache";
 import * as onePassword from "./onepassword";
 import {
@@ -281,8 +281,9 @@ function load(parsed: ParsedArgs): number {
   if (parsed.secrets.length === 0) return EXIT.ok;
 
   const secrets: Record<string, string> = {};
-  // Which reference each secret came from, as the session cache keys it; null when a cacheVar may
-  // have answered instead, so the caller does not keep that value as the reference's own.
+  // Which reference each secret came from, as the session cache keys it; null when its cacheVar
+  // answered instead, so the caller does not keep that value as the reference's own. An unseeded
+  // cacheVar, as in a fresh terminal pane, leaves the answer to the source, which may be cached.
   const references: Record<string, string | null> = {};
   for (const key of parsed.secrets) {
     const logical = key.startsWith("credentials.") ? key.slice("credentials.".length) : key;
@@ -296,8 +297,8 @@ function load(parsed: ParsedArgs): number {
       return EXIT.config;
     }
     const credential = entry as unknown as CredentialRef;
+    references[key] = cacheVarValue(credential) ? null : cacheKey(credential);
     secrets[key] = resolveCredential(credential, logical, repo.checkout);
-    references[key] = credential.cacheVar ? null : cacheKey(credential);
   }
 
   // fd 3, never stdout: a script opens the third descriptor deliberately, while a naive

@@ -97,15 +97,21 @@ function assertGitignored(path: string, key: string): void {
   );
 }
 
+/**
+ * The value of the reference's own cacheVar, when it holds one. Whitespace-only counts as unseeded:
+ * a stray `export X=` must fall through to the real source rather than resolve to an empty secret.
+ */
+export function cacheVarValue(reference: CredentialRef): string | undefined {
+  if (!reference.cacheVar) return undefined;
+  const cached = process.env[reference.cacheVar];
+  return cached && cached.trim() ? cached : undefined;
+}
+
 export function resolveCredential(reference: CredentialRef, key: string, checkout: string | null): string {
   // The reference's own cacheVar comes first: it is the documented override, and the session cache
   // the hooks module keeps must not hide a value set there later.
-  // Whitespace-only counts as unseeded: a stray `export X=` must fall through to the real source
-  // rather than resolve to an empty secret.
-  if (reference.cacheVar) {
-    const cached = process.env[reference.cacheVar];
-    if (cached && cached.trim()) return cached;
-  }
+  const seeded = cacheVarValue(reference);
+  if (seeded) return seeded;
 
   const sessionCached = cachedSecret(reference, process.env[SECRET_CACHE_VAR]);
   if (sessionCached) return sessionCached;

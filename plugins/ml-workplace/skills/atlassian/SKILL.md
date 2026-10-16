@@ -17,6 +17,11 @@ A="<this-skill-dir>/scripts/atlassian.ts"     # installed as a plugin:
 bun "$A" help
 ```
 
+Installed as a plugin, the same CLI is also on the Bash tool's PATH as `atlassian`, so `atlassian
+jira get NEO-123` needs no path. For a workflow hook or a terminal outside Claude Code,
+`atlassian launcher install` puts a launcher of that name in `~/.local/bin`; it runs the installed
+plugin's CLI, whatever its version, so nothing pins a `~/.claude/plugins/cache/…/<version>/` path.
+
 ## Start here every time
 
 Run this first, before anything else:
