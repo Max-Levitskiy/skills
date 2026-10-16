@@ -351,7 +351,7 @@ const BAND = {
 } as const
 const VIEW_PANE = { plugin: 'ml-workflow', component: 'Pane', requestId: 'run-run_a', props: paneProps('coding-loop-0238a2a3', 100) } as const
 
-function lineOf(text: string, fields: { needsYou?: boolean; ended?: boolean } = {}): Ran {
+function lineOf(text: string, fields: { shorter?: string[]; needsYou?: boolean; ended?: boolean } = {}): Ran {
   const line = { runId: 'run_a', db: DB, name: 'coding-loop-0238a2a3', text, needsYou: false, ended: false, ...fields }
   return { exitCode: 0, stdout: JSON.stringify(line), stderr: '' }
 }
@@ -399,6 +399,29 @@ test('a run that waits for a person says "needs you"', async ($, on) => {
   expect(lineCalls(w).map(argv => argv.slice(1))).toEqual([['line', 'run_a', '--json']])
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
   expect((await ui.find({ type: 'Text', text: 'needs you' }))?.props.color).toBe('#e8590c')
+  await ui.unmount()
+})
+
+test('the band leads with "needs you" and shows the longest form of the line that fits', async ($, on) => {
+  const clock = mock.clock(on)
+  const w = world(on, NEW)
+  const forms = ['nightly-mon at publish for 2 min, visit 2, from check on ok', 'nightly-mon at publish for 2 min, visit 2, from check:ok', 'nightly-mon at publish for 2 min, visit 2']
+  w.line.run_a = lineOf(forms[0]!, { shorter: forms.slice(1), needsYou: true })
+  await $.tool.call({ tool: 'Bash', command: FOLLOW })
+  await clock.settle()
+  // `needs you` and its two spaces take 11 columns and ` [ view ]` 9: at 76 the arrow cut down fits.
+  let ui = await $.ui.mount({ ...BAND, props: { ...BAND.props, bodyColumns: 76 }, surface: 'terminal' })
+  const texts = (await ui.findAll({ type: 'Text' })).map(text => text.text)
+  expect(texts).toContain(forms[1])
+  expect(texts.slice(0, texts.indexOf(forms[1]!))).toContain('needs you')
+  expect(texts).not.toContain(forms[0])
+  await ui.unmount()
+  // At 60 only the line without its arrow fits; at 100 the whole line does.
+  ui = await $.ui.mount({ ...BAND, props: { ...BAND.props, bodyColumns: 60 }, surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: forms[2] })).toBeDefined()
+  await ui.unmount()
+  ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: forms[0] })).toBeDefined()
   await ui.unmount()
 })
 

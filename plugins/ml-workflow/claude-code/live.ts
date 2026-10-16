@@ -10,6 +10,9 @@ import type { FileLine, Followed, LiveView, RunLine, Span } from '../types'
 const HERE = '#ffd43b'
 const TAKEN = '#e8590c'
 const POLL_MS = 1000
+// The run line's fixed parts: `needs you` with the two spaces after it, and ` [ view ]`.
+const NEEDS_YOU = 'needs you'
+const BUTTON_COLUMNS = 9
 
 // `claude plugin validate` holds each `$.state` reference to the contract by its literal plugin and key.
 const followed = atom({ plugin: 'ml-workflow', key: 'followed' } as const, [] as Followed[])
@@ -184,16 +187,25 @@ export function registerLive(on: On) {
     const runs = (await read($, followed)).filter(run => run.line)
     if (!runs.length) return next(e)
     const ui = $.ui.resolve(e)
-    const rows = runs.map((run, i) =>
-      h(
+    // `needs you` and the button keep their width; the line takes the rest, in the longest of the
+    // helper's forms that fits, cut at its end only past the shortest.
+    const rows = runs.map((run, i) => {
+      const line = run.line!
+      const room = e.props.bodyColumns - BUTTON_COLUMNS - (line.needsYou ? NEEDS_YOU.length + 2 : 0)
+      const forms = [line.text, ...(line.shorter ?? [])]
+      return h(
         ui.Box,
         { key: run.runId, flexDirection: 'row' },
-        h(ui.Text, { wrap: 'truncate-end' }, run.line!.text),
-        ...(run.line!.needsYou ? [h(ui.Text, { bold: true, color: TAKEN }, ' needs you')] : []),
-        h(ui.Text, {}, ' '),
-        h(ui.Button, { key: `view:${run.runId}`, label: 'view', ...(i === 0 ? { hotkey: 'v' } : {}), onPress: () => void openView($, run.runId, run.db) }),
-      ),
-    )
+        ...(line.needsYou ? [h(ui.Box, { flexShrink: 0 }, h(ui.Text, { bold: true, color: TAKEN }, NEEDS_YOU), h(ui.Text, {}, '  '))] : []),
+        h(ui.Text, { wrap: 'truncate-end' }, forms.find(text => text.length <= room) ?? forms.at(-1)!),
+        h(
+          ui.Box,
+          { flexShrink: 0 },
+          h(ui.Text, {}, ' '),
+          h(ui.Button, { key: `view:${run.runId}`, label: 'view', ...(i === 0 ? { hotkey: 'v' } : {}), onPress: () => void openView($, run.runId, run.db) }),
+        ),
+      )
+    })
     return h(ui.Box, { flexDirection: 'column' }, ...rows) as RenderElement
   })
 

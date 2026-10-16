@@ -6,6 +6,7 @@ import { join } from "node:path";
 
 import { dataDir } from "./doctor.ts";
 import { display, dots, layout, picture, plainText, pngSize, writeWhole, type Arrow, type Graph } from "./drawing.ts";
+import { duration } from "./unfinished.ts";
 
 // Each spore call is cut off here: the mod polls once a second.
 const LIMIT_MS = 4000;
@@ -17,6 +18,8 @@ const USAGE = {
 };
 
 type Tries = { attempt?: string | number | null; maxAttempts?: string | number | null } | null;
+// What the run waits for, each with how long it has stood so (`forMs`).
+type Standing = { forMs?: string | number | null; state?: string | null } | null;
 type Status = {
   runId: string;
   db?: string | null;
@@ -27,13 +30,14 @@ type Status = {
   end?: { nodeId?: string | null; from?: { nodeId: string; outcome: string } | null } | null;
   invocation?: Tries;
   streaks?: Record<string, { outcome: string; count: string | number; limit?: string | number | null }> | null;
-  waiting?: unknown;
-  intervention?: unknown;
+  waiting?: Standing;
+  intervention?: Standing;
+  running?: Standing;
   quarantine?: { code?: string | null } | null;
   step?: { state?: string | null; actor?: string | null } | null;
 };
 
-export type Line = { runId: string; db: string | null; name: string; text: string; needsYou: boolean; ended: boolean };
+export type Line = { runId: string; db: string | null; name: string; text: string; shorter: string[]; needsYou: boolean; ended: boolean };
 type Failure = { runId: string; db: null; error: { code: string; message: string } };
 type Marked = { n: number; text: string; mark: "here" | "taken" | null };
 
@@ -46,7 +50,7 @@ export async function line(argv: string[]): Promise<number> {
   if ("error" in status) return failed(status, args.flags.has("--json"));
   const shown = lineOf(status);
   if (args.flags.has("--json")) console.log(JSON.stringify(shown));
-  else console.log(shown.text + (shown.needsYou ? ", needs you" : ""));
+  else console.log((shown.needsYou ? "needs you  " : "") + shown.text);
   return 0;
 }
 
@@ -136,25 +140,47 @@ export async function draw(argv: string[]): Promise<number> {
   return 0;
 }
 
-/** The run line's words (docs/spec.md, p.24). */
+/**
+ * The run line's words (docs/spec.md, p.24): where the run is and for how long first, as
+ * `kubectl get pods` leads with STATUS and AGE. `shorter` is the same line with the arrow cut down,
+ * then without it, for a band too narrow for the whole line.
+ */
 export function lineOf(status: Status): Line {
   const key = status.startKey || status.runId;
   const ended = ENDED.has(status.status ?? "");
-  let text: string;
+  let parts: [string, Arrow | null, string];
   if (status.status === "completed" || status.status === "failed") {
     const node = status.end?.nodeId;
-    text = node ? `${key} ${status.status} at ${node}${arrowText(status.end?.from)}` : `${key} ${status.status}`;
+    parts = node ? [`${key} ${status.status} at ${node}`, arrowOf(status.end?.from), ""] : [`${key} ${status.status}`, null, ""];
   } else if (status.status === "cancelled") {
     const node = status.position?.nodeId;
-    text = node ? `${key} cancelled at ${node}` : `${key} cancelled`;
+    parts = [node ? `${key} cancelled at ${node}` : `${key} cancelled`, null, ""];
   } else if (status.position?.nodeId) {
-    text = `${key} at ${status.position.nodeId}${visitText(status)}${arrowText(status.position.from)}${triesText(status.invocation)}${streaksText(status)}`;
+    const visit = Number(status.position.visit);
+    const again = Number.isInteger(visit) && visit > 1 ? `, visit ${visit}` : "";
+    parts = [`${key} at ${status.position.nodeId}${standingText(status)}${again}`, arrowOf(status.position.from), `${triesText(status.invocation)}${streaksText(status)}`];
   } else {
-    text = `${key}, not started yet`;
+    parts = [`${key}, not started yet`, null, ""];
   }
+  const [head, arrow, tail] = parts;
+  const text = `${head}${arrow ? `, from ${arrow.from} on ${arrow.outcome}` : ""}${tail}`;
+  const shorter = arrow ? [`${head}, from ${arrow.from}:${arrow.outcome}${tail}`, `${head}${tail}`] : [];
   const step = status.step;
   const needsYou = !ended && Boolean(status.waiting || status.intervention || status.quarantine || (step?.state === "ready" && step.actor === "person"));
-  return { runId: status.runId, db: status.db ?? null, name: key, text, needsYou, ended };
+  return { runId: status.runId, db: status.db ?? null, name: key, text, shorter, needsYou, ended };
+}
+
+// ` for 13 min`: how long the run has stood as it is at its node, from what it waits for. A try in
+// backoff is not due yet, so it has no time to show.
+function standingText(status: Status): string {
+  const standing = status.waiting ?? status.intervention ?? status.running;
+  const ms = Number(standing?.forMs);
+  if (!standing || standing.state === "backoff" || standing.forMs == null || !Number.isFinite(ms)) return "";
+  return ` for ${duration(ms)}`;
+}
+
+function arrowOf(from: { nodeId: string; outcome: string } | null | undefined): Arrow | null {
+  return from?.nodeId ? { from: from.nodeId, outcome: from.outcome } : null;
 }
 
 // The live view's facts line: status, node, visit, try and loop count.
@@ -168,10 +194,6 @@ function factsOf(status: Status): string {
 function visitText(status: Status): string {
   const visit = Number(status.position?.visit);
   return status.position?.nodeId && Number.isInteger(visit) && visit > 0 ? `, visit ${visit}` : "";
-}
-
-function arrowText(from: { nodeId: string; outcome: string } | null | undefined): string {
-  return from?.nodeId ? `, from ${from.nodeId} on ${from.outcome}` : "";
 }
 
 // `try 2/3`, or past the action's limit after a person's retry, `try 4 (past the limit of 3)`.
