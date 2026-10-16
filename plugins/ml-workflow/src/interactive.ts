@@ -1,6 +1,7 @@
-// `claude-spore start|probe|watch|report|stop`, the interactive Claude step (docs/spec.md, p.17).
+// `claude-spore start|probe|watch|report|stop|close-after`, the interactive Claude step (docs/spec.md, p.17).
 // It runs as a spore async command: `start` opens Claude in a herdr pane and prints the holder
 // handle, Claude hands its answer to `report` from the pane, and the watch prints that answer.
+import { spawn } from "node:child_process";
 import { copyFileSync, existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -305,6 +306,8 @@ export async function watch(): Promise<number> {
       const quiet = agent === null || agent.status === "idle" || agent.status === "done";
       const found = result();
       if (found !== null && quiet) {
+        // The answer moves the run past the node, so the pane is done with.
+        if (agent) release(handle.herdrAgent, agent.pane, work);
         console.log(found);
         return 0;
       }
@@ -336,6 +339,40 @@ export async function watch(): Promise<number> {
       }
     }
     await Bun.sleep(poll);
+  }
+}
+
+/**
+ * Closes the pane of a step that has its answer: at once, or after the step's `keepSeconds` by a
+ * detached `claude-spore close-after`, so the run need not wait. A failed close is not the step's.
+ */
+function release(name: string, pane: string, work: string) {
+  const params = readJson(join(work, "params.json"));
+  const keep = isObject(params) && typeof params.keepSeconds === "number" ? params.keepSeconds : 0;
+  if (keep > 0) {
+    spawn(process.execPath, [process.argv[1]!, "close-after", String(keep), name, pane], { detached: true, stdio: "ignore" }).unref();
+    return;
+  }
+  try {
+    closePane(pane);
+  } catch {}
+}
+
+/** `claude-spore close-after <seconds> <agent> <pane>`: closes the pane later, if the agent still has it. */
+export async function closeAfter(args: string[]): Promise<number> {
+  const [seconds, name, pane] = args;
+  if (!(Number(seconds) >= 0) || !name || !pane || args.length !== 3) {
+    console.error("usage: claude-spore close-after <seconds> <agent> <pane>");
+    return 2;
+  }
+  await Bun.sleep(Number(seconds) * 1000);
+  try {
+    // A later visit closes this pane itself and opens its own under the same agent name.
+    if (getAgent(name)?.pane === pane) closePane(pane);
+    return 0;
+  } catch (error) {
+    console.error(`claude-spore close-after: herdr: ${(error as Error).message}`);
+    return 1;
   }
 }
 

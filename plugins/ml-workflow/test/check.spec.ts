@@ -100,6 +100,15 @@ describe("the closed parameter set", () => {
     workflow({ ...JSON_STEP, prompt: { $literal: "hi" } }, { argv: ["/opt/plugin/bin/claude-spore", "start"] });
     expect(codes()).toEqual(["params.unknown"]);
   });
+
+  test("keepSeconds is a whole number of seconds, 0 or more", () => {
+    workflow({ ...JSON_STEP, keepSeconds: { $literal: 600 } }, { argv: ["claude-spore", "start"] });
+    expect(codes()).toEqual([]);
+    workflow({ ...JSON_STEP, keepSeconds: { $literal: -1 } }, { argv: ["claude-spore", "start"] });
+    expect(codes()).toEqual(["params.keep"]);
+    workflow({ ...JSON_STEP, keepSeconds: { $literal: "600" } }, { argv: ["claude-spore", "start"] });
+    expect(codes()).toEqual(["params.keep"]);
+  });
 });
 
 describe("herdr", () => {

@@ -396,6 +396,41 @@ describe("watch", () => {
     });
   });
 
+  test("delivering the answer closes the pane, since the run leaves the node", () => {
+    const { result, stdout } = start();
+    report("ok", '{"summary": "Done."}');
+
+    expect(run("watch", { stdin: stdout }).result).toEqual({ outcome: "ok", output: { summary: "Done." } });
+    expect(herdrCalls("pane", "close")).toHaveLength(1);
+    expect(herdr.state().agents[result.herdrAgent]).toBeUndefined();
+    expect(run("probe", { stdin: stdout }).result).toEqual({ holder: "dead" });
+  });
+
+  test("with keepSeconds the pane stays that long after the answer, then closes", async () => {
+    const { result, stdout } = start({ stdin: JSON.stringify({ ...PARAMS, keepSeconds: 1 }) });
+    report("ok", '{"summary": "Done."}');
+    const watched = run("watch", { stdin: stdout });
+
+    expect(watched.exitCode).toBe(0);
+    expect(herdr.state().agents[result.herdrAgent]).toBeDefined();
+    const end = Date.now() + 5000;
+    while (herdr.state().agents[result.herdrAgent] && Date.now() < end) await Bun.sleep(100);
+    expect(herdrCalls("pane", "close")).toHaveLength(1);
+    expect(herdr.state().agents[result.herdrAgent]).toBeUndefined();
+  });
+
+  test("a kept pane a later visit has replaced is left to that visit", async () => {
+    const first = start({ stdin: JSON.stringify({ ...PARAMS, keepSeconds: 1 }) });
+    report("ok", '{"summary": "Done."}');
+    run("watch", { stdin: first.stdout });
+    const second = start({ visit: 2, workDir: join(root, "work", "inv2") });
+
+    const pane = herdr.state().agents[second.result.herdrAgent]!.pane;
+    await Bun.sleep(2000);
+    expect(herdrCalls("pane", "close")).toHaveLength(1);
+    expect(herdr.state().agents[second.result.herdrAgent]?.pane).toBe(pane);
+  });
+
   test("a gone pane's result is still printed", () => {
     const { stdout } = start();
     report("ok", '{"summary": "Done."}');

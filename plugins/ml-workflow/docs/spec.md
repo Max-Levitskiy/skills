@@ -15,7 +15,7 @@ Each part is built by one ticket of skills#59. This table says what exists in th
 | Entry points, menu, session-start line, following a run | p.7–p.12 | `start`, `status`, `continue` and `cancel`, and following a run (skills#64); `menu` is a stub that checks the host version and says it is not built, and the session-start line is not built |
 | Profile kinds, node parameters, `claude-spore check` | p.13–p.15 | built (skills#62; the herdr check skills#63) |
 | Background Claude step: `claude-spore run`, session table, repair, facts | p.16, p.18, p.19, p.20 | built (skills#62) |
-| Interactive Claude step: `start`, `probe`, `watch`, `report`, `stop` | p.17 | built (skills#63) |
+| Interactive Claude step: `start`, `probe`, `watch`, `report`, `stop` | p.17 | built (skills#63; closing the pane as the run leaves the node, skills#92) |
 | Authoring interview | p.21–p.23 | built (skills#67); it draws the draft as text until `claude-spore draw` is |
 | Run line and live view | p.24 | not built |
 | Reference loop as the end-to-end check | p.25 | not built |
@@ -216,7 +216,7 @@ The plugin recognises a step by the program it runs, or by its actor label.
 
 ## Node parameters (p.14)
 
-The set is closed: `format`, `schema`, `outcome`, `model`, `tools`, `skill` and `context`. They are `$literal` values in the node's `input`; `schema` is `{"$outputSchemas": {}}`. Only `context` carries data to Claude. The instructions file is plain prose that explains what each outcome means ([C10][c10] R7, [C14][c14]).
+The set is closed: `format`, `schema`, `outcome`, `model`, `tools`, `skill`, `keepSeconds` and `context`. They are `$literal` values in the node's `input`; `schema` is `{"$outputSchemas": {}}`. Only `context` carries data to Claude. The instructions file is plain prose that explains what each outcome means ([C10][c10] R7, [C14][c14]).
 
 | Parameter | Value | Absent |
 |---|---|---|
@@ -226,6 +226,7 @@ The set is closed: `format`, `schema`, `outcome`, `model`, `tools`, `skill` and 
 | `model` | a model name for `--model` | no `--model` |
 | `tools` | a list of Claude Code tool names: a built-in tool such as `Read` or `Bash`, or an MCP tool `mcp__<server>__<tool>` | no `--tools`/`--allowedTools`: Claude has its default tools, and in the background every call that needs permission is denied |
 | `skill` | a skill name, `name` or `plugin:name` | no slash command |
+| `keepSeconds` | a whole number of seconds, 0 or more: how long a watched step's pane stays open after the watch hands its answer to the run, as a Kubernetes Job's `ttlSecondsAfterFinished`. A background step has no pane and ignores it | `0`: the pane closes as the run leaves the node |
 | `context` | any mapping: the data Claude sees as the step's input | `null` |
 
 ## What `claude-spore check <folder>` checks (p.15)
@@ -234,6 +235,7 @@ The set is closed: `format`, `schema`, `outcome`, `model`, `tools`, `skill` and 
 - `schema` is present when `format` is `json`, and every outcome of a `json` Claude step has a schema.
 - `outcome` is present, and is the node's only outcome, when `format` is `text`.
 - Tool names are valid Claude Code tools.
+- `keepSeconds` is a whole number, 0 or more.
 - herdr is reachable when the workflow has interactive steps.
 - A schema Claude Code's strict form cannot use is a warning, not a refusal.
 
@@ -243,7 +245,7 @@ A Claude step is a `command` action whose `argv` runs `claude-spore run` or `cla
 
 - **Strict form.** A schema fits Claude Code's strict form when it uses only `$schema`, `type`, `description`, `title`, `properties`, `required`, `additionalProperties`, `items`, `enum`, `const` and `anyOf`; every object declares `properties`; `additionalProperties` is absent or `false`; `anyOf` stands alone (beside `description` or `title` at most); and it is at most 32 levels deep ([C12][c12] W02).
 - **Output.** One line per problem, `error: <node>: <message>` or `warning: <node>: <message>`, and exit 2 when there is an error, else 0. With `--json`, one object `{"ok", "errors", "warnings"}`, each problem `{"node", "code", "message"}`, with the same exit codes.
-- **Codes.** `params.unknown`, `params.not-literal`, `params.format`, `params.schema-missing`, `params.schema-outcome`, `params.outcome`, `params.model`, `params.tools`, `params.skill`; the warning `schema.not-strict`; `workflow.unreadable` for a folder without a readable `settings.json`; and `herdr.unreachable`, once for the folder, when it has an interactive step and `herdr status server --json` does not answer with a running server.
+- **Codes.** `params.unknown`, `params.not-literal`, `params.format`, `params.schema-missing`, `params.schema-outcome`, `params.outcome`, `params.model`, `params.tools`, `params.skill`, `params.keep`; the warning `schema.not-strict`; `workflow.unreadable` for a folder without a readable `settings.json`; and `herdr.unreachable`, once for the folder, when it has an interactive step and `herdr status server --json` does not answer with a running server.
 
 ## Background step, `claude-spore run` (p.16)
 
@@ -272,6 +274,7 @@ How it does this:
 - **`watch`** waits until herdr shows the session idle or done and `$RUNSPORE_WORK_DIR/<attempt>.result.json` exists, then prints it. Quiet with no file, it prints `{"needs": "person", "message": "<node> waits for you in its pane"}`. A later try first copies an earlier try's success result in the same invocation to its own name; a failure result is never carried over. A message `start` could not send because Claude was working, the watch sends once Claude is quiet.
 - **`report --outcome <o>`** reads the answer as JSON on stdin and checks it against `params.json`. If it fits, it writes the result file and prints "accepted". If not, it prints one error per line, exits 1 and counts the bad answer in `<attempt>.answers`; the third bad answer writes a non-retryable `output.invalid` result.
 - **`stop`** closes the pane by the handle.
+- **The pane closes once the run leaves its node.** The watch that hands the answer to the run closes the pane, at once or `keepSeconds` later; `stop` closes it when the run is cancelled; a later visit closes it before it opens its own (skills#92).
 
 How it does this (skills#63):
 
@@ -315,7 +318,7 @@ How it does this (skills#63):
 - **`report`** checks the answer with spore's schema subset (`spec/schema.md` §3, Web-tree/runspore): every keyword of the subset, up to 16 errors, each `<path>: <message>` with `(root)` for the whole value, and a number with a fraction refused as in `run`. A `json` step's answer is JSON fitting the schema of its outcome, and an outcome outside `schema` is an error. A `text` step's answer is any text, kept as `{"text": …}`, and the outcome must be its `outcome`. A good answer writes `{"outcome", "output"}`; an attempt that already has a result file prints that it has its answer and exits 1, writing nothing. The third bad answer writes `{"error": {"code": "output.invalid", "message": <the last errors>}, "retryable": false}` and says that the step failed. Exit 2 is a usage error, or a work folder without `params.json`.
 - **`watch`** polls once a second (`CLAUDE_SPORE_WATCH_POLL_MS`, for the specs):
   - when this attempt has no result file and an earlier attempt of the work folder has a success, it copies the latest such success to this attempt's name;
-  - a result file and an agent that is `idle`, `done` or gone: it prints the file and exits 0;
+  - a result file and an agent that is `idle`, `done` or gone: it prints the file and exits 0. A live agent's pane is closed first, since the answer moves the run past the node. With `keepSeconds` above 0 it starts a detached `claude-spore close-after <seconds> <agent> <pane>` instead, which sleeps that long and closes the pane only while the agent still has it, so a later visit's pane is never closed. A close that fails does not fail the step;
   - a message `start` left unsent and an agent neither `working` nor `blocked`: it sends the message;
   - `idle`, `done` or `blocked` with no file: it prints the `needs` line once, and again only after the agent was busy in between. `blocked` counts because Claude is asking a question in the pane. herdr shows `done` both after a question and after Claude reported, so the watch tells them apart by the result file, never by the state;
   - the agent gone with no file: it exits 1, so the host only loses sight of the step and the probe decides;

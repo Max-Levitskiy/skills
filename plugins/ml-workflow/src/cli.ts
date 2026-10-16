@@ -12,6 +12,7 @@ const USAGE = `usage: claude-spore --version
        claude-spore run
        claude-spore start | probe | watch | stop
        claude-spore report --attempt <n> --outcome <outcome>
+       claude-spore close-after <seconds> <agent> <pane>
 
 The ml-workflow helper (docs/spec.md).
   doctor         checks that the spore on PATH is one ml-workflow drives
@@ -23,7 +24,8 @@ The ml-workflow helper (docs/spec.md).
   probe          answers whether the pane's Claude still runs, the handle on stdin
   watch          waits for the pane's answer and prints it, the handle on stdin
   stop           closes the pane, the handle on stdin
-  report         hands in the answer of an interactive step, from its pane, on stdin`;
+  report         hands in the answer of an interactive step, from its pane, on stdin
+  close-after    closes a finished step's pane after its keepSeconds; the watch runs it`;
 
 export async function main(argv: string[]): Promise<number> {
   const [command, ...rest] = argv;
@@ -58,6 +60,10 @@ export async function main(argv: string[]): Promise<number> {
   if (command === "report") {
     const { report } = await import("./interactive.ts");
     return report(rest);
+  }
+  if (command === "close-after") {
+    const { closeAfter } = await import("./interactive.ts");
+    return closeAfter(rest);
   }
   if (command === "--help" || command === "-h") {
     console.log(USAGE);

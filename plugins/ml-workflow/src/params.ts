@@ -3,7 +3,7 @@
 import { isObject, notStrict, type Schemas } from "./schema.ts";
 import { isToolName } from "./tools.ts";
 
-export const PARAMETERS = ["format", "schema", "outcome", "model", "tools", "skill", "context"] as const;
+export const PARAMETERS = ["format", "schema", "outcome", "model", "tools", "skill", "keepSeconds", "context"] as const;
 
 /** Parameters that passed `checkParams`, typed. */
 export type StepParams = {
@@ -13,6 +13,7 @@ export type StepParams = {
   model?: string;
   tools?: string[];
   skill?: string;
+  keepSeconds: number;
   context: unknown;
 };
 
@@ -93,6 +94,11 @@ export function checkParams(params: Record<string, unknown>, outcomes?: string[]
     error("params.skill", `"skill" must be a skill name, "name" or "plugin:name"`);
   }
 
+  const keep = params.keepSeconds;
+  if (keep !== undefined && !(typeof keep === "number" && Number.isInteger(keep) && keep >= 0)) {
+    error("params.keep", `"keepSeconds" must be a whole number of seconds, 0 or more`);
+  }
+
   return problems;
 }
 
@@ -105,6 +111,7 @@ export function stepParams(params: Record<string, unknown>): StepParams {
     model: params.model as string | undefined,
     tools: params.tools as string[] | undefined,
     skill: params.skill as string | undefined,
+    keepSeconds: (params.keepSeconds as number | undefined) ?? 0,
     context: params.context ?? null,
   };
 }
