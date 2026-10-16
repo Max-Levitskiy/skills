@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "
 import { cpSync, existsSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { answered, FakeClaude, FakeHerdr, HELPER, PATH, remove, scratch, SPORE, SPORE_TIMEOUT_MS, sporeVersion } from "./helpers.ts";
+import { answered, FakeClaude, FakeHerdr, HELPER, herdrRunning, PATH, remove, scratch, SPORE, SPORE_TIMEOUT_MS, sporeVersion } from "./helpers.ts";
 
 const EXAMPLES = join(import.meta.dir, "..", "skills", "author", "references", "examples");
 const version = sporeVersion("authoring.spec.ts");
@@ -47,7 +47,8 @@ describe.skipIf(!version)(`the examples with a real spore ${version ?? ""}`, () 
       expect(validate.exitCode).toBe(0);
 
       const check = sh(folder, [HELPER, "check", folder], { FAKE_HERDR_DIR: herdr.dir });
-      expect(check.stdout).toBe(`${folder}: 1 Claude step checked, no errors\n`);
+      const herdrLine = name === "watched-coding-loop" ? herdrRunning(folder) : "";
+      expect(check.stdout).toBe(`${herdrLine}${folder}: 1 Claude step checked, no errors\n`);
       expect(check.exitCode).toBe(0);
     });
   }

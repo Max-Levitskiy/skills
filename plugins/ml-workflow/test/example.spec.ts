@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { FakeHerdr, HELPER, PATH, remove, scratch, SPORE, sporeVersion } from "./helpers.ts";
+import { FakeHerdr, HELPER, herdrRunning, PATH, remove, scratch, SPORE, sporeVersion } from "./helpers.ts";
 
 const EXAMPLES = join(import.meta.dir, "..", "skills", "author", "references", "examples");
 const version = sporeVersion("example.spec.ts");
@@ -35,7 +35,7 @@ test("list names every bundled workflow, what it does and its Claude steps", () 
   const { examples } = JSON.parse(stdout);
   expect(examples.map((e: { name: string }) => e.name)).toEqual(readdirSync(EXAMPLES).sort());
   for (const e of examples) {
-    expect(e.description).toContain("Claude implements, a command runs the tests");
+    expect(e.description).toStartWith("The reference coding loop");
     expect(e.claudeSteps).toEqual(["implement"]);
   }
 });
@@ -100,7 +100,7 @@ describe("refusals write nothing", () => {
     const target = join(dir, "nope");
     const { exitCode, stderr } = helper("copy", "nope", target);
     expect(exitCode).toBe(1);
-    expect(stderr).toBe("example: no bundled workflow \"nope\"; there are coding-loop, parallel-coding-loop\n");
+    expect(stderr).toBe("example: no bundled workflow \"nope\"; there are coding-loop, parallel-coding-loop, watched-coding-loop\n");
     expect(existsSync(target)).toBe(false);
   });
 
@@ -117,6 +117,7 @@ describe.skipIf(!version)(`the copies with a real spore ${version ?? ""}`, () =>
     ["coding-loop", []],
     ["coding-loop", ["--watch", "implement"]],
     ["parallel-coding-loop", ["--watch", "implement"]],
+    ["watched-coding-loop", []],
   ] as const) {
     test(`${name}${watch.length ? ", implement watched," : ""} validates and checks with no warning`, () => {
       const target = join(dir, "real", watch.length ? "watched" : "background", name);
@@ -128,7 +129,7 @@ describe.skipIf(!version)(`the copies with a real spore ${version ?? ""}`, () =>
       expect(validate.exitCode).toBe(0);
 
       const check = sh([HELPER, "check", target]);
-      expect(check.stdout).toBe(`${target}: 1 Claude step checked, no errors\n`);
+      expect(check.stdout).toBe(`${watch.length || name === "watched-coding-loop" ? herdrRunning(target) : ""}${target}: 1 Claude step checked, no errors\n`);
       expect(check.exitCode).toBe(0);
     });
   }
