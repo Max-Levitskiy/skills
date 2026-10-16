@@ -15,6 +15,12 @@ export const PATH = [FAKE_BIN, PLUGIN_BIN, dirname(process.execPath), process.en
 export const SPORE = process.env.SPORE ?? Bun.which("spore") ?? "spore";
 
 /**
+ * The per-test timeout of a spec that drives real `spore` runs. Each test there waits on several
+ * `spore` and helper processes in turn, which on a CI runner takes longer than Bun's 5 s default.
+ */
+export const SPORE_TIMEOUT_MS = 30_000;
+
+/**
  * The real spore's version when it is a 0.2, else null: a spec that needs it is skipped, with the
  * reason printed, unless REQUIRE_SPORE=1 (CI) makes that a failure.
  */

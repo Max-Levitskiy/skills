@@ -2,13 +2,14 @@
 // against the real spore, and the fields of each answer the reaction reads. It needs a spore with
 // `continue --wait` and `cancel` (Web-tree/runspore#73, #74); without one it is skipped, unless
 // REQUIRE_SPORE=1 (CI) makes that a failure.
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { FakeClaude, FakeHerdr, PATH, remove, scratch, SPORE, sporeVersion } from "./helpers.ts";
+import { FakeClaude, FakeHerdr, PATH, remove, scratch, SPORE, SPORE_TIMEOUT_MS, sporeVersion } from "./helpers.ts";
 
 const version = sporeVersion("follow.spec.ts");
+setDefaultTimeout(SPORE_TIMEOUT_MS);
 
 /** Whether this spore follows and cancels runs; the v0.2.0 release does neither. */
 function follows(): boolean {

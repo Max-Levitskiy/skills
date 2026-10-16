@@ -1,13 +1,14 @@
 // A real `spore run` of a one-step workflow whose step is `claude-spore run`, with the fake `claude`
 // (docs/spec.md, Testing). The `spore` is $SPORE, else the one on PATH; without a 0.2 one the spec
 // is skipped, unless REQUIRE_SPORE=1 (CI) makes that a failure.
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { answered, FakeClaude, FakeHerdr, HELPER, PATH, remove, scratch, SPORE, sporeVersion } from "./helpers.ts";
+import { answered, FakeClaude, FakeHerdr, HELPER, PATH, remove, scratch, SPORE, SPORE_TIMEOUT_MS, sporeVersion } from "./helpers.ts";
 
 const version = sporeVersion("spore.spec.ts");
+setDefaultTimeout(SPORE_TIMEOUT_MS);
 
 const SETTINGS = {
   format: "runspore.workflow/0.2",

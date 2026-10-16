@@ -1,14 +1,15 @@
 // The folders the authoring interview copies (skills/author/references/examples/, docs/spec.md p.22):
 // each builds with the real spore and passes `claude-spore check` with no warning, and the
 // worktree step of the parallel loop makes one worktree per run that the later steps work in.
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { cpSync, existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { answered, FakeClaude, HELPER, PATH, remove, scratch, SPORE, sporeVersion } from "./helpers.ts";
+import { answered, FakeClaude, HELPER, PATH, remove, scratch, SPORE, SPORE_TIMEOUT_MS, sporeVersion } from "./helpers.ts";
 
 const EXAMPLES = join(import.meta.dir, "..", "skills", "author", "references", "examples");
 const version = sporeVersion("authoring.spec.ts");
+setDefaultTimeout(SPORE_TIMEOUT_MS);
 
 function sh(cwd: string, argv: string[], env: Record<string, string> = {}) {
   const child = Bun.spawnSync(argv, { cwd, env: { ...process.env, PATH, ...env } });
