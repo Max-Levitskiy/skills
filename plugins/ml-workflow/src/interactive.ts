@@ -22,8 +22,11 @@ type Handle = {
   machine: string;
 };
 
-/** `pane.json`: the handle, the pane, and the attempt whose report command the pane was given. */
-type PaneRecord = { handle: Handle; pane: string; attempt: number };
+/**
+ * `pane.json`: the handle, the pane, the attempt whose report command the pane was given, and the
+ * message not yet sent to it, without its report command.
+ */
+type PaneRecord = { handle: Handle; pane: string; attempt: number; unsent?: string };
 
 type Failure = { error: { code: string; message: string }; retryable: false };
 
@@ -99,6 +102,19 @@ function reportEnding(params: StepParams, attempt: number): string {
   ].join("\n\n");
 }
 
+/**
+ * Sends the record's unsent message, with its attempt's report command, when the agent can take it.
+ * A prompt typed while Claude works is lost, and Claude can report before its turn ends; one typed
+ * while it asks a question would answer that question. Until then the message waits in `pane.json`.
+ */
+function deliver(work: string, record: PaneRecord, params: StepParams, status: string): PaneRecord {
+  if (record.unsent === undefined || status === "working" || status === "blocked") return record;
+  prompt(record.handle.herdrAgent!, `${record.unsent}\n\n${reportEnding(params, record.attempt)}`);
+  const { unsent: _, ...sent } = record;
+  writeJson(join(work, "pane.json"), sent);
+  return sent;
+}
+
 export async function start(): Promise<number> {
   const step = stepNumbers("start", ["RUNSPORE_WORK_DIR"]);
   if (!step) return 2;
@@ -128,11 +144,14 @@ export async function start(): Promise<number> {
       const record = readJson(join(work, "pane.json")) as PaneRecord | undefined;
       const { handle } = record ?? {};
       if (record && handle?.herdrAgent === name && handle.pid !== null && startTime(handle.pid) === handle.started) {
-        // This invocation already has its pane: a repeated start.
+        // This invocation already has its pane: a repeated start. A message the pane never got
+        // still goes, with this attempt's report command; else it is told it was cut off.
+        let next = record;
         if (record.attempt !== attempt) {
-          prompt(name, cutOffMessage(params, reportEnding(params, attempt)));
-          writeJson(join(work, "pane.json"), { ...record, attempt });
+          next = { ...record, attempt, unsent: record.unsent ?? cutOffMessage(params, "") };
+          writeJson(join(work, "pane.json"), next);
         }
+        deliver(work, next, params, live.status);
         return print(handle);
       }
       // An earlier visit's pane, or one whose start died before it was recorded.
@@ -147,9 +166,9 @@ export async function start(): Promise<number> {
     return 1;
   }
 
+  // The message without its report command, which `deliver` adds.
   let mode: "start" | "resume";
   let message: string;
-  const ending = reportEnding(params, attempt);
   if (!transcriptExists(session)) {
     if (visit > 1) {
       return paneless(
@@ -158,7 +177,7 @@ export async function start(): Promise<number> {
     }
     // Visit 1: the first try, or one that died before Claude made the session.
     mode = "start";
-    message = startMessage(params, await readInstructions(), ending);
+    message = startMessage(params, await readInstructions(), "");
   } else if (visit === 1 && attempt === 1) {
     return paneless(
       failure(
@@ -168,7 +187,7 @@ export async function start(): Promise<number> {
     );
   } else {
     mode = "resume";
-    message = attempt > 1 ? cutOffMessage(params, ending) : cameBackMessage(params, visit, ending);
+    message = attempt > 1 ? cutOffMessage(params, "") : cameBackMessage(params, visit, "");
   }
 
   const env: Record<string, string> = { RUNSPORE_WORK_DIR: work };
@@ -192,9 +211,12 @@ export async function start(): Promise<number> {
   if (pid === null || started === null) return give(`no Claude process holds session ${session} in pane ${pane}`);
 
   const handle: Handle = { herdrAgent: name, session, pid, started, boot: bootId(), machine: machine() };
-  writeJson(join(work, "pane.json"), { handle, pane, attempt } satisfies PaneRecord);
+  const record: PaneRecord = { handle, pane, attempt, unsent: message };
+  writeJson(join(work, "pane.json"), record);
   try {
-    prompt(name, message);
+    const agent = getAgent(name);
+    if (!agent) return give(`the agent ${name} is gone from pane ${pane}`);
+    deliver(work, record, params, agent.status);
   } catch (error) {
     return give(`herdr: ${(error as Error).message}`);
   }
@@ -289,6 +311,22 @@ export async function watch(): Promise<number> {
       if (agent === null) {
         console.error(`claude-spore watch: the pane of ${node} is gone, and it reported nothing`);
         return 1;
+      }
+      // A message `start` could not send while Claude worked goes once it can take one.
+      const record = readJson(join(work, "pane.json")) as PaneRecord | undefined;
+      const params = readJson(join(work, "params.json")) as StepParams | undefined;
+      if (record?.unsent !== undefined && record.attempt === step.attempt && record.handle.herdrAgent === handle.herdrAgent && params) {
+        let sent = false;
+        try {
+          sent = deliver(work, record, params, agent.status) !== record;
+        } catch {
+          // herdr refused the prompt: try again at the next poll.
+        }
+        if (sent) {
+          told = false;
+          await Bun.sleep(poll);
+          continue;
+        }
       }
       if (quiet || agent.status === "blocked") {
         if (!told) console.log(JSON.stringify({ needs: "person", message: `${node} waits for you in its pane` }));

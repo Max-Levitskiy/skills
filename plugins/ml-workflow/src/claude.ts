@@ -66,12 +66,13 @@ function inputBlock(params: StepParams): string {
   return `The input of this step:\n\n\`\`\`json\n${JSON.stringify(params.context, null, 2)}\n\`\`\``;
 }
 
-/** The first message of a session; `ending` says how to give the answer. */
+/** The first message of a session; `ending` says how to give the answer, and "" leaves it out. */
 export function startMessage(params: StepParams, instructions: string, ending: string): string {
   const parts = [];
   if (instructions) parts.push(instructions);
   if (process.env.RUNSPORE_STEP_FILES) parts.push(`The step's files are in ${process.env.RUNSPORE_STEP_FILES}.`);
-  parts.push(inputBlock(params), ending);
+  parts.push(inputBlock(params));
+  if (ending) parts.push(ending);
   const message = parts.join("\n\n");
   return params.skill ? `/${params.skill} ${message}` : message;
 }
@@ -81,7 +82,9 @@ export function cameBackMessage(params: StepParams, visit: number, ending: strin
     `The run came back to this step: this is its visit ${visit}. Do the step again with the new input.`,
     inputBlock(params),
     ending,
-  ].join("\n\n");
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 }
 
 export function cutOffMessage(params: StepParams, ending: string): string {
@@ -89,5 +92,7 @@ export function cutOffMessage(params: StepParams, ending: string): string {
     "You were cut off before you finished this step. Check what you already did, then finish the step.",
     inputBlock(params),
     ending,
-  ].join("\n\n");
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 }
