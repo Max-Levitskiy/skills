@@ -46,7 +46,10 @@ resolve task conflicts by themselves.
 ## Remove exactly what was requested
 
 Workspace close closes running panes; its checkout remains.
-Worktree remove --workspace ID also deletes the checkout.
+Worktree remove --workspace ID also deletes the checkout. It needs the workspace live:
+once its last pane is closed it answers workspace_not_found. Remove the worktree before
+closing the agent's pane; after the fact, `git -C <repo> worktree remove <checkout_path>`
+(workspace get gives worktree.checkout_path; keep it before closing).
 Workspace close --group affects a group; inventory its members first.
 A sidebar entry, running processes and disk checkout are distinct removal outcomes.
 

@@ -20,7 +20,7 @@ class Helpers(unittest.TestCase):
             "AGENT_CONFIG_ROOT":AGENT_CONFIG,
             "FAKE_HERDR_LOG":str(self.log),"HERDR_PANE_ID":"inherited-wrong-pane",
             "HERDR_SESSION":"inherited-wrong-session","HERDR_SOCKET_PATH":"/wrong.sock"}
-  for k in ("CLAUDE_CONFIG_DIR","CODEX_HOME"):self.env.pop(k,None)
+  for k in ("CLAUDE_CONFIG_DIR","CODEX_HOME","HERDR_BIN_PATH"):self.env.pop(k,None)
   self.addCleanup(self.tmp.cleanup)
  def calls(self):return [json.loads(x) for x in self.log.read_text().splitlines()] if self.log.exists() else []
  def commands(self):
@@ -54,6 +54,14 @@ class Helpers(unittest.TestCase):
   self.assertEqual(len(prompts),1);self.assertEqual(prompts[0][3],"line one\nline two")
   start=next(a for a in self.mutations() if a[:2]==["agent","start"])
   self.assertIn("--kind",start);self.assertIn("--pane",start);self.assertNotIn("--cwd",start)
+ def test_cwd_goes_to_the_location_not_agent_start(self):
+  self.run_helper("start","claude","--cwd","/srv/scratch")
+  create,start=self.mutations()
+  self.assertEqual(create[:2],["workspace","create"]);self.assertEqual(create[create.index("--cwd")+1],"/srv/scratch")
+  self.assertEqual(start[:2],["agent","start"]);self.assertNotIn("--cwd",start)
+ def test_stop_closes_the_pane(self):
+  self.run_helper("stop","reviewer","--force")
+  self.assertEqual(self.mutations(),[["pane","close","pane@root"]])
  def test_public_scope_routes_and_context(self):
   for flags,prefix in [([],[]),(["--session","chosen"],["--session","chosen"]),
                        (["--machine","profile"],["--machine","profile"]),
