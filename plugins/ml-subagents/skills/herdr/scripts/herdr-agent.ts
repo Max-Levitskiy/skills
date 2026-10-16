@@ -11,12 +11,13 @@ herdr-agent.ts start [preset] [--prompt TEXT] [--name NAME] [--kind KIND]
   [--cwd PATH] [--env K=V] [--focus] [--timeout MS] [--json]
 herdr-agent.ts ask TARGET TEXT [--timeout MS] [--lines N] [--max-chars N] [--json]
 herdr-agent.ts read TARGET [--source visible|detection|recent|recent-unwrapped] [--lines N]
-herdr-agent.ts stop TARGET --force
+herdr-agent.ts stop TARGET --force   (herdr has no agent stop: this closes the agent's pane)
 herdr-agent.ts config check|show|path [LAYER]|write LAYER   (layers: global, repo, user-repo, local)
 Target flags: --session NAME | --machine PROFILE; --wsl DISTRO; --herdr-bin PATH
 No --remote flag: use a saved machine or run the CLI on that host.
 Native start/prompt capability is required; no legacy timing/Enter retries.
-Start defaults to a separate workspace. Replies are bounded screens, task_verified=false.
+Start defaults to a separate workspace. --cwd/--env shape that new location;
+herdr agent start itself takes only --kind, --pane and --timeout. Replies are bounded screens, task_verified=false.
 --raw remains accepted; marker-based reply extraction has been retired.`;
 
 function flags(argv: string[]) {

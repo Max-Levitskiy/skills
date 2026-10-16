@@ -18,6 +18,8 @@ pane=$(printf '%s\n' "$created" | jq -r '.result.root_pane.pane_id')
 ```
 
 Workspace/tab creation returns root_pane; split returns result.pane.
+Agent start takes only --kind, --pane and --timeout; the folder and environment come
+from the location (--cwd/--env on its creation), and --cwd there is "unknown option".
 The pane must be at an interactive shell prompt, not occupied by another foreground
 process. Kind chooses a canonical executable; arguments after -- are agent arguments.
 Startup timeout is >3000 and <=300000 ms. Success establishes interactive readiness,
@@ -53,6 +55,12 @@ from a recognized blocked dialog or visible evidence; it is not another native s
 A blocked prompt is rejected before sending. Read the dialog, then use deliberate,
 authorized agent send-keys esc/up/enter/ctrl+c. Stalls/timeouts/transport failures may
 follow sent input: reconcile agent status/output/artifact before retrying.
+
+## Stop
+
+There is no agent stop. `pane close <pane-id>` (the pane_id from agent get) kills the
+agent and its pane; closing a workspace's last pane closes the workspace. Remove a
+worktree it ran in first: workspaces.md, Remove exactly what was requested.
 
 ## Optional presets
 

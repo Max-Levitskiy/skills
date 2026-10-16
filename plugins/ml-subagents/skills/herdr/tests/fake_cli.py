@@ -48,7 +48,12 @@ if args[:2]==["agent","prompt"]:
  if case=="replaced":agent["terminal_id"]="term.replaced"
  agent["agent_status"]="blocked" if case=="after-blocked" else "unknown" if case=="after-unknown" else "done"
  out({"agent":agent})
-if args[:2]==["agent","start"]:out({"agent":agent})
+if args[:2]==["agent","start"]:
+ # 0.9.3 takes only these before `--`; anything else (e.g. --cwd) is "unknown option".
+ own=args[3:args.index("--")] if "--" in args else args[3:]
+ for flag in own[::2]:
+  if flag not in ("--kind","--pane","--timeout"):print("unknown option: "+flag,file=sys.stderr);sys.exit(1)
+ out({"agent":agent})
 if args[:2] in (["workspace","create"],["tab","create"]):out({"workspace":ws,"root_pane":agent,"tab":{"tab_id":"tab@root"}})
 if args[:2]==["pane","split"]:out({"pane":agent})
 if args==["pane","list"]:out({"panes":[agent]})
