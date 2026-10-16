@@ -12,7 +12,7 @@ Each part is built by one ticket of skills#59. This table says what exists in th
 |---|---|---|
 | Skeleton: packaging, minimum versions, `claude-spore --version`, the mod registering, sub-skill stubs, README rules, CI | p.1, p.2, p.6 | built (skills#60) |
 | Getting and checking `spore`, the launcher, helper/mod version match | p.3, p.4, p.5 | built (skills#61) |
-| Entry points, menu, session-start line, following a run | p.7–p.12 | `start`, `status`, `continue` and `cancel`, and following a run (skills#64); the session-start line (skills#89); `menu` is a stub that checks the host version and says it is not built |
+| Entry points, menu, session-start line, following a run | p.7–p.12 | built: `start`, `status`, `continue` and `cancel`, and following a run (skills#64); the session-start line (skills#89); the menu and `act` (skills#65), whose View shows `status` until the live view is |
 | Profile kinds, node parameters, `claude-spore check` | p.13–p.15 | built (skills#62; the herdr check skills#63) |
 | Background Claude step: `claude-spore run`, session table, repair, facts | p.16, p.18, p.19, p.20 | built (skills#62) |
 | Interactive Claude step: `start`, `probe`, `watch`, `report`, `stop` | p.17 | built (skills#63; closing the pane as the run leaves the node, skills#92) |
@@ -100,7 +100,7 @@ How it does this (skills#61):
 
 ## Permissions (p.6)
 
-A plugin cannot ship standing allow rules. Each sub-skill pre-approves `Bash(spore *)` and `Bash(claude-spore *)` in its `allowed-tools`, for the turn it runs in; `author` also pre-approves `Bash(chmod +x *)` for the helper programs it writes (p.22). The README shows the two standing rules for a project's `.claude/settings.json` ([C10][c10] R11).
+A plugin cannot ship standing allow rules. Each sub-skill pre-approves `Bash(spore *)` and `Bash(claude-spore *)` in its `allowed-tools`, for the turn it runs in; `author` also pre-approves `Bash(chmod +x *)` for the helper programs it writes (p.22), `act` `Bash(herdr agent focus *)` for opening a step's pane, and `menu` the mod's tool `mcp__ml-workflow__open_menu` (p.11). The README shows the two standing rules for a project's `.claude/settings.json` ([C10][c10] R11).
 
 ## Entry points (p.7, p.8)
 
@@ -110,19 +110,20 @@ A plugin cannot ship standing allow rules. Each sub-skill pre-approves `Bash(spo
   - `status [<runId>]`: the unfinished runs, or one run's state in words;
   - `continue [<runId>]`: follows a run, and asks which when several are unfinished;
   - `cancel [<runId>]`: confirms in one line, then runs `spore cancel`, and asks which when several are unfinished;
-  - `author [<workflow> | --change]`: the interview, new with no argument, a change of the named workflow, or with `--change` a list of workflows to change; its guide ships as `skills/author/references/authoring.md`. The menu's "write a new workflow" runs `author`, and "change a workflow" runs `author --change`.
+  - `author [<workflow> | --change]`: the interview, new with no argument, a change of the named workflow, or with `--change` a list of workflows to change; its guide ships as `skills/author/references/authoring.md`. The menu's "write a new workflow" runs `author`, and "change a workflow" runs `author --change`;
+  - `act <runId> <action>`: one action of a menu row that needs Claude, a decision, a resolution, a release, abandoning or showing a step, or opening its pane (p.11). The menu hands off to it; nobody needs to type it.
 - **Opening the pop-up.** The mod hooks `skill.prompt` for `ml-workflow:menu`, opens the pane with `$.ui.open` and returns "The workflow menu is open." If opening from that hook is refused, the skill tells Claude to call the mod tool `open_menu`.
 - **The menu widget** is a pane with a `Select` ([C05][c05]).
 - **The mod stays thin.** The helper works out what the mod shows (the start line, the menu rows, the run line text, the drawings) and returns it as JSON from subcommands named in implementation. The mod only calls the helper and renders what comes back, so the helper's tests cover the logic.
 
 ## The session-start line (p.9)
 
-`spore list --unfinished --json` must answer within the 10 s hook budget. The mod prints one line per unfinished run, the way `git status` names an unfinished rebase as soon as you look: where the run is, what it waits for, and the command that picks it up, for example `coding-loop-0238a2a3 at implement, attempt 2 of 3, paused 14 min ago; /ml-workflow:continue to follow it`. With no unfinished run, or on any error, it prints nothing. The lines name `/ml-workflow:continue` until the menu is built.
+`spore list --unfinished --json` must answer within the 10 s hook budget. The mod prints one line per unfinished run, the way `git status` names an unfinished rebase as soon as you look: where the run is, what it waits for, and the command that picks it up, for example `coding-loop-0238a2a3 at implement, attempt 2 of 3, paused 14 min ago; /ml-workflow:menu to pick it up`. With no unfinished run, or on any error, it prints nothing. The lines name `/ml-workflow:menu`, which offers what each run needs (skills#65); they named `/ml-workflow:continue` before the menu was built.
 
 How it does this (skills#89):
 
 - **`claude-spore unfinished [--json]`** works out the lines. It runs `spore list --unfinished --json` from the session's folder, so it reads the database spore finds from there, and `spore status <runId> --json --no-probe --db <db>` for each row, side by side, each cut off after 4 s. `--no-probe` and the read-only commands change nothing and create no database. It prints one line per run, newest first; with `--json`, `{"db", "lines"}`. A `spore` that is missing or cannot list gives no line, `db` null and exit 1; a status that fails leaves its run a line without the attempt. In a Claude that spore started for a step (`RUNSPORE_RUN_ID` or `RUNSPORE_WORK_DIR` set) it asks spore nothing and prints no line: that session is the step, not the person's.
-- **A line** is `<start key, else run ID> at <node>, <state> <age>; /ml-workflow:continue to follow it`, the age being since the run last changed (`since`) in its largest unit (`40 s`, `14 min`, `2 h`, `3 d`). By `needs`:
+- **A line** is `<start key, else run ID> at <node>, <state> <age>; /ml-workflow:menu to pick it up`, the age being since the run last changed (`since`) in its largest unit (`40 s`, `14 min`, `2 h`, `3 d`). By `needs`:
 
   | `needs` | State |
   |---|---|
@@ -189,6 +190,30 @@ How it does this (skills#64):
 
 Unfinished runs come first, newest first. Workflows under `.spore/workflows/` (by graph id) run `ml-workflow:start`. "Write a new workflow" and "change a workflow" run `ml-workflow:author`. A row hands off with `$.command.run`; after an action that lets the run move, the row hands to `continue` ([C08][c08], [C11][c11] R3, R4, R12).
 
+How it does this (skills#65):
+
+- **`claude-spore menu [--json]`** works out the rows. It lists the runs as `unfinished` does (p.9), from the session's folder, with the same 4 s limit per call, and asks spore nothing inside a step. With `--json` it prints `{"db", "rows"}`; without, each row's label and under it each option with its command. It exits 0, and 2 on a usage error.
+- **A row** is `{"key", "label", "options"}`, and an option `{"label", "command", "args"}`: the sub-skill to run, without its slash, and its arguments. The rows, in order:
+  - one per unfinished run, keyed `run:<runId>`, labelled with the run's session-start line without its `; /ml-workflow:menu …` ending. A run held by another holder adds `, its lease ends in <age>` (or `ended <age> ago`) from `step.deadlineMs`; a quarantined run adds `: <quarantine.code>`;
+  - `spore`, "spore could not list the runs", with "Check spore" (`ml-workflow:status`), when spore is missing or cannot list;
+  - `start`, "Start a workflow", one option per workflow by graph id (`ml-workflow:start <id>`), sorted; with none, "Start a bundled example" (`ml-workflow:start` with no argument, which offers them);
+  - `author`, "Write or change a workflow": "Write a new workflow" (`ml-workflow:author`) and, when the project has a workflow, "Change a workflow" (`ml-workflow:author --change`).
+- **The workflows** are the folders holding a `workflow.dot` under the `.spore/workflows/` beside the database spore names (its folder, when that is `.spore`), else under the nearest `.spore/` at or above the session's folder. A folder's graph id is the name after `digraph`, quoted or bare; a folder without one is left out.
+- **A run's options**, by `needs`, each `act` option being `ml-workflow:act <runId> <action>`:
+
+  | `needs` | Options |
+  |---|---|
+  | `signal` | Decide (`decide`) |
+  | `stuck` | Retry (`retry`), Mark done (`done`), Fail (`fail`) |
+  | `held`, `step.holder.herdrAgent` set | Open its pane (`pane`), Continue, Abandon (`abandon`) |
+  | `held`, another holder | Continue, Abandon (`abandon`) |
+  | `external-ready` | Show the step (`show`) |
+  | `working`, `capability-missing`, a run at no node | Continue |
+  | `quarantined` | Release (`release`) |
+
+  then View and Cancel on every run. Continue is `ml-workflow:continue <runId>`, Cancel `ml-workflow:cancel <runId>`, and View `ml-workflow:status <runId>` until the live view (p.24) is built.
+- **The mod** registers the tool `open_menu` at session start. `ml-workflow:menu`'s `skill.prompt` hook and the tool each run `claude-spore menu --json`, keep the rows in the session's state and open the pane `ml-workflow-menu` with focus, closing on Esc. A helper that does not answer with rows leaves one line in the pane, "The menu could not be built", with the helper's first stderr line. The pane draws one `Select` per row, its label the row's and its options the row's, the first with `autoFocus`. A pick closes the pane and runs `$.command.run({ command, args })` with the option's command and arguments. The hook returns "The workflow menu is open." when the pane is placed, the reason when it waits undrawn, and the skill's own text, which tells Claude to call `open_menu`, when the open is refused.
+
 ## The start flow (p.12)
 
 Choosing a workflow runs `claude-spore check` first and shows any errors without starting. The flow then asks for each declared input, using the property's `description` as the question and Claude's draft from the conversation as the answer to confirm. It runs `spore start` and ends by following the new run ([C08][c08] R5, R9).
@@ -225,7 +250,24 @@ A name that finds no folder, or no `<workflow>` in a project with no workflows, 
 
 **`cancel [<runId>]`.** Takes the run as above and reads `spore status <runId> --json`. A run that has already ended is said so, and nothing is asked. Otherwise it asks in one line, naming the run, where it is, and that cancelling stops its running step and cannot be undone. Only on a yes it runs `spore cancel <runId> --json`, with `--reason '<reason>'` when the person gave one, and reports the run cancelled with each stop that ran, or for a `duplicate` that the run had already ended. A follower of the run, in this session or another, then returns with exit 7.
 
-**Claude may load all four on its own**, unlike the `menu` stub and `author`, which writes files, both typed only: each asks the person before it sends a decision, a resolution, a release or a cancel, or starts a run.
+**`menu` (skills#65).** After the Claude Code check it says the menu is open when the mod's hook replaced its text. Reaching its own text means the mod could not open the pane from the hook, so it calls `open_menu` and says what the tool answered. Without that tool, the mod is not loaded: it asks for `/reload-plugins`.
+
+**`act <runId> <action>` (skills#65).** What a menu row's pick hands to when the action needs Claude. It reads `spore status <runId> --json` for `db` and what the run needs now. An ended run, `run.not-found`, or a run that no longer needs the action (`decide` a `signal`; `retry`, `done` and `fail` a `stuck` step; `release` a quarantine; `pane` and `abandon` a `held` step; `show` an `external-ready` one) is said in one line, naming `/ml-workflow:menu` for what the run needs now, and nothing runs. Otherwise:
+
+| Action | Shows | Runs |
+|---|---|---|
+| `decide` | the node, the signal and since when; the gist of the instructions `spore step show` names; each earlier node's latest result from `spore events <runId> --json` | asks for one of `waiting.outcomes`, with data drafted when it has a schema, then `spore signal <runId> <signal> --outcome <o> --id <position.activationId> [--data]` |
+| `retry` | the stuck step, its error and tries; for `reason` `unknown`, that the last try may have done its work, and it asks first | `spore resolve <runId> --retry` |
+| `done` | the stuck step | the one outcome of `intervention.outcomes`, or asks which; with a schema, drafts the output and asks; `spore resolve <runId> --complete <o> [--output]` |
+| `fail` | the stuck step and its error | asks for the reason, drafted from the error; `spore resolve <runId> --fail '<message>'` |
+| `release` | the quarantine's code and details | `spore release <runId>` |
+| `abandon` | the step and its holder | `spore step abandon <runId>` |
+| `pane` | the pane's herdr agent | `herdr agent focus <step.holder.herdrAgent>`; a pane that is gone is said so, with Continue letting the probe decide |
+| `show` | the step, its actor and the gist of its instructions (`spore step show`) | nothing; the claim line `spore step claim <runId> --actor <label>`, and that `/ml-workflow:continue <runId>` follows it once reported |
+
+The menu pick is the person's choice, so an action that needs no more input runs at once; one that needs an outcome, data, a reason, or a warning heeded asks first. After `decide`, `retry`, `done`, `fail`, `release` and `abandon`, which let the run move, it loads `ml-workflow:continue <runId>` to follow the run. Refusals read as in `continue`: `output.invalid` asks again, `signal.id-reused` is "a decision was already sent". Its `allowed-tools` add `Bash(herdr agent focus *)` for `pane`.
+
+**Claude may load all four on its own**, unlike `menu`, `act`, which the menu hands to, and `author`, which writes files, all three typed only: each asks the person before it sends a decision, a resolution, a release or a cancel, or starts a run.
 
 ## Profile kinds (p.13)
 
@@ -484,9 +526,11 @@ A SIGKILL of the Claude process alone leaves its `continue --wait` running as an
 - **Getting and checking `spore`** (`test/doctor.spec.ts`, `test/install.spec.ts`, `test/launcher.spec.ts`) use local fixtures only: a fake `spore` that answers `capabilities` as each test says, and release folders signed by the real `ssh-keygen` with a throwaway key, which a copy of the plugin pins in place of the release key. A tampered archive, a tampered `SHA256SUMS` that matches it, another key's signature, and a missing signature are each refused with the folder unchanged. The launcher runs against a scratch `installed_plugins.json`.
 - **The interview's examples** (`test/authoring.spec.ts`): every folder under `skills/author/references/examples/` passes the real `spore validate` and `claude-spore check` with no warning, the watched one with the fake `herdr`; the worktree step's command makes one worktree per run ID and reuses it on a repeat; a real run of `parallel-coding-loop` with the fake `claude` works in the run's worktree up to the approval; and the helper program of `watched-coding-loop` is an executable asset, which a real run of its test step runs from the step files, green to the end and red along the `red` arrow. The interview itself, a conversation, is checked by the end-to-end run (p.25).
 - **The bundled examples' copies** (`test/example.spec.ts`): `example list` names every folder with its comment and its Claude steps; a copy without `--watch` is the example file for file; `--watch implement` changes only that action, to the watched form; each refusal writes nothing; and every example, copied with `implement` in the background or watched, passes the real `spore validate` and `claude-spore check` with no warning.
-- **The sub-skills** (`test/skills.spec.ts`): each `SKILL.md` names its own sub-skill, pre-approves `Bash(spore *)` and `Bash(claude-spore *)` (p.6), `author` also `Bash(chmod +x *)`, and reads the Claude Code version first (p.2); only `menu` and `author` are typed only. `start` and `continue` each carry the reaction table of p.10 and what it offers, word for word the same. What the skills say is checked by the end-to-end run (p.25).
+- **The sub-skills** (`test/skills.spec.ts`): each `SKILL.md` names its own sub-skill, pre-approves `Bash(spore *)` and `Bash(claude-spore *)` (p.6), `author` also `Bash(chmod +x *)` and `act` `Bash(herdr agent focus *)`, and reads the Claude Code version first (p.2); only `menu`, `act` and `author` are typed only. Every command a menu row hands to is a sub-skill that exists. `start` and `continue` each carry the reaction table of p.10 and what it offers, word for word the same. What the skills say is checked by the end-to-end run (p.25).
 - **Following a run** (`test/follow.spec.ts`) drives the real `spore` with the commands the skills run and checks that each answer holds what the reaction of p.10 reads: a fresh run from `spore start --json`, and `input.invalid` creating none; `continue --wait --json` with exit 0, 3, 4, 6 and 7 and the fields of each row, `--db` after the subcommand included; a decision sent with `--id <activationId>`, the same decision again a no-op and another one `signal.id-reused`; an interactive step whose pane waits for the person returning exit 6 with `step.waiting` `person` and "implement waits for you in its pane", and the follow after it watching on until the pane's answer completes the run (exit 0); several unfinished runs listed by `list --unfinished`; and `spore cancel` ending a held interactive step, its pane closed by `claude-spore stop`. It needs a `spore` with `continue --wait` and `cancel`, and is skipped without one, unless `REQUIRE_SPORE=1`.
 - **The session-start line** (`test/unfinished.spec.ts`) runs `claude-spore unfinished` against a fake `spore` that answers `list --unfinished` and `status` as each test says: one line per `needs`, the attempt, no line on any error, and none inside a step. `test/follow.spec.ts` checks the lines against the real `spore` for a run not started, a stuck one and one waiting for a decision.
+- **The menu rows** (`test/menu.spec.ts`) run `claude-spore menu` against the same fake `spore` and a scratch project: a run's row for every `needs` with its options and commands, the holder's lease and the quarantine's code in the label, the workflows by graph id, the bundled-example option without one, "Change a workflow" only with one, the `spore` row when it cannot list, and nothing asked inside a step. `test/follow.spec.ts` checks the rows' runs against the real `spore`.
+- **The menu in the mod** (`claude-code/register.test.ts`): `ml-workflow:menu`'s hook and the `open_menu` tool run `claude-spore menu --json` and open the pane; the hook's three answers (open, waiting, refused); the pane draws each row as a `Select` with the helper's labels; a pick closes the pane and runs the option's command with its arguments.
 - **The real `spore`** is the one the `SPORE` variable names, else `spore` on PATH. A spec that needs it is skipped, with the reason printed, when that `spore` is not 0.2, unless `REQUIRE_SPORE=1`, which CI sets.
 - **CI** runs both seams; once the helper drives `spore`, against the newest `spore` release and against 0.2.0. Until a runspore release has async commands, `continue --wait` and `cancel` (the v0.2.0 tag predates them), CI builds `spore` from a pinned runspore commit instead. The interactive step's real-`spore` spec needs a `spore` whose `capabilities` list `command` among `asyncKinds`; it is skipped without one, unless `REQUIRE_SPORE=1`. It also runs the helper under Bun 1.1 and expects exit 2.
 - **The end-to-end check** is p.25, gated, before a release.

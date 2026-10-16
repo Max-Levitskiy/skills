@@ -14,7 +14,7 @@ const DB = "/repo/.spore/runspore.db";
 const NOW = Date.now();
 const ago = (ms: number) => String(NOW - ms);
 const MIN = 60_000;
-const FOLLOW = "; /ml-workflow:continue to follow it";
+const ENDING = "; /ml-workflow:menu to pick it up";
 
 beforeEach(() => {
   dir = scratch();
@@ -81,12 +81,12 @@ const running = (fields: Record<string, unknown>) => ({
   ...fields,
 });
 
-test("a run whose follower closed with its session: where it is, the attempt, and how to follow it", () => {
+test("a run whose follower closed with its session: where it is, the attempt, and what picks it up", () => {
   listed([row("run_a", { startKey: "coding-loop-0238a2a3", nodeId: "implement", needs: "working", since: ago(14 * MIN) })]);
   status("run_a", { running: running({ attempt: "2", maxAttempts: "3", state: "queued" }) });
   const { exitCode, report } = unfinished();
   expect(exitCode).toBe(0);
-  expect(report).toEqual({ db: DB, lines: [`coding-loop-0238a2a3 at implement, attempt 2 of 3, paused 14 min ago${FOLLOW}`] });
+  expect(report).toEqual({ db: DB, lines: [`coding-loop-0238a2a3 at implement, attempt 2 of 3, paused 14 min ago${ENDING}`] });
   expect(calls()).toEqual(["list --unfinished --json", `status run_a --json --no-probe --db ${DB}`]);
 });
 
@@ -104,26 +104,26 @@ test("one line per run, in the order spore lists them, each in its own words", (
   status("run_d", { intervention: { nodeId: "test", reason: "stuck", attempt: "3", maxAttempts: "3" } });
   status("run_e", { step: { kind: "command", actor: null, state: "held", holder: { herdrAgent: "sp-implement-0a1b2c3d4e" } } });
   expect(unfinished().report.lines).toEqual([
-    `coding-loop-11111111 at implement, attempt 1 of 3, running for 3 min${FOLLOW}`,
-    `coding-loop-22222222 at approve, waiting for your decision for 2 h${FOLLOW}`,
-    `coding-loop-33333333 at test, stuck after attempt 3 of 3 for 40 s${FOLLOW}`,
-    `coding-loop-44444444 at implement, held by its pane (sp-implement-0a1b2c3d4e) for 5 min${FOLLOW}`,
-    `review-55555555 at review, waiting for person to claim it for 3 d${FOLLOW}`,
-    `coding-loop-66666666 at test, quarantined for 1 min${FOLLOW}`,
-    `run_h, not started yet, created 1 min ago${FOLLOW}`,
+    `coding-loop-11111111 at implement, attempt 1 of 3, running for 3 min${ENDING}`,
+    `coding-loop-22222222 at approve, waiting for your decision for 2 h${ENDING}`,
+    `coding-loop-33333333 at test, stuck after attempt 3 of 3 for 40 s${ENDING}`,
+    `coding-loop-44444444 at implement, held by its pane (sp-implement-0a1b2c3d4e) for 5 min${ENDING}`,
+    `review-55555555 at review, waiting for person to claim it for 3 d${ENDING}`,
+    `coding-loop-66666666 at test, quarantined for 1 min${ENDING}`,
+    `run_h, not started yet, created 1 min ago${ENDING}`,
   ]);
 });
 
 test("a status spore does not give still leaves the run its line", () => {
   listed([row("run_i", { startKey: "coding-loop-77777777", nodeId: "implement", needs: "working", since: ago(14 * MIN) })]);
-  expect(unfinished().report.lines).toEqual([`coding-loop-77777777 at implement, paused 14 min ago${FOLLOW}`]);
+  expect(unfinished().report.lines).toEqual([`coding-loop-77777777 at implement, paused 14 min ago${ENDING}`]);
 });
 
 test("without --json each line is printed as it is", () => {
   listed([row("run_j", { startKey: "coding-loop-88888888", nodeId: "approve", needs: "signal", since: ago(2 * 60 * MIN) })]);
   expect(unfinished([])).toEqual({
     exitCode: 0,
-    stdout: `coding-loop-88888888 at approve, waiting for your decision for 2 h${FOLLOW}\n`,
+    stdout: `coding-loop-88888888 at approve, waiting for your decision for 2 h${ENDING}\n`,
     stderr: "",
     report: undefined,
   });

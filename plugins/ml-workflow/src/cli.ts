@@ -11,6 +11,7 @@ const USAGE = `usage: claude-spore --version
        claude-spore check <folder> [--json]
        claude-spore example list [--json] | copy <name> <folder> [--watch <node>]...
        claude-spore unfinished [--json]
+       claude-spore menu [--json]
        claude-spore run
        claude-spore start | probe | watch | stop
        claude-spore report --attempt <n> --outcome <outcome>
@@ -23,6 +24,7 @@ The ml-workflow helper (docs/spec.md).
   check          checks the node parameters of every Claude step in a workflow folder
   example        lists the workflows the plugin ships, or copies one into a project
   unfinished     one line per unfinished run, for the start of a session
+  menu           the rows of the menu pane: the runs and their actions, the workflows to start
   run            a background Claude step; spore runs it, with the parameters on stdin
   start          an interactive Claude step in a herdr pane; prints its holder handle
   probe          answers whether the pane's Claude still runs, the handle on stdin
@@ -60,6 +62,10 @@ export async function main(argv: string[]): Promise<number> {
   if (command === "unfinished") {
     const { unfinished } = await import("./unfinished.ts");
     return unfinished(rest);
+  }
+  if (command === "menu") {
+    const { menu } = await import("./menu.ts");
+    return menu(rest);
   }
   if (command === "run") {
     const { run } = await import("./run.ts");

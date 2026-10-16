@@ -13,7 +13,7 @@ To try it in one project without changing your own plugin set, install it there 
 claude plugin install ml-workflow@max-skills --scope project
 ```
 
-**This release starts, follows, continues and cancels runs, names each unfinished run when a session starts, does background and watched Claude steps, writes workflows by interview, and installs or updates `spore` when you say yes.** The menu and the run line arrive in the next releases. [docs/spec.md](docs/spec.md) is the whole design and says what is built.
+**This release starts, follows, continues and cancels runs, names each unfinished run when a session starts, offers what each run needs in a menu, does background and watched Claude steps, writes workflows by interview, and installs or updates `spore` when you say yes.** The run line and the live view arrive in the next releases. [docs/spec.md](docs/spec.md) is the whole design and says what is built.
 
 ## Requirements
 
@@ -49,21 +49,24 @@ Each sub-skill approves `spore` and `claude-spore` for the turn it runs in. To s
 
 | Typed | Does | Built |
 |---|---|---|
-| `/ml-workflow:menu` | the unfinished runs and what each needs, the workflows to start, writing or changing one | stub |
+| `/ml-workflow:menu` | the unfinished runs and what each needs, the workflows to start, writing or changing one, in a pane | built |
 | `/ml-workflow:start <workflow> [--key <key>]` | checks the workflow, drafts its inputs, starts the run and follows it; offers to copy a shipped workflow the project lacks | built |
 | `/ml-workflow:status [<runId>]` | the unfinished runs and what each needs, or one run's state in words | built |
 | `/ml-workflow:continue [<runId>]` | follows a run, and offers what it needs when it stops for you: the decision, the stuck step's Retry, Mark done or Fail, the release, the claim line | built |
 | `/ml-workflow:cancel [<runId>] [--reason <text>]` | cancels a run after a one-line confirmation | built |
 | `/ml-workflow:author [<workflow> \| --change]` | writes a new workflow, or changes one in place, through a short interview | built |
+| `/ml-workflow:act <runId> <action>` | one action a menu row hands to: decide, retry, mark done, fail, release, abandon or show a step, or open its pane | built |
 
-The stub checks the Claude Code version and says it is not built yet. It is typed only, and so is `author`, which writes files; Claude may load the other four on its own, and each asks you before it sends a decision, a resolution, a release or a cancel, or starts a run. They read the database spore finds itself, `$RUNSPORE_DB` or the nearest `.spore/runspore.db` above the current folder, and name it.
+**The menu.** `/ml-workflow:menu` opens a pane with one row per unfinished run, newest first, then the workflows to start, then writing or changing one. Each row offers what its run needs: Decide for a decision, Retry, Mark done or Fail for a stuck step, Open its pane, Continue or Abandon for a held one, Show the step for one waiting for its actor, Release for a quarantine, Continue for a working one, and View and Cancel for every run. A pick closes the pane and runs the sub-skill it names; after an action that lets the run move, Claude follows it. View shows the run's state in words until the live view arrives.
+
+`menu` is typed only, and so are `act`, which the menu hands to, and `author`, which writes files; Claude may load the other four on its own, and each asks you before it sends a decision, a resolution, a release or a cancel, or starts a run. They read the database spore finds itself, `$RUNSPORE_DB` or the nearest `.spore/runspore.db` above the current folder, and name it.
 
 **Following a run.** `start` and `continue` run `spore continue <runId> --wait --json` in the background and end the turn. When the run needs you or ends, Claude says so in one line and offers what to do right there: the outcomes of a decision, Retry, Mark done or Fail for a stuck step, the release of a quarantine, the claim line of a step waiting for its actor, or that a watched step waits for you in its pane. After you act it follows again; a watched step needs nothing typed here, so Claude says it once and keeps following until the pane's answer lands. Closing Claude stops the follow; the run stays where it was, and `/ml-workflow:continue` picks it up. Only outcomes the run lists are offered.
 
 **Unfinished runs at session start.** A new session in a project with unfinished runs shows one line per run before you type anything, the way `git status` tells you about an unfinished rebase:
 
 ```text
-coding-loop-0238a2a3 at implement, attempt 2 of 3, paused 14 min ago; /ml-workflow:continue to follow it
+coding-loop-0238a2a3 at implement, attempt 2 of 3, paused 14 min ago; /ml-workflow:menu to pick it up
 ```
 
 With none, or when `spore` cannot list them, it shows nothing.
@@ -129,7 +132,8 @@ ml-workflow/
 ├── src/                         the helper's code; version.ts holds the minimums and contracts
 ├── launcher/claude-spore        the launcher `claude-spore launcher install` copies to ~/.local/bin
 ├── claude-code/                 the mod: register.ts and its registration test
-├── skills/                      the six sub-skills
+├── skills/                      the seven sub-skills
+├── types/index.d.ts             the session state the mod keeps: the menu's rows
 ├── test/                        the helper's specs, run as a subprocess
 └── docs/spec.md                 the plugin's spec
 ```
