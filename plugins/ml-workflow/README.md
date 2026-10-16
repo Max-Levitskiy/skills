@@ -29,7 +29,7 @@ claude.ai and Cowork refuse a plugin with a top-level `bin/`, so this plugin is 
 
 The plugin uses your own `spore` whenever it fits. When it is missing or too old, it offers `claude-spore install-spore`, which downloads the release for your machine, checks the Ed25519 signature on `SHA256SUMS` against the release key pinned in the plugin and the archive's SHA-256 against `SHA256SUMS`, and only then writes `spore`. It updates the copy your PATH selects, or installs into `~/.local/bin` when there is none. A copy you cannot write is left alone: the plugin names it and gives the command of what installed it. `SPORE_VERSION` and `SPORE_DOWNLOAD_URL` work as in runspore's `install.sh`.
 
-After the plugin is updated, a session that loaded the older version asks you to run `/reload-plugins` before it starts anything.
+**Updating.** `claude plugin marketplace update max-skills`, then `claude plugin update ml-workflow@max-skills` (add `--scope project` for a project install). Every change to the plugin ships at a new version, so an update always brings it in; [CHANGELOG.md](CHANGELOG.md) says what each version changed. After the plugin is updated, a session that loaded the older version asks you to run `/reload-plugins` before it starts anything.
 
 **The launcher.** The first `start` offers to put a `claude-spore` launcher in `~/.local/bin`, so a `spore worker` you start in a plain terminal can still run Claude steps. It runs the helper of the `ml-workflow` installation for the folder you are in, a project's own before your user one. `claude-spore launcher install` installs it later.
 
@@ -142,6 +142,7 @@ Saying you'll run several at once adds a first step that makes a git worktree pe
 ```
 ml-workflow/
 ├── .claude-plugin/plugin.json   name, version, the mod's hooks file
+├── CHANGELOG.md                 what each version changed
 ├── bin/claude-spore             the helper (Bun); checks Bun first, then runs src/cli.ts
 ├── src/                         the helper's code; version.ts holds the minimums and contracts
 ├── launcher/claude-spore        the launcher `claude-spore launcher install` copies to ~/.local/bin
