@@ -1,5 +1,5 @@
-// The herdr calls of the interactive step (docs/spec.md, p.17). Every call prints `{"result": …}`
-// on success, or `{"error": {"code", "message"}}` on stderr with exit 1.
+// The herdr calls of the interactive step (docs/spec.md, p.17). Every call but `status server`
+// prints `{"result": …}` on success, or `{"error": {"code", "message"}}` on stderr with exit 1.
 import { isObject } from "./schema.ts";
 
 export type Agent = { status: string; pane: string };
@@ -73,12 +73,28 @@ export function closePane(pane: string) {
   call(["pane", "close", pane]);
 }
 
-/** Whether a herdr server answers and runs. */
-export function reachable(): boolean {
+/**
+ * Whether a herdr server answers and runs, and what answered, the way `kubectl cluster-info` does.
+ * Unlike the other calls, `status server --json` prints its answer flat, `{"status": "running",
+ * "running": true, …}` in herdr 0.9.
+ */
+export function serverStatus(): { running: boolean; answer: string } {
+  let child;
   try {
-    const server = call(["status", "server", "--json"]).server;
-    return isObject(server) && server.running === true;
-  } catch {
-    return false;
+    child = Bun.spawnSync(["herdr", "status", "server", "--json"], { stderr: "pipe" });
+  } catch (error) {
+    return { running: false, answer: `could not run herdr: ${(error as Error).message}` };
   }
+  const stdout = child.stdout.toString().trim();
+  if (child.exitCode !== 0) {
+    const stderr = child.stderr.toString().trim();
+    return { running: false, answer: `herdr exited ${child.exitCode}: ${stderr || stdout}` };
+  }
+  let answer: unknown;
+  try {
+    answer = JSON.parse(stdout);
+  } catch {
+    return { running: false, answer: `herdr printed no JSON: ${stdout.slice(0, 200)}` };
+  }
+  return { running: isObject(answer) && answer.running === true, answer: `herdr answered ${JSON.stringify(answer)}` };
 }

@@ -1,10 +1,12 @@
 // `claude-spore check <folder>` (docs/spec.md, p.15), driven through the executable.
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { FakeHerdr, HELPER, PATH, remove, scratch } from "./helpers.ts";
 
+/** A real herdr's `status server --json`, which the fake prints. */
+const RECORDED = JSON.parse(readFileSync(join(import.meta.dir, "fixtures", "herdr", "status-server.json"), "utf8"));
 const SUMMARY = { type: "object", properties: { summary: { type: "string" } }, required: ["summary"], additionalProperties: false };
 
 let folder: string;
@@ -112,15 +114,36 @@ describe("the closed parameter set", () => {
 });
 
 describe("herdr", () => {
-  test("a workflow with an interactive step needs a herdr server that answers", () => {
+  test("a workflow with an interactive step needs a herdr server that answers, and says what answered", () => {
     workflow(JSON_STEP, { argv: ["claude-spore", "start"] });
-    expect(check().exitCode).toBe(0);
+    const { exitCode, stdout } = check();
+    expect(exitCode).toBe(0);
+    expect(stdout).toBe(
+      `${folder}: herdr server running, herdr answered ${JSON.stringify(RECORDED)}\n` +
+        `${folder}: 1 Claude step checked, no errors\n`,
+    );
     expect(herdr.calls()).toEqual([["status", "server", "--json"]]);
+    expect(JSON.parse(check("--json").stdout)).toEqual({ ok: true, errors: [], warnings: [], herdr: `herdr answered ${JSON.stringify(RECORDED)}` });
 
     herdr.down();
+    const down = check();
+    expect(down.exitCode).toBe(2);
+    expect(down.stdout).toStartWith(`error: ${folder}: the workflow has interactive Claude steps, and no herdr server answers`);
+    expect(down.stdout).toContain("fake herdr: unavailable");
+    expect(codes()).toEqual(["herdr.unreachable"]);
+  });
+
+  test("a herdr whose server is not running is unreachable, with its answer in the message", () => {
+    workflow(JSON_STEP, { argv: ["claude-spore", "start"] });
+    herdr.server('{"status":"stopped","running":false}');
     const { exitCode, stdout } = check();
     expect(exitCode).toBe(2);
-    expect(stdout).toStartWith(`error: ${folder}: the workflow has interactive Claude steps, and no herdr server answers`);
+    expect(stdout).toContain('(herdr answered {"status":"stopped","running":false}); start herdr first');
+  });
+
+  test("only a top-level running: true is a running server", () => {
+    workflow(JSON_STEP, { argv: ["claude-spore", "start"] });
+    herdr.server('{"result":{"server":{"running":true}}}');
     expect(codes()).toEqual(["herdr.unreachable"]);
   });
 

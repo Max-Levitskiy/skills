@@ -160,6 +160,11 @@ export class FakeHerdr {
     else rmSync(join(this.dir, "down"), { force: true });
   }
 
+  /** Sets what `status server --json` prints in place of the recorded answer. */
+  server(answer: string) {
+    writeFileSync(join(this.dir, "server.json"), answer);
+  }
+
   state(): { panes: Record<string, { cwd: string; env: Record<string, string> }>; agents: Record<string, { pane: string; pid: number }> } {
     const file = join(this.dir, "state.json");
     return existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : { panes: {}, agents: {} };
