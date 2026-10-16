@@ -56,12 +56,21 @@ Each sub-skill approves `spore` and `claude-spore` for the turn it runs in. To s
 | `/ml-workflow:cancel [<runId>] [--reason <text>]` | cancels a run after a one-line confirmation | built |
 | `/ml-workflow:author [<workflow> \| --change]` | writes a new workflow, or changes one in place, through a short interview | built |
 | `/ml-workflow:act <runId> <action>` | one action a menu row hands to: decide, retry, mark done, fail, release, abandon or show a step, or open its pane | built |
+| `/ml-workflow:view [<runId>]` | opens a run's live view in a pane | built |
 
-**The menu.** `/ml-workflow:menu` opens a pane with one row per unfinished run, newest first, then the workflows to start, then writing or changing one. Each row offers what its run needs: Decide for a decision, Retry, Mark done or Fail for a stuck step, Open its pane, Continue or Abandon for a held one, Show the step for one waiting for its actor, Release for a quarantine, Continue for a working one, and View and Cancel for every run. A pick closes the pane and runs the sub-skill it names; after an action that lets the run move, Claude follows it. View shows the run's state in words until the live view arrives.
+**The menu.** `/ml-workflow:menu` opens a pane with one row per unfinished run, newest first, then the workflows to start, then writing or changing one. Each row offers what its run needs: Decide for a decision, Retry, Mark done or Fail for a stuck step, Open its pane, Continue or Abandon for a held one, Show the step for one waiting for its actor, Release for a quarantine, Continue for a working one, and View and Cancel for every run. A pick closes the pane and runs the sub-skill it names; after an action that lets the run move, Claude follows it. View opens the run's live view.
 
-`menu` is typed only, and so are `act`, which the menu hands to, and `author`, which writes files; Claude may load the other four on its own, and each asks you before it sends a decision, a resolution, a release or a cancel, or starts a run. They read the database spore finds itself, `$RUNSPORE_DB` or the nearest `.spore/runspore.db` above the current folder, and name it.
+`menu` is typed only, and so are `act`, which the menu hands to, and `author`, which writes files; Claude may load the other five on its own, and each asks you before it sends a decision, a resolution, a release or a cancel, or starts a run. They read the database spore finds itself, `$RUNSPORE_DB` or the nearest `.spore/runspore.db` above the current folder, and name it.
 
 **Following a run.** `start` and `continue` run `spore continue <runId> --wait --json` in the background and end the turn. When the run needs you or ends, Claude says so in one line and offers what to do right there: the outcomes of a decision, Retry, Mark done or Fail for a stuck step, the release of a quarantine, the claim line of a step waiting for its actor, or that a watched step waits for you in its pane. After you act it follows again; a watched step needs nothing typed here, so Claude says it once and keeps following until the pane's answer lands. Closing Claude stops the follow; the run stays where it was, and `/ml-workflow:continue` picks it up. Only outcomes the run lists are offered.
+
+**The run line and the live view.** While Claude follows a run, a line above the prompt says where it is, refreshed once a second, with `needs you` when it waits for you and a `view` button (hotkey `v`):
+
+```text
+coding-loop-0238a2a3 at implement, visit 3, from test on red, try 1/3, red 2/3 in a row  [ view ]
+```
+
+`view`, the menu's View or `/ml-workflow:view` opens the live view: the workflow drawn from the `workflow.dot` the run pinned, the current node in yellow and the arrow just taken in orange, beside `workflow.dot`, the node's `settings.json` lines and the head of its instructions (`more` for all of it). Where Claude Code draws pictures (kitty, Ghostty) it is a Graphviz picture; elsewhere, herdr included, a drawing in Braille dots. Graphviz and resvg ship inside the plugin as WebAssembly (`vendor/`), so nothing else is installed; `claude-spore draw --run <runId> --png <file>` or `--plain` draws a run outside Claude. Nothing is polled while neither the line nor the view shows.
 
 **Unfinished runs at session start.** A new session in a project with unfinished runs shows one line per run before you type anything, the way `git status` tells you about an unfinished rebase:
 

@@ -1,5 +1,5 @@
-import { expect, test } from 'claude-code/testing'
-import type { On } from 'claude-code'
+import { expect, mock, test } from 'claude-code/testing'
+import type { On, RenderElement } from 'claude-code'
 
 import { PLUGIN_VERSION } from '../src/version'
 
@@ -22,6 +22,11 @@ type World = {
   closes: string[]
   commands: string[][]
   tools: string[]
+  // `claude-spore line` and `view` by run ID, and what the picture check's blit is answered.
+  line: Record<string, Answer>
+  view: Record<string, Answer>
+  blit: { deny?: string }
+  blits: string[]
 }
 
 const FINE = JSON.stringify({ ok: true, spore: { path: '/bin/spore', version: '0.2.1' }, problems: [], launcher: 'offer' })
@@ -41,7 +46,23 @@ const NONE: Ran = { exitCode: 0, stdout: JSON.stringify({ db: '/repo/.spore/runs
 
 // Everything beneath the plugin: the engine's own answers, and the helper.
 function world(on: On, version: World['version'], doctor: Answer = { exitCode: 0, stdout: FINE, stderr: '' }, unfinished: Answer = NONE): World {
-  const w: World = { version, logs: [], runs: [], doctor, unfinished, menu: MENU, open: { value: { isPlaced: true } }, opens: [], closes: [], commands: [], tools: [] }
+  const w: World = {
+    version,
+    logs: [],
+    runs: [],
+    doctor,
+    unfinished,
+    menu: MENU,
+    open: { value: { isPlaced: true } },
+    opens: [],
+    closes: [],
+    commands: [],
+    tools: [],
+    line: {},
+    view: {},
+    blit: {},
+    blits: [],
+  }
   on('session.version', () => ({ value: w.version }))
   on('session.start', ($, e) => ({ cwd: e.cwd }))
   on('ui.log', ($, e) => {
@@ -50,10 +71,20 @@ function world(on: On, version: World['version'], doctor: Answer = { exitCode: 0
   })
   on('process.run', ($, e) => {
     w.runs.push([...e.argv])
-    const answer = e.argv[1] === 'unfinished' ? w.unfinished : e.argv[1] === 'menu' ? w.menu : w.doctor
+    const [command, runId = ''] = e.argv.slice(1)
+    const missing: Ran = { exitCode: 1, stdout: '', stderr: '' }
+    const answer =
+      command === 'unfinished' ? w.unfinished : command === 'menu' ? w.menu : command === 'line' ? (w.line[runId] ?? missing) : command === 'view' ? (w.view[runId] ?? missing) : w.doctor
     if ('deny' in answer) return { deny: answer.deny }
     return { value: { ...answer, isStdoutTruncated: false, isStderrTruncated: false } }
   })
+  on('ui.blit', ($, e) => {
+    w.blits.push(`${e.requestId}/${e.key}`)
+    return { value: w.blit }
+  })
+  on('tool.call', { tool: 'Bash' }, () => ({ result: { stdout: '', stderr: '', interrupted: false } }))
+  // The engine's own band, empty: what the mod's band passes to when no run line shows.
+  on('ui.render', { component: 'AbovePrompt' }, ($, e) => h($.ui.resolve(e).Box, { key: 'engine' }) as RenderElement)
   on('skill.prompt', ($, e) => ({ text: e.text }))
   on('ui.open', ($, e) => {
     w.opens.push(e.id)
@@ -236,7 +267,9 @@ test('a start whose helper does not answer with JSON goes through for the skill 
 
 // The menu (docs/spec.md, p.11).
 const OPEN = 'The workflow menu is open.'
-const PANE = { plugin: 'ml-workflow', component: 'Pane', requestId: 'ml-workflow-menu', props: { bodyColumns: 80 } as never } as const
+// A pane's props, whole, as the engine hands them to a pane seated above the prompt.
+const paneProps = (title: string, bodyColumns: number) => ({ title, isFocused: true, bodyColumns, placement: 'inline', scroll: { offset: 0, bodyRows: 40 }, view: {} }) as const
+const PANE = { plugin: 'ml-workflow', component: 'Pane', requestId: 'ml-workflow-menu', props: paneProps('Workflows', 80) } as const
 
 test("the menu skill runs the helper's menu and opens the pane in place of its text", async ($, on) => {
   const w = world(on, NEW)
@@ -265,10 +298,10 @@ test("on an older Claude Code the menu skill's own text runs, and nothing opens"
   expect(w.opens).toEqual([])
 })
 
-test('session start registers the open_menu tool', async ($, on) => {
+test('session start registers the open_menu and open_view tools', async ($, on) => {
   const w = world(on, NEW)
   await $.session.start(START)
-  expect(w.tools).toEqual(['open_menu'])
+  expect([...w.tools].sort()).toEqual(['open_menu', 'open_view'])
 })
 
 test('the open_menu tool opens the same pane', async ($, on) => {
@@ -305,5 +338,182 @@ test('a helper that gives no rows leaves its first error line in the pane', asyn
   expect((await $.skill.prompt({ skill: 'ml-workflow:menu', text: 'MENU BODY' })).text).toBe(OPEN)
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   expect((await ui.find({ type: 'Text' }))?.text).toBe('The menu could not be built: claude-spore: unknown command "menu"')
+  await ui.unmount()
+})
+
+// The run line and the live view (docs/spec.md, p.24).
+const DB = '/repo/.spore/runspore.db'
+const FOLLOW = `spore continue run_a --wait --json --db ${DB}`
+const BAND = {
+  plugin: 'ml-workflow',
+  component: 'AbovePrompt',
+  props: { hasSurvey: false, isWorking: true, maxRows: 10, bodyColumns: 100, scroll: { offset: 0, bodyRows: 9 }, view: {} },
+} as const
+const VIEW_PANE = { plugin: 'ml-workflow', component: 'Pane', requestId: 'run-run_a', props: paneProps('coding-loop-0238a2a3', 100) } as const
+
+function lineOf(text: string, fields: { needsYou?: boolean; ended?: boolean } = {}): Ran {
+  const line = { runId: 'run_a', db: DB, name: 'coding-loop-0238a2a3', text, needsYou: false, ended: false, ...fields }
+  return { exitCode: 0, stdout: JSON.stringify(line), stderr: '' }
+}
+
+const RUNNING = 'coding-loop-0238a2a3 at implement, visit 3, from test on red, try 1/3, red 2/3 in a row'
+const LIVE = {
+  runId: 'run_a',
+  db: DB,
+  line: JSON.parse(lineOf(RUNNING).stdout),
+  facts: 'running, at implement, visit 3, try 1/3, red 2/3 in a row',
+  picture: { file: '/data/artifacts/ab/implement@test.red.png', width: 760, height: 840 },
+  dots: [[{ text: '╭─────────╮', style: 'here' }], [{ text: '│ implement │', style: 'here' }, { text: '  red ×3', style: 'taken-label' }]],
+  dot: [
+    { n: 1, text: 'digraph "coding-loop" {', mark: null },
+    { n: 2, text: '  implement [label="Implement (Claude)"];', mark: 'here' },
+    { n: 3, text: '  test -> implement [on="red"];', mark: 'taken' },
+  ],
+  settings: [{ n: 24, text: '    "implement": {', mark: 'here' }],
+  instructions: { file: 'steps/implement.md', head: ['You are the implement step.', 'Your input has three parts:', '- `task`'], text: 'You are the implement step.\n\nYour input has three parts:\n\n- `task`\n- `cameFrom`\n' },
+}
+const VIEWED: Ran = { exitCode: 0, stdout: JSON.stringify(LIVE), stderr: '' }
+
+const lineCalls = (w: World) => w.runs.filter(argv => argv[1] === 'line')
+
+test('a Bash call following a run shows its line above the prompt, with the view button', async ($, on) => {
+  const clock = mock.clock(on)
+  const w = world(on, NEW)
+  w.line.run_a = lineOf(RUNNING)
+  await $.tool.call({ tool: 'Bash', command: FOLLOW })
+  await clock.settle()
+  expect(lineCalls(w).map(argv => argv.slice(1))).toEqual([['line', 'run_a', '--db', DB, '--json']])
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: RUNNING })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'needs you' })).toBeUndefined()
+  expect((await ui.find({ key: 'view:run_a' }))?.props.hotkey).toBe('v')
+  await ui.unmount()
+})
+
+test('a run that waits for a person says "needs you"', async ($, on) => {
+  const clock = mock.clock(on)
+  const w = world(on, NEW)
+  w.line.run_a = lineOf('coding-loop-0238a2a3 at approve, visit 1, from test on ok', { needsYou: true })
+  await $.tool.call({ tool: 'Bash', command: 'spore continue run_a --wait --json' })
+  await clock.settle()
+  expect(lineCalls(w).map(argv => argv.slice(1))).toEqual([['line', 'run_a', '--json']])
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect((await ui.find({ type: 'Text', text: 'needs you' }))?.props.color).toBe('#e8590c')
+  await ui.unmount()
+})
+
+test('other commands follow nothing, and nothing is polled', async ($, on) => {
+  const clock = mock.clock(on)
+  const w = world(on, NEW)
+  await $.session.start(START)
+  await $.tool.call({ tool: 'Bash', command: 'spore status run_a --json' })
+  await clock.advance(5000)
+  expect(lineCalls(w)).toEqual([])
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await ui.find({ key: 'view:run_a' })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('the line is polled once a second while it shows; an ended run leaves the band and the poll stops', async ($, on) => {
+  const clock = mock.clock(on)
+  const w = world(on, NEW)
+  w.line.run_a = lineOf(RUNNING)
+  await $.tool.call({ tool: 'Bash', command: FOLLOW })
+  await clock.settle()
+  await clock.advance(1000)
+  await clock.advance(1000)
+  expect(lineCalls(w)).toHaveLength(3)
+  const next = 'coding-loop-0238a2a3 at test, visit 4, from implement on ok, try 1/3, red 2/3 in a row'
+  w.line.run_a = lineOf(next)
+  await clock.advance(1000)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: next })).toBeDefined()
+  w.line.run_a = lineOf('coding-loop-0238a2a3 completed at done, from approve on approved', { ended: true })
+  await clock.advance(1000)
+  await ui.redraw()
+  expect(await ui.find({ key: 'view:run_a' })).toBeUndefined()
+  const polled = lineCalls(w).length
+  await clock.advance(5000)
+  expect(lineCalls(w)).toHaveLength(polled)
+  await ui.unmount()
+})
+
+test("the view button opens the pane run-<runId> drawing the helper's view", async ($, on) => {
+  const clock = mock.clock(on)
+  const w = world(on, NEW)
+  w.line.run_a = lineOf(RUNNING)
+  w.view.run_a = VIEWED
+  await $.tool.call({ tool: 'Bash', command: FOLLOW })
+  await clock.settle()
+  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  await band.press({ key: 'view:run_a' })
+  expect(w.opens).toEqual(['run-run_a'])
+  expect(w.runs.filter(argv => argv[1] === 'view').map(argv => argv.slice(1))).toEqual([['view', 'run_a', '--db', DB, '--json']])
+  const pane = await $.ui.mount({ ...VIEW_PANE, surface: 'terminal' })
+  expect(await pane.find({ type: 'Text', text: LIVE.facts })).toBeDefined()
+  expect((await pane.find({ key: 'picture' }))?.props.source).toEqual({ file: LIVE.picture.file, format: 'png' })
+  expect(await pane.find({ type: 'Text', text: '  2    implement [label="Implement (Claude)"];' })).toMatchObject({ props: { backgroundColor: '#ffd43b' } })
+  expect(await pane.find({ type: 'Text', text: '  3    test -> implement [on="red"];' })).toMatchObject({ props: { color: '#e8590c' } })
+  expect(await pane.find({ type: 'Text', text: '- `cameFrom`' })).toBeUndefined()
+  await pane.press({ key: 'more' })
+  expect(await pane.find({ type: 'Text', text: '- `cameFrom`' })).toBeDefined()
+  await pane.unmount()
+  await band.unmount()
+})
+
+test('a picture check the terminal denies switches the session to the dot drawing', async ($, on) => {
+  const clock = mock.clock(on)
+  const w = world(on, NEW)
+  w.view.run_a = VIEWED
+  w.line.run_a = lineOf(RUNNING)
+  w.blit = { deny: 'the Image draws its alt here: the terminal draws no placeholder images' }
+  const answer = await $.tool.call({ tool: 'mcp__ml-workflow__open_view', runId: 'run_a', db: DB })
+  expect(answer.result).toBe('The live view of run_a is open.')
+  const pane = await $.ui.mount({ ...VIEW_PANE, surface: 'terminal' })
+  expect(await pane.find({ key: 'picture' })).toBeDefined()
+  await clock.advance(500)
+  expect(w.blits).toEqual(['run-run_a/picture'])
+  await pane.redraw()
+  expect(await pane.find({ key: 'picture' })).toBeUndefined()
+  expect(await pane.find({ type: 'Text', text: /^│ implement │$/ })).toMatchObject({ props: { backgroundColor: '#ffd43b' } })
+  await pane.unmount()
+})
+
+test('an open view polls its run; once the run ended it gets its last view and the poll stops', async ($, on) => {
+  const clock = mock.clock(on)
+  const w = world(on, NEW)
+  w.view.run_a = VIEWED
+  w.line.run_a = lineOf(RUNNING)
+  await $.tool.call({ tool: 'mcp__ml-workflow__open_view', runId: 'run_a' })
+  await clock.advance(1000)
+  expect(lineCalls(w)).toHaveLength(1)
+  const ended = lineOf('coding-loop-0238a2a3 completed at done, from approve on approved', { ended: true })
+  w.line.run_a = ended
+  w.view.run_a = { ...VIEWED, stdout: JSON.stringify({ ...LIVE, line: JSON.parse(ended.stdout), facts: 'completed, at done' }) }
+  await clock.advance(1000)
+  const views = w.runs.filter(argv => argv[1] === 'view').length
+  expect(views).toBe(2)
+  const pane = await $.ui.mount({ ...VIEW_PANE, surface: 'terminal' })
+  expect(await pane.find({ type: 'Text', text: 'completed, at done' })).toBeDefined()
+  await clock.advance(5000)
+  expect(lineCalls(w)).toHaveLength(2)
+  expect(w.runs.filter(argv => argv[1] === 'view')).toHaveLength(views)
+  await pane.unmount()
+})
+
+test("the menu's View opens the live view, and runs no command", async ($, on) => {
+  mock.clock(on)
+  const w = world(on, NEW)
+  w.view.run_a = VIEWED
+  w.menu = {
+    exitCode: 0,
+    stdout: JSON.stringify({ db: DB, rows: [{ key: 'run:run_a', label: 'coding-loop-0238a2a3 at implement', options: [{ label: 'View', command: 'ml-workflow:view', args: 'run_a' }] }] }),
+    stderr: '',
+  }
+  await $.skill.prompt({ skill: 'ml-workflow:menu', text: 'MENU BODY' })
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  await ui.select({ key: 'run:run_a', value: '0' })
+  expect(w.commands).toEqual([])
+  expect(w.opens).toEqual(['ml-workflow-menu', 'run-run_a'])
   await ui.unmount()
 })

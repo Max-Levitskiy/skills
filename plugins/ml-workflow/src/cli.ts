@@ -12,6 +12,9 @@ const USAGE = `usage: claude-spore --version
        claude-spore example list [--json] | copy <name> <folder> [--watch <node>]...
        claude-spore unfinished [--json]
        claude-spore menu [--json]
+       claude-spore line <runId> [--db <db>] [--json]
+       claude-spore view <runId> [--db <db>] [--json]
+       claude-spore draw --run <runId> [--db <db>] [--at <node>] [--from <node>:<outcome>] (--png <file> | --plain)
        claude-spore run
        claude-spore start | probe | watch | stop
        claude-spore report --attempt <n> --outcome <outcome>
@@ -25,6 +28,9 @@ The ml-workflow helper (docs/spec.md).
   example        lists the workflows the plugin ships, or copies one into a project
   unfinished     one line per unfinished run, for the start of a session
   menu           the rows of the menu pane: the runs and their actions, the workflows to start
+  line           the run line above the prompt while a session follows a run
+  view           the live view of a run: its facts, its drawing and the lines of its files
+  draw           a run's workflow drawn at one moment, as a picture or in dots
   run            a background Claude step; spore runs it, with the parameters on stdin
   start          an interactive Claude step in a herdr pane; prints its holder handle
   probe          answers whether the pane's Claude still runs, the handle on stdin
@@ -66,6 +72,10 @@ export async function main(argv: string[]): Promise<number> {
   if (command === "menu") {
     const { menu } = await import("./menu.ts");
     return menu(rest);
+  }
+  if (command === "line" || command === "view" || command === "draw") {
+    const shown = await import("./view.ts");
+    return shown[command](rest);
   }
   if (command === "run") {
     const { run } = await import("./run.ts");

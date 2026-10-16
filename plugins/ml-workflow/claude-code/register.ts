@@ -1,14 +1,15 @@
 // Claude Code only: the mod. It stays thin (docs/spec.md, p.7): the helper works out what the mod
 // shows, and the mod calls it and renders the answer. It checks the host's version and runs the
 // helper's `doctor` at session start and before every start, at session start prints the helper's
-// line for each unfinished run, and draws the helper's menu rows in a pane; the run line and the
-// live view join it later.
+// line for each unfinished run, draws the helper's menu rows in a pane, and (live.ts) shows the run
+// line of each run Claude follows and a run's live view.
 
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, RenderElement, UiOpenResult } from 'claude-code'
 
 import { BUN_MINIMUM, CLAUDE_CODE_MINIMUM, isOlder, PLUGIN_VERSION } from '../src/version'
 import type { Menu, MenuOption } from '../types'
+import { openView, registerLive, registerViewTool } from './live'
 
 // The version this session loaded, fixed when the mod loads: the helper on disk may be newer.
 const VERSION = PLUGIN_VERSION
@@ -90,16 +91,20 @@ function opened(result: UiOpenResult): string {
   return result.isPlaced ? OPEN : `The workflow menu is open but not shown yet: ${result.reason}`
 }
 
-// A pick hands off to the option's sub-skill, as if the person typed it.
+// A pick hands off to the option's sub-skill, as if the person typed it; View opens the live view
+// itself.
 function pick($: EngineInterface, option: MenuOption | undefined): void {
   if (!option) return
   void (async () => {
     await $.ui.close({ id: PANE })
-    await $.command.run({ command: option.command, args: option.args })
+    if (option.command === 'ml-workflow:view') await openView($, option.args, null)
+    else await $.command.run({ command: option.command, args: option.args })
   })().catch(error => $.ui.log(`ml-workflow: /${option.command} did not run: ${String(error)}`))
 }
 
 export const register: Register = on => {
+  registerLive(on)
+
   on('session.start', async ($, e, next) => {
     // A tool the engine does not take costs the menu's fallback alone, never the lines below.
     await $.tool
@@ -110,6 +115,7 @@ export const register: Register = on => {
           '/ml-workflow:menu calls it when the pane could not open by itself.',
       })
       .catch(error => $.ui.log(`ml-workflow: the open_menu tool was not registered: ${String(error)}`))
+    await registerViewTool($)
     const { version, base } = await $.session.version()
     if (isOlder(base ?? version, CLAUDE_CODE_MINIMUM)) {
       $.ui.log(`ml-workflow needs Claude Code ${CLAUDE_CODE_MINIMUM} or later; this is ${version}. Run: claude update`)

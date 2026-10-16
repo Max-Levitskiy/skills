@@ -7,12 +7,13 @@ import { join } from "node:path";
 const SKILLS = join(import.meta.dir, "..", "skills");
 const TYPED_ONLY = ["act", "author", "menu"];
 // What a sub-skill pre-approves past spore and claude-spore: `author` makes the helper programs it
-// writes executable (p.22), `act` brings a step's pane to the front, and `menu` opens the pane
-// through the mod's tool (p.11).
+// writes executable (p.22), `act` brings a step's pane to the front, and `menu` and `view` open
+// their panes through the mod's tools (p.11, p.24).
 const EXTRA_TOOLS: Record<string, string[]> = {
   act: ["Bash(herdr", "agent", "focus", "*)"],
   author: ["Bash(chmod", "+x", "*)"],
   menu: ["mcp__ml-workflow__open_menu"],
+  view: ["mcp__ml-workflow__open_view"],
 };
 
 function skill(name: string): { front: Record<string, string>; body: string } {
@@ -30,8 +31,8 @@ function skill(name: string): { front: Record<string, string>; body: string } {
 
 const names = readdirSync(SKILLS);
 
-test("the seven sub-skills are there", () => {
-  expect(names.sort()).toEqual(["act", "author", "cancel", "continue", "menu", "start", "status"]);
+test("the eight sub-skills are there", () => {
+  expect(names.sort()).toEqual(["act", "author", "cancel", "continue", "menu", "start", "status", "view"]);
 });
 
 for (const name of names) {

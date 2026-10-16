@@ -264,6 +264,32 @@ describe.skipIf(!follows())(`following a run under a real spore ${version ?? ""}
     expect(follow(runId).exitCode).toBe(0);
   }, SLOW);
 
+  test("the run line, the live view and the drawing of a stuck run, read from its pinned artifact", () => {
+    const { runId } = start("stuck", "stuck-00000016", {}).json;
+    expect(follow(runId).exitCode).toBe(4);
+    // The helper finds this spore on PATH, as the mod's call does, and keeps what it reads in a scratch data folder.
+    const helper = (...args: string[]) => {
+      const child = Bun.spawnSync([HELPER, ...args], { cwd: project, env: { ...env(), PATH: `${dirname(SPORE)}:${PATH}`, CLAUDE_PLUGIN_DATA: join(project, "data") } });
+      return { exitCode: child.exitCode, stdout: child.stdout.toString(), stderr: child.stderr.toString() };
+    };
+    const line = helper("line", runId, "--db", db, "--json");
+    expect({ exitCode: line.exitCode, stderr: line.stderr }).toEqual({ exitCode: 0, stderr: "" });
+    expect(JSON.parse(line.stdout)).toEqual({ runId, db, name: "stuck-00000016", text: "stuck-00000016 at build, visit 1, try 1/1", needsYou: true, ended: false });
+
+    const view = JSON.parse(helper("view", runId, "--db", db, "--json").stdout);
+    expect(view.facts).toBe("needs-intervention, at build, visit 1, try 1/1");
+    expect(view.dot.filter((l: { mark: string | null }) => l.mark).map((l: { text: string }) => l.text.trim())).toEqual(["build;"]);
+    expect(view.settings.find((l: { mark: string | null }) => l.mark === "here").text.trim()).toBe('"build": {');
+
+    const plain = helper("draw", "--run", runId, "--db", db, "--plain");
+    expect(plain.exitCode).toBe(0);
+    expect(plain.stdout).toContain("│ build │");
+
+    expect(spore("resolve", runId, "--complete", "ok", "--db", db).exitCode).toBe(0);
+    expect(follow(runId).exitCode).toBe(0);
+    expect(JSON.parse(helper("line", runId, "--db", db, "--json").stdout)).toMatchObject({ text: "stuck-00000016 completed at done, from build on ok", needsYou: false, ended: true });
+  }, SLOW);
+
   test("a person's manual work: exit 6, the actor label and the claim line", () => {
     const { runId } = start("manual", "manual-0000000e", {}).json;
     const ready = follow(runId);
