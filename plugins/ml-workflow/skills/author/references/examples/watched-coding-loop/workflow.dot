@@ -1,0 +1,23 @@
+// The reference coding loop with implement watched: Claude works in a herdr pane
+// the person can type into, and the tests run through a helper program written
+// into this folder (bin/run-tests), which finds the project's test command.
+digraph "watched-coding-loop" {
+  dialect = "runspore/0.2";
+  start   = "implement";
+
+  implement   [label="Implement (Claude)"];
+  test        [label="Run the tests"];
+  approve     [kind="await-signal", label="Approve (you)"];
+  tests_stuck [kind="await-signal", label="Tests keep failing (you)"];
+  done        [kind="complete"];
+  stopped     [kind="fail"];
+
+  implement   -> test;
+  test        -> approve     [on="ok"];
+  test        -> implement   [on="red", label="red ×3"];
+  test        -> tests_stuck [on="exhausted"];
+  tests_stuck -> implement   [on="keep-going"];
+  tests_stuck -> stopped     [on="stop"];
+  approve     -> done        [on="approved"];
+  approve     -> implement   [on="rejected"];
+}

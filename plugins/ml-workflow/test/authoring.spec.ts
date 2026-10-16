@@ -2,16 +2,16 @@
 // each builds with the real spore and passes `claude-spore check` with no warning, and the
 // worktree step of the parallel loop makes one worktree per run that the later steps work in.
 import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
-import { cpSync, existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { answered, FakeClaude, HELPER, PATH, remove, scratch, SPORE, SPORE_TIMEOUT_MS, sporeVersion } from "./helpers.ts";
+import { answered, FakeClaude, FakeHerdr, HELPER, herdrRunning, PATH, remove, scratch, SPORE, SPORE_TIMEOUT_MS, sporeVersion } from "./helpers.ts";
 
 const EXAMPLES = join(import.meta.dir, "..", "skills", "author", "references", "examples");
 const version = sporeVersion("authoring.spec.ts");
 setDefaultTimeout(SPORE_TIMEOUT_MS);
 
-function sh(cwd: string, argv: string[], env: Record<string, string> = {}) {
+function sh(cwd: string, argv: string[], env: Record<string, string | undefined> = {}) {
   const child = Bun.spawnSync(argv, { cwd, env: { ...process.env, PATH, ...env } });
   return { exitCode: child.exitCode, stdout: child.stdout.toString(), stderr: child.stderr.toString() };
 }
@@ -33,7 +33,12 @@ function repository(): { root: string; repo: string } {
 }
 
 describe.skipIf(!version)(`the examples with a real spore ${version ?? ""}`, () => {
-  for (const name of ["coding-loop", "parallel-coding-loop"]) {
+  // The watched example's check asks herdr whether a server answers; the fake one does.
+  let herdr: FakeHerdr;
+  beforeAll(() => (herdr = new FakeHerdr()));
+  afterAll(() => herdr.dispose());
+
+  for (const name of ["coding-loop", "parallel-coding-loop", "watched-coding-loop"]) {
     test(`${name} validates and checks with no warning`, () => {
       const folder = join(EXAMPLES, name);
       const validate = sh(folder, [SPORE, "validate", folder]);
@@ -41,11 +46,105 @@ describe.skipIf(!version)(`the examples with a real spore ${version ?? ""}`, () 
       expect(validate.stdout).toContain("is valid");
       expect(validate.exitCode).toBe(0);
 
-      const check = sh(folder, [HELPER, "check", folder]);
-      expect(check.stdout).toBe(`${folder}: 1 Claude step checked, no errors\n`);
+      const check = sh(folder, [HELPER, "check", folder], { FAKE_HERDR_DIR: herdr.dir });
+      const herdrLine = name === "watched-coding-loop" ? herdrRunning(folder) : "";
+      expect(check.stdout).toBe(`${herdrLine}${folder}: 1 Claude step checked, no errors\n`);
       expect(check.exitCode).toBe(0);
     });
   }
+
+  test("watched-coding-loop's implement is the interactive step, and herdr is asked", () => {
+    const settings = JSON.parse(readFileSync(join(EXAMPLES, "watched-coding-loop", "settings.json"), "utf8"));
+    expect(settings.actions.implement.argv).toEqual(["claude-spore", "start"]);
+    expect(herdr.calls()).toContainEqual(["status", "server", "--json"]);
+  });
+});
+
+describe("the helper program of watched-coding-loop", () => {
+  const HELPER_PROGRAM = join(EXAMPLES, "watched-coding-loop", "bin", "run-tests");
+  const settings = JSON.parse(readFileSync(join(EXAMPLES, "watched-coding-loop", "settings.json"), "utf8"));
+  let root: string;
+  beforeAll(() => (root = scratch()));
+  afterAll(() => remove(root));
+
+  const project = (name: string, files: Record<string, string>) => {
+    const dir = join(root, name);
+    mkdirSync(dir);
+    for (const [file, text] of Object.entries(files)) writeFileSync(join(dir, file), text);
+    return dir;
+  };
+
+  test("is an asset of the test action, run as ./bin/run-tests, and executable", () => {
+    expect(settings.actions.test.assets).toEqual(["bin/run-tests"]);
+    expect(settings.actions.test.argv).toEqual(["./bin/run-tests"]);
+    expect(statSync(HELPER_PROGRAM).mode & 0o111).not.toBe(0);
+  });
+
+  test.skipIf(!Bun.which("npm"))("exits 0 when the project's tests pass, 1 when they fail", () => {
+    const green = project("green", { "package.json": JSON.stringify({ name: "g", private: true, scripts: { test: "true" } }) });
+    expect(sh(green, [HELPER_PROGRAM]).exitCode).toBe(0);
+    const red = project("red", { "package.json": JSON.stringify({ name: "r", private: true, scripts: { test: "false" } }) });
+    expect(sh(red, [HELPER_PROGRAM]).exitCode).toBe(1);
+  });
+
+  test("exits 1 naming what it looked for when the project has no test command", () => {
+    const bare = sh(project("bare", {}), [HELPER_PROGRAM]);
+    expect(bare.exitCode).toBe(1);
+    expect(bare.stderr).toContain("no package.json, Cargo.toml, go.mod or Makefile test target");
+  });
+});
+
+// The test step as the interview writes it, run by a real spore: the bundled copy runs, in the
+// project's folder, and its exit code picks the outcome.
+describe.skipIf(!version || !Bun.which("npm"))("a run of a step with a helper program", () => {
+  const DOT = `digraph "helper" {
+  dialect = "runspore/0.2";
+  start = "test";
+  test;
+  done [kind="complete"];
+  stopped [kind="fail"];
+  test -> done [on="ok"];
+  test -> stopped [on="red"];
+}
+`;
+  const example = join(EXAMPLES, "watched-coding-loop");
+  let root: string;
+
+  beforeAll(() => (root = scratch()));
+  afterAll(() => remove(root));
+
+  const runIn = (name: string, script: string) => {
+    const repo = join(root, name);
+    mkdirSync(repo);
+    writeFileSync(join(repo, "package.json"), JSON.stringify({ name, private: true, scripts: { test: script } }));
+    // No RUNSPORE_ variable from outside: a spec run inside a spore step would make the run its child.
+    const outside = Object.fromEntries(Object.keys(process.env).filter((key) => key.startsWith("RUNSPORE_")).map((key) => [key, undefined]));
+    const spore = (...args: string[]) => sh(repo, [SPORE, ...args], outside);
+    expect(spore("init").exitCode).toBe(0);
+    const folder = join(repo, ".spore", "workflows", "helper");
+    mkdirSync(join(folder, "bin"), { recursive: true });
+    cpSync(join(example, "bin", "run-tests"), join(folder, "bin", "run-tests"));
+    const { actions } = JSON.parse(readFileSync(join(example, "settings.json"), "utf8"));
+    writeFileSync(join(folder, "workflow.dot"), DOT);
+    writeFileSync(
+      join(folder, "settings.json"),
+      JSON.stringify({
+        format: "runspore.workflow/0.2",
+        actions: { test: actions.test },
+        nodes: { test: { action: "test" }, stopped: { error: { code: "tests.red", message: "The tests failed." } } },
+      }),
+    );
+    const run = spore("--json", "run", "helper", "--input", "{}");
+    return JSON.parse(spore("--json", "status", JSON.parse(run.stdout).runId).stdout);
+  };
+
+  test("green tests complete the run", () => {
+    expect(runIn("green", "true")).toMatchObject({ status: "completed", end: { nodeId: "done" }, parent: null });
+  });
+
+  test("red tests take the red arrow", () => {
+    expect(runIn("red", "false")).toMatchObject({ status: "failed", end: { from: { nodeId: "test", outcome: "red" }, nodeId: "stopped" } });
+  });
 });
 
 describe("the worktree step's command", () => {

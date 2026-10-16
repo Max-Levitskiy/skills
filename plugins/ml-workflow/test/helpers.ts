@@ -195,6 +195,12 @@ export class FakeHerdr {
   }
 }
 
+/** The line `claude-spore check` prints before its summary for a folder with a watched step, when herdr answers as recorded. */
+export function herdrRunning(folder: string): string {
+  const answer = JSON.parse(readFileSync(join(import.meta.dir, "fixtures", "herdr", "status-server.json"), "utf8"));
+  return `${folder}: herdr server running, herdr answered ${JSON.stringify(answer)}\n`;
+}
+
 export type InteractiveOptions = Omit<StepOptions, "params"> & { stdin?: string; args?: string[] };
 
 /** The environment `claude-spore start|probe|watch|stop|report` gets from spore, with both fakes. */

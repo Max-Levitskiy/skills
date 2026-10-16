@@ -4,10 +4,11 @@ The guide the `author` skill follows (docs/spec.md p.21–p.23, design record C0
 
 Words for the person: say **workflow**, **step**, **draft**, **run**. Do not show them JSON, DOT, `$get` or effect-class names unless they ask; the draft speaks plain words and the files hold the machinery.
 
-Two folders beside this guide are what the interview writes for the reference coding loop. Copy their shapes:
+Three folders beside this guide are what the interview writes for the reference coding loop. Copy their shapes:
 
 - `examples/coding-loop/`: Claude implements, the tests run, red goes back to Claude at most 3 times in a row before a person is asked, and a person approves.
 - `examples/parallel-coding-loop/`: the same loop for running several at once, with the worktree step first.
+- `examples/watched-coding-loop/`: the same loop with `implement` watched in a herdr pane (§5.3), and the tests run by a helper program written into the folder, `bin/run-tests` (§5.8).
 
 ## 1. A new workflow
 
@@ -43,6 +44,8 @@ Defaults: Claude steps 3 tries, 1 h each; your decisions have no time limit.
 ```
 
 - One line per step: its ID, who does it, the facts that change the outcome (watched or not, what it may do, safe to repeat or not, time limit), and where each ending goes. A Claude step gets a "sees:" line under it.
+- Every Claude step says "in the background" or "watched, in a pane you can type into", so the choice is always in sight: `1. implement     Claude, watched, in a pane you can type into, can edit files`.
+- A step that runs a helper program names it and what it does: `2. test     command: bin/run-tests, written with the workflow (finds and runs the project's tests), safe to repeat, 30 min`.
 - Under the list, one line per Claude, approval and manual-work step saying what its instructions will tell the one who takes it. The full text is shown only on request.
 - Under that, one "Defaults:" line with the defaults that matter most; the ending lists all of them.
 - **A picture on request** is a text drawing in a code block: boxes for steps, arrows labelled with the ending that takes them, end steps marked. Nothing is written to disk for it.
@@ -55,7 +58,8 @@ Ask, or propose in the draft for the person to correct, unless the description a
 |---|---|---|
 | The steps and their order | (from the description) | `workflow.dot` nodes and edges |
 | Who does each step | "Is this a command, Claude, or you?" | §5's kinds |
-| Claude steps: watch or not | "Do you want to watch this step and type into it?" | background unless the person says otherwise (§5.3) |
+| Claude steps: watch or not | "Do you want to watch this step and type into it?", for each Claude step the description did not settle. Words like "watch", "see", "steer", "pair with", "I want to be there" settle it as watched | watched: the watched kind (§5.3); otherwise background |
+| Steps that need a program of their own | none: propose one in the draft when a step's work is more than one command line, or needs logic no command of the project has (finding which test runner to use, parsing output, a threshold) | `bin/<program>` in the folder, in the action's `assets`, run as `./bin/<program>` (§5.8) |
 | How each step can end, and where each ending goes | "What can come out of this step, and what happens next in each case?" | the action's `outcomes`, `exitOutcomes`, edges with `on` |
 | Loops | "How many times in a row may it go back before you are asked?" | `loopLimits` and an `exhausted` arrow; propose 3 |
 | Approvals and manual work | "Who approves, and what can they answer?" | an `await-signal` node with one edge per answer; `external` with actor `person` for manual work |
@@ -75,6 +79,7 @@ Fill in the rest from §5's defaults, and list each one in the ending.
   workflow.dot        the graph: id, dialect, start, each node's kind and label, each edge's on
   settings.json       format, limits when needed, inputSchema, actions, nodes
   steps/<node>.md     the instructions of each Claude, approval and manual-work step
+  bin/<program>       each helper program a step runs (§5.8), executable
 ```
 
 Nothing else is written: no draft, scratch or backup files.
@@ -102,13 +107,17 @@ The kinds are words in the draft. The files hold plain actions:
 | The draft says | Action | Node |
 |---|---|---|
 | command | `{"kind": "command", "argv": [...], "effect": ..., "outcomes": [...], "timeoutMs": ...}`; `exitOutcomes` maps a non-zero exit code to an outcome (`{"1": "red"}`); 3 tries (`"retry": {"maxAttempts": 3}`) unless it is not safe to repeat | `action`, and `input` only when its `cwd` comes from input (§5.7) |
+| command: a helper program | as command, with `"argv": ["./bin/<program>", ...]` and `"assets": ["bin/<program>"]` (§5.8) | as command |
 | Claude, in the background | `{"kind": "command", "argv": ["claude-spore", "run"], "output": "result", "effect": "idempotent", "outcomes": [...], "retry": {"maxAttempts": 3}, "timeoutMs": "3600000"}` | `action`, `instructions`, `outputSchemas`, `input` (§5.4) |
 | Claude, watched | as background, with `"argv": ["claude-spore", "start"]`, no `timeoutMs` and no `output`, and `"async": {"timeoutMs": "14400000", "probe": {"command": {"argv": ["claude-spore", "probe"]}}, "watch": {"command": {"argv": ["claude-spore", "watch"]}}, "stop": {"command": {"argv": ["claude-spore", "stop"]}}}` | as background |
 | Claude with a skill | as Claude, plus the `skill` parameter | as Claude |
 | you decide | none | `kind="await-signal"` in the DOT; `signal` (a name for what it waits for, such as `approval`), `instructions`, and `outputSchemas` for each answer that carries data |
 | you do it by hand | `{"kind": "external", "actor": "person", "effect": ..., "outcomes": [...], "async": {"timeoutMs": "604800000"}}` | `action`, `instructions`, `outputSchemas` for each outcome that carries data |
 
+- **Watching is its own kind.** A person who wants to see or steer a Claude step gets the watched form, copied from `examples/watched-coding-loop/`. Never draw it as a background step with a decision after it, nor as a command that prompts in a terminal: the watched step opens Claude in a herdr pane the person can type into, says the step needs them whenever Claude is quiet there, and ends when Claude reports its answer. A decision after it is drawn only when the person also wants to approve the result.
+- **A watched step's instructions** say that the person may type into the pane and must be answered, and that the step ends when the report command given below the instructions prints "accepted"; otherwise they are a background step's (§5.6, `examples/watched-coding-loop/steps/implement.md`).
 - **Watched steps need the interactive helper.** Run `claude-spore --help`. When it lists `start`, write the watched form. When it does not, tell the person in one line that watched Claude steps are not built in this release, write the step as a background step, and list that in the ending.
+- **Watched steps need herdr.** `claude-spore check` fails with `herdr.unreachable` when no herdr server answers. That is not your error to fix: say that herdr must be running for the check and for every run, keep the files, and list it in the ending.
 - A command's `timeoutMs` is proposed in the draft from what it does: 30 min (`"1800000"`) for a test suite or a build, 10 min (`"600000"`) for anything quick.
 - Time limits and counts are decimal strings of milliseconds (`"3600000"`); `maxAttempts` and limits are numbers.
 
@@ -170,10 +179,21 @@ When the person will run more than one at a time in this checkout, add a first s
 - A decision or manual-work step's instructions name the worktree and its branch, since the change is there and not in the main checkout.
 - The worktree stays when the run ends. Say in the draft and the ending that merging and removing it are the person's.
 
+### 5.8 Helper programs
+
+When a step's work is more than one command line, or needs logic no command of the project has, write a program for it into the workflow folder rather than a long `sh -c` string or a script elsewhere in the repository. spore seals it into each run, so a run keeps the program it started with. Copy `examples/watched-coding-loop/bin/run-tests` and its `test` action. The worktree step (§5.7) stays an inline `sh -c`.
+
+- **The file** is `bin/<program>`, its name lowercase words joined by `-`. It starts with a shebang, `#!/bin/sh` unless the step needs another language the project already uses, then a comment saying what it does and what each exit code means. Write it whole, and show it in full on request like a step's instructions.
+- **The action** lists it in `assets` (`"assets": ["bin/<program>"]`) and runs it as `argv[0]` `"./bin/<program>"`: spore runs the run's sealed copy of that file, not the folder's. Arguments after it are passed as written. A `./` path that is not in `assets` means a file in the working folder instead.
+- **What it gets.** It runs in the action's `cwd` (the project root, or the run's worktree with §5.7), reads the node's `input` as JSON on stdin, and has `RUNSPORE_RUN_ID`, `RUNSPORE_NODE_ID`, `RUNSPORE_VISIT`, `RUNSPORE_ATTEMPT` and `RUNSPORE_EFFECT_KEY` in its environment.
+- **How it ends.** Exit 0 is `ok`, and `exitOutcomes` maps the other exit codes it uses to outcomes, as for any command. When it reports data, print one JSON object and set `"output": "json"`. A failure every try would repeat, such as a missing tool, exits with a mapped code and says so on stderr, so the next step sees why.
+- **Executable.** Run `chmod +x <folder>/bin/<program>` after writing it: the sealed copy can run only when the file has an execute bit.
+- Its effect class is that of what it does (§4), proposed in the draft like any command's.
+
 ## 6. Save
 
 1. **The project folder.** Run `spore --json list`. When its `db` is not inside a `.spore/` folder, run `spore init`. If `init` refuses (`project.nested`, `project.legacy-database`, `project.unusable`), show its message and stop; write nothing.
-2. **Write** the folder `<project root>/.spore/workflows/<name>/` (§5): `workflow.dot`, `settings.json`, and `steps/<node>.md` for each Claude, approval and manual-work step.
+2. **Write** the folder `<project root>/.spore/workflows/<name>/` (§5): `workflow.dot`, `settings.json`, `steps/<node>.md` for each Claude, approval and manual-work step, and `bin/<program>` for each helper program, then `chmod +x` each helper (§5.8).
 3. **Check:** `spore validate <folder>`, then `claude-spore check <folder>`.
 4. **Fix your own errors.** On any problem or warning, edit the files and run both checks again. That is one round. After the third round that still fails, stop: show each remaining problem in plain words, with spore's fix when it gives one, and ask the person what to do.
 5. **Never commit, stage or push**, and never run `git` commands that change the repository. The new folder is the person's to commit.
@@ -184,6 +204,8 @@ One short message:
 
 - the folder written, and that `git status` shows it uncommitted;
 - every default filled in, one line each: tries and time limits per kind, `effect: "idempotent"` on Claude steps, `format` and the `{summary}` schema on Claude steps, the tool sets, the loop limits, `maxVisitsPerNode` when raised, a watched step written as background, the worktree left behind after each run;
+- for watched steps, that a herdr server must be running whenever a run reaches them, and that the step's pane opens there;
+- for helper programs, each one's path and what it does;
 - one offer: "Start a run now?" On yes, load the `ml-workflow:start` skill with the workflow's name; it asks for the inputs.
 
 The new workflow is already in the menu, which lists every folder under `.spore/workflows/`.
@@ -200,6 +222,8 @@ The new workflow is already in the menu, which lists every folder under `.spore/
    - `workflow.dot`: keep every comment, render attribute (`label`, `shape`, `color`, …), blank line and statement order; touch only the lines the change needs.
    - `settings.json`: change only the keys the change needs, in the file's own layout and key order.
    - `steps/<node>.md`: hand-written instructions are the person's. Change a file only when the person asks, or when the change makes a sentence in it wrong; then edit only those sentences, and say which. A new step gets a new file; a removed step's file is deleted only when nothing else names it.
+   - `bin/<program>`: the same holds for helper programs. Edit only the lines the change needs; a new helper is written whole and made executable (§5.8); a helper is deleted only when no action's `assets` names it.
+   - Watching a Claude step, or no longer watching it, changes only that action's `argv`, `output`, `timeoutMs` and `async` (§5.3), and the sentences of its instructions about the pane.
    - Everything not asked to change stays as it was.
 6. **Check and fix** as in §6 steps 3–5.
 7. **End** with the new list, only the defaults this change added, and, when `spore list` shows any unfinished run, that runs keep the version they started with and only new runs get the change.

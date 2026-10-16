@@ -30,7 +30,9 @@ for (const name of names) {
   test(`${name} names itself, pre-approves spore and claude-spore, and checks Claude Code first`, () => {
     const { front, body } = skill(name);
     expect(front.name).toBe(name);
-    expect(front["allowed-tools"]!.split(" ")).toEqual(["Bash(claude", "--version)", "Bash(spore", "*)", "Bash(claude-spore", "*)"]);
+    // `author` also makes the helper programs it writes executable (p.22).
+    const chmod = name === "author" ? ["Bash(chmod", "+x", "*)"] : [];
+    expect(front["allowed-tools"]!.split(" ")).toEqual(["Bash(claude", "--version)", "Bash(spore", "*)", "Bash(claude-spore", "*)", ...chmod]);
     expect(body).toContain("## 1. Check Claude Code's version\n\nThis Claude Code reports: !`claude --version`");
     expect(front["disable-model-invocation"] === "true").toBe(TYPED_ONLY.includes(name));
   });
