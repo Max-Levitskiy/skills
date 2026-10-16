@@ -3,7 +3,6 @@
 // human can act on.
 
 import type { ResolvedProduct } from "./config";
-import { lazyCredential } from "./credentials";
 
 export class AtlassianError extends Error {
   constructor(
@@ -27,14 +26,10 @@ export interface RequestOptions {
 }
 
 export class HttpClient {
-  private token: () => string;
+  constructor(readonly site: ResolvedProduct) {}
 
-  constructor(readonly site: ResolvedProduct) {
-    this.token = lazyCredential(site.credential, site.credentialKey);
-  }
-
-  private authHeader(): string {
-    const secret = this.token();
+  private async authHeader(): Promise<string> {
+    const secret = await this.site.secret();
     if (this.site.authMode === "bearer") return `Bearer ${secret}`;
     // Cloud API tokens are not bearer tokens: they are the password half of
     // basic auth against the account email. Sending one as a bearer token gets
@@ -63,7 +58,7 @@ export class HttpClient {
 
     for (let attempt = 1; ; attempt++) {
       const headers: Record<string, string> = {
-        Authorization: this.authHeader(),
+        Authorization: await this.authHeader(),
         Accept: "application/json",
         // Data Center rejects unauthenticated-looking XSRF-prone calls without this.
         "X-Atlassian-Token": "no-check",

@@ -19,15 +19,36 @@ bun "$A" help
 
 ## Start here every time
 
+Run this first, before anything else:
+
+```bash
+AC=$(command -v agent-config || ls -d "$HOME"/.claude/plugins/cache/*/ml-agent-config/*/bin/agent-config \
+     "${CODEX_HOME:-$HOME/.codex}"/plugins/cache/*/ml-agent-config/*/bin/agent-config 2>/dev/null | tail -1)
+"$AC" start atlassian
+```
+
+Prints JSON. `ready: true` → proceed. `ready: false` → read the file at `guide` and follow it to work the `actions` list, then re-run. An empty `$AC` or `command not found` means agent-config isn't installed; tell the user and offer to install it from https://github.com/Max-Levitskiy/skills/tree/main/plugins/ml-agent-config.
+
+Missing config is the expected first run, not a failure — don't report it to the user as an
+error: the `onboard` action asks for the site, its deployment and the token, and writes the
+answers. A config still at the old `~/.agents/skill-config/atlassian/` path is picked up by the
+`agent-config:adopt` action, which copies it into `.agents/config/atlassian/` before onboarding
+asks anything.
+
+On Claude Code, a 1Password token is asked for once per session and kept in memory. Elsewhere, a
+reference with `"cacheVar": "ATLASSIAN_TOKEN"` reads the token from that variable when it holds a
+value, so the user can seed it once per shell: `export ATLASSIAN_TOKEN="$(op read '<their ref>')"`.
+Print that line for them; never run it yourself and never echo the token.
+
+Ready means the keys are there. Whether the token works is `config check`:
+
 ```bash
 bun "$A" config check
 ```
 
-One call tells you whether you can proceed:
-
 - **`jira: OK …` / `confluence: OK …`** → authenticated. Load the product file below.
-- **`not configured`** (exit 3) → run [Onboarding](#onboarding). This is the expected
-  first-run state, not a failure — don't report it to the user as an error.
+- **`not configured`** for one product → that product lacks something a declaration can't
+  require, most often `confluence.baseUrl` on Data Center. Fine when they don't use it.
 - **`FAILED`** → the config is fine but the call isn't working. The message says which
   credential reference and which host; relay that rather than rewriting their config.
 
@@ -55,47 +76,24 @@ If the task spans both products — "file a ticket and link it from the runbook"
 
 ## Onboarding
 
-Only when `config check` reports missing configuration. Ask these four things, using
-`AskUserQuestion` so the user picks rather than types.
+The `onboard` action that `start` plans carries the questions: the instance and whether it is
+Cloud or Data Center, where the token lives, and on Cloud the account email. Config lives in
+`.agents/config/atlassian/` — global (`~/.agents/config/atlassian/config.json`) for the site and
+credentials, which follow the person; the repo layer for a `defaultProject`, `defaultSpace` or
+scopes the whole team shares; local for anything personal that shouldn't be committed.
 
-1. **Which instance, and is it Cloud or self-hosted?** Ask for the base URL. A
-   `*.atlassian.net` host is Cloud; anything else is Data Center/Server. This decides
-   everything downstream — API version, body format, and what "token" means — so get it
-   right rather than assuming. On Cloud, Confluence lives under `/wiki` on the same host
-   and `confluence.baseUrl` can be omitted; on-prem they're separate hosts and both URLs
-   are needed.
+Two things the declaration can't ask for on its own:
 
-2. **Where does the token live?** The two deployments issue different things:
-   - **Cloud**: an API token from id.atlassian.com → Security → API tokens. It
-     authenticates as `email:token` over basic auth, so you also need their account email
-     (not a secret — it goes in `auth.email` in plain config).
-   - **Data Center**: a personal access token from Profile → Personal Access Tokens, sent
-     as a bearer token. Jira and Confluence are separate applications, so this usually
-     means *two* tokens — `credentials.jiraToken` and `credentials.confluenceToken`.
+- **Data Center usually means two tokens.** Jira and Confluence are separate applications, so
+  Confluence's personal access token goes in `credentials.confluenceToken` beside
+  `credentials.token`, and `confluence.baseUrl` is its own host.
+- **A Jira and a Confluence on different deployments** (Jira on-prem, Confluence on Cloud) set
+  `jira.authMode` / `confluence.authMode` and `jira.email` / `confluence.email` per product.
 
-   Offer the storage options the config standard supports: 1Password (`op`), an
-   environment variable, a `.env` file, macOS Keychain, or an arbitrary shell command.
-   **Never accept the token itself as text and never write it into a config file** — store
-   a reference to it.
-
-3. **Which config layer?** Global (`~/.agents/skill-config/atlassian/config.json`) suits
-   credentials and the site URL, since those follow the person. Use the repo layer for a
-   `defaultProject` or `defaultSpace` the whole team shares, and the local layer for
-   anything personal that shouldn't be committed. Recommend global unless they say
-   otherwise.
-
-4. **Which streams of work do they care about?** See [Scopes](#scopes) — this is the part
-   that turns a generic client into *their* setup. Don't invent scopes during onboarding
-   from nothing; get the credential working first, then propose them from real data.
-   `jira.defaultProject` and `confluence.defaultSpace` are the minimal version and remove a
-   flag from most commands.
-
-Then:
-
-- Write the config with the `Write` tool. `bun "$A" config path --layer global` prints the
-  exact destination; copy the shape from `config.example.json` next to this file.
-- If you wrote the **local** layer, run `bun "$A" config gitignore`.
-- Verify with `bun "$A" config check` and show the user the identity it returns.
+Change an answer with `agent-config describe atlassian` and `agent-config write atlassian --layer
+<layer>`, never with the file-writing tool: `write` checks each value against the declaration,
+stamps the file and gitignores the local layer. `bun "$A" config show` prints every layer's path
+and what the merged config resolves to; `config.example.json` next to this file shows every key.
 
 Full layering and credential rules: [the Agent Config Standard](https://github.com/Max-Levitskiy/skills/blob/main/standards/agent-config.md).
 

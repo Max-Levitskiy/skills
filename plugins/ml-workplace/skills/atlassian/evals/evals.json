@@ -8,7 +8,7 @@
       "expected_output": "A count and three issues, obtained without silently truncating the result set.",
       "files": [],
       "assertions": [
-        "Runs `config check` before making any product call",
+        "Runs `agent-config start atlassian` (or `config check`) before making any product call",
         "Uses `jira search --count` (or `--all`) rather than reporting the length of a single default page as the total",
         "If the instance is Cloud, describes the count as approximate rather than exact",
         "Orders by created ascending in JQL rather than sorting a partial page in its head"
@@ -45,7 +45,7 @@
       "expected_output": "A working global config using a 1password credential reference, verified with a real call.",
       "files": [],
       "assertions": [
-        "Writes the config to ~/.agents/skill-config/atlassian/config.json (global layer)",
+        "Writes the config with `agent-config write atlassian --layer global`, landing in ~/.agents/config/atlassian/config.json",
         "Stores a { source: '1password', ref: 'op://...' } reference, never the token value",
         "Infers or sets deployment 'server' and bearer auth for a non-atlassian.net host, and does not ask for an account email",
         "Recognises that Confluence on a self-hosted instance needs its own baseUrl, and asks rather than guessing one",

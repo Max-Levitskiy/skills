@@ -1,0 +1,189 @@
+{
+  "$schema": "../../../ml-agent-config/agent-config.schema.json",
+  "version": 2,
+  "name": "atlassian",
+  "schema": {
+    "version": 1,
+    "keys": {
+      "jira.baseUrl": {
+        "description": "Your Jira site, e.g. https://acme.atlassian.net or https://jira.corp.example. On Cloud, Confluence is served from the same host",
+        "layer": "global",
+        "type": "string",
+        "pattern": "^https?://"
+      },
+      "jira.deployment": {
+        "description": "cloud for an *.atlassian.net site, server for Data Center or Server. It decides the API version, the body format, and what a token is",
+        "layer": "global",
+        "type": "string",
+        "enum": ["cloud", "server"]
+      },
+      "credentials.token": {
+        "description": "Where your Atlassian token lives: a Cloud API token (id.atlassian.com → Security → API tokens) or a Data Center personal access token. A reference, never the token. Used for both products; credentials.jiraToken or credentials.confluenceToken, when set, overrides it for one product",
+        "layer": "global"
+      },
+      "auth.mode": {
+        "description": "How the token is sent: basic (email:token, Cloud API tokens) or bearer (Data Center personal access tokens). auto picks basic on Cloud and bearer on Data Center",
+        "layer": "global",
+        "default": "auto",
+        "type": "string",
+        "enum": ["auto", "basic", "bearer"]
+      },
+      "jira.authMode": {
+        "description": "Overrides auth.mode for Jira only, for a Jira and a Confluence on different deployments. auto follows auth.mode",
+        "layer": "global",
+        "default": "auto",
+        "type": "string",
+        "enum": ["auto", "basic", "bearer"]
+      },
+      "jira.email": {
+        "description": "Overrides auth.email for Jira only; empty means auth.email",
+        "layer": "global",
+        "default": "",
+        "type": "string"
+      },
+      "jira.defaultProject": {
+        "description": "The Jira project key used when no scope applies and --project is not given; empty means none",
+        "layer": "repo",
+        "default": "",
+        "type": "string"
+      },
+      "confluence.baseUrl": {
+        "description": "Your Confluence site. Empty on Cloud means jira.baseUrl plus /wiki; on Data Center Confluence is a separate host and must be set to use it",
+        "layer": "global",
+        "default": "",
+        "type": "string"
+      },
+      "confluence.deployment": {
+        "description": "cloud or server for Confluence; auto infers it from confluence.baseUrl (*.atlassian.net is cloud)",
+        "layer": "global",
+        "default": "auto",
+        "type": "string",
+        "enum": ["auto", "cloud", "server"]
+      },
+      "confluence.authMode": {
+        "description": "Overrides auth.mode for Confluence only, for a Jira and a Confluence on different deployments. auto follows auth.mode",
+        "layer": "global",
+        "default": "auto",
+        "type": "string",
+        "enum": ["auto", "basic", "bearer"]
+      },
+      "confluence.email": {
+        "description": "Overrides auth.email for Confluence only; empty means auth.email",
+        "layer": "global",
+        "default": "",
+        "type": "string"
+      },
+      "confluence.defaultSpace": {
+        "description": "The Confluence space key used when no scope applies and --space is not given; empty means none",
+        "layer": "repo",
+        "default": "",
+        "type": "string"
+      },
+      "scopes": {
+        "description": "Named streams of work, each bound to its Jira projects and Confluence space, so commands need no --project or --space. Commands take --scope <name>, or --no-scope",
+        "layer": "repo",
+        "default": {},
+        "type": "object",
+        "additionalProperties": { "$ref": "#/$defs/scope" }
+      },
+      "defaultScope": {
+        "description": "The scope applied when --scope is not given; empty means no scope",
+        "layer": "repo",
+        "default": "",
+        "type": "string"
+      },
+      "fields": {
+        "description": "Friendly name → Jira field id, so --field points=5 works instead of customfield_10016. Ids differ per instance",
+        "layer": "repo",
+        "default": {},
+        "type": "object",
+        "additionalProperties": { "type": "string" }
+      },
+      "people": {
+        "description": "Shorthand → accountId (Cloud) or username (Data Center), for --assignee dana without a user search",
+        "layer": "repo",
+        "default": {},
+        "type": "object",
+        "additionalProperties": { "type": "string" }
+      },
+      "safety.readOnly": {
+        "description": "Refuse every mutating command: create, edit, comment, transition, move, delete. For an instance that is a reference source",
+        "layer": "repo",
+        "default": false,
+        "type": "boolean"
+      },
+      "safety.allowDelete": {
+        "description": "Allow deleting issues and pages (still behind --yes). false disables deletion outright",
+        "layer": "repo",
+        "default": true,
+        "type": "boolean"
+      },
+      "safety.allowPurge": {
+        "description": "Allow permanently purging trashed Confluence pages (still behind --yes). false disables it outright",
+        "layer": "repo",
+        "default": true,
+        "type": "boolean"
+      },
+      "defaults.issueType": {
+        "description": "The issue type new issues get when neither --type nor a scope says; empty means the CLI's own default",
+        "layer": "repo",
+        "default": "",
+        "type": "string"
+      },
+      "storage.exports.enabled": {
+        "description": "Whether pages and issues the user asks to keep are saved locally",
+        "layer": "repo",
+        "default": false,
+        "type": "boolean"
+      },
+      "storage.exports.path": {
+        "description": "Where local copies go; relative paths resolve from the repo root, ~ is home",
+        "layer": "repo",
+        "default": "docs/atlassian",
+        "type": "string"
+      }
+    },
+    "groups": [
+      {
+        "when": { "jira.deployment": "cloud" },
+        "keys": {
+          "auth.email": {
+            "description": "Your Atlassian account email. A Cloud API token is the password half of basic auth, so it is sent as email:token. Not a secret",
+            "layer": "global",
+            "type": "string",
+            "pattern": "^[^@\\s]+@[^@\\s]+$"
+          }
+        }
+      }
+    ],
+    "$defs": {
+      "scope": {
+        "type": "object",
+        "properties": {
+          "label": { "type": "string", "title": "Label", "description": "The name a person uses for this stream of work" },
+          "jira": {
+            "type": "object",
+            "title": "Jira",
+            "properties": {
+              "projects": { "type": "array", "items": { "type": "string" }, "description": "Project keys, which are also the issue-key prefixes; the first is where new issues go" },
+              "defaultIssueType": { "type": "string" },
+              "labels": { "type": "array", "items": { "type": "string" }, "description": "Added to issues this scope creates" },
+              "components": { "type": "array", "items": { "type": "string" } },
+              "board": { "type": ["integer", "string"] },
+              "jqlFilter": { "type": "string", "description": "AND-ed into every search, for a slice of a shared project" }
+            }
+          },
+          "confluence": {
+            "type": "object",
+            "title": "Confluence",
+            "properties": {
+              "space": { "type": "string" },
+              "parentPage": { "type": "string", "description": "New pages are created under this page unless --parent says otherwise" },
+              "cqlFilter": { "type": "string", "description": "AND-ed into every search" }
+            }
+          }
+        }
+      }
+    }
+  }
+}

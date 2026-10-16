@@ -56,7 +56,9 @@ An explicit `--project`, `--space`, or a JQL query that already constrains `proj
 
 Ask Claude to set up Atlassian access and it walks you through it. The config file holds a *reference* to your token — 1Password, environment variable, dotenv, macOS Keychain, or any shell command — never the token itself. See `skills/atlassian/config.example.json` for the shape and [the Agent Config Standard](../../standards/agent-config.md) for the layering rules.
 
-Configuration currently lives under the legacy SCS v1 path `~/.agents/skill-config/atlassian/`, which ACS v1 still reads.
+Configuration follows the [Agent Config Standard](../../standards/agent-config.md), v2: atlassian declares its keys in [`skills/atlassian/agent-config.json`](skills/atlassian/agent-config.json), its config lives under `.agents/config/atlassian/`, and the token reaches the CLI on a separate file descriptor, never on stdout, argv or disk. On Claude Code, `/agent-config` opens a settings pane where you can change any answer.
+
+**Upgrading from 0.4.x:** a config at the old `~/.agents/skill-config/atlassian/` path is copied to `~/.agents/config/atlassian/config.json` by agent-config's adopt step the first time the skill runs. The old file is left in place for you to delete.
 
 ### Requirements
 

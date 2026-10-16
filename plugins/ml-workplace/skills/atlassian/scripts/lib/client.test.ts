@@ -65,6 +65,7 @@ function site(deployment: "cloud" | "server"): ResolvedProduct {
     email: "me@acme.com",
     credential: { source: "env", var: "TEST_TOKEN" },
     credentialKey: "credentials.token",
+    secret: async () => process.env.TEST_TOKEN!,
   };
 }
 
