@@ -1,201 +1,121 @@
 #!/usr/bin/env bun
-// orchestrate — Agent Config Standard (ACS v1) CLI.
+// orchestrate's config, through the agent-config CLI (ACS v2).
 //
-//   bun orchestrate-config.ts check          layers, effective settings, what's missing
-//   bun orchestrate-config.ts show           merged config (credentials described, never revealed)
-//   bun orchestrate-config.ts path [layer]   where a layer lives
-//   bun orchestrate-config.ts write <layer>  write that layer from JSON on stdin
-//   bun orchestrate-config.ts verify         resolve the credential and make one real call
-//   bun orchestrate-config.ts gitignore      ensure the local layer is gitignored
+//   bun orchestrate-config.ts show [--json]    layers, effective settings and where each came from
+//   bun orchestrate-config.ts path [layer]     where a layer lives
+//   bun orchestrate-config.ts verify           resolve the credential and make one real call
 //
-// No secret ever reaches argv, stdout, or a config file.
+// Writing a layer is `agent-config write orchestrate --layer <layer>`, which also stamps it,
+// journals it and gitignores the local layer. No secret ever reaches argv, stdout, or a config file.
 
 import {
-  loadConfig,
-  layerPath,
-  writeLayer,
-  ensureGitignored,
-  validate,
-  repoRoot,
+  AgentConfigError,
   CREDENTIAL_FOR,
+  describeCredential,
+  layerPaths,
+  loadConfig,
+  loadWithSecret,
+  startPlan,
   type Layer,
-  type OrchestrateConfig,
+  type TrackerKind,
 } from "./lib/config";
-import { describeCredential } from "./lib/credentials";
 import { verifyTracker } from "./lib/tracker";
 
-const DEFAULTS = { maxParallelAgents: 5, maxPackages: 8, verifyOnDisk: true };
-const LAYERS: Layer[] = ["global", "repo", "local"];
-
-function die(msg: string): never {
+function die(msg: string, code = 1): never {
   console.error(msg);
-  process.exit(1);
+  process.exit(code);
 }
 
-/** Redact credential objects down to a human description before anything is printed. */
-function forDisplay(c: OrchestrateConfig): any {
-  const out: any = structuredClone(c);
-  if (out.credentials) {
-    for (const [name, ref] of Object.entries(out.credentials)) {
-      out.credentials[name] = ref ? describeCredential(ref as any) : ref;
-    }
-  }
-  return out;
-}
-
-async function cmdCheck() {
-  const { config, found, missing, legacy } = loadConfig();
-  const root = repoRoot();
-
-  console.log(`repo root: ${root ?? "(not a git repository — only the global layer applies)"}`);
-  console.log("\nlayers:");
-  for (const layer of LAYERS) {
-    const p = layerPath(layer, root);
-    if (!p) {
-      console.log(`  ${layer.padEnd(6)} n/a       (needs a git repository)`);
-      continue;
-    }
-    // A layer can hold two files: the current path and the pre-rename one. Print the path
-    // actually read, never the expected one — otherwise a legacy-only setup reads as
-    // "found" beside a path that does not exist.
-    const hits = found.filter((f) => f.layer === layer);
-    if (!hits.length) {
-      console.log(`  ${layer.padEnd(6)} missing   ${p}`);
-      continue;
-    }
-    for (const h of hits) {
-      console.log(`  ${layer.padEnd(6)} ${h.path === p ? "found    " : "legacy   "} ${h.path}`);
-    }
-  }
-
-  if (legacy.length) {
-    console.log(
-      `\n${legacy.length} file(s) sit at the pre-rename .agents/skill-config/ path. Both locations are\n` +
-        "read and the new one wins, so nothing is broken — move them to .agents/config/ when convenient.",
-    );
-  }
-
-  if (found.length === 0) {
-    console.log(
-      "\nNo configuration yet. This is the expected first-run state, not an error — run onboarding\n" +
-        "(see the skill's Onboarding section) to create it.",
-    );
-    process.exit(2);
-  }
-
-  const kind = config.tracker?.kind;
-  const credName = kind ? CREDENTIAL_FOR[kind] : null;
-  console.log("\neffective settings:");
-  console.log(`  tracker.kind         ${kind ?? "(unset)"}`);
-  console.log(`  tracker target       ${config.tracker?.path ?? config.tracker?.repo ?? config.tracker?.site ?? config.tracker?.team ?? "(unset)"}`);
-  console.log(`  questions.path       ${config.questions?.path ?? "(unset — the skill will pick one during setup)"}`);
-  console.log(`  models.judgment      ${config.models?.judgment ?? "(inherit session model)"}`);
-  console.log(`  models.mechanical    ${config.models?.mechanical ?? "(inherit session model)"}`);
-  console.log(`  maxParallelAgents    ${config.defaults?.maxParallelAgents ?? DEFAULTS.maxParallelAgents}`);
-  console.log(`  maxPackages          ${config.defaults?.maxPackages ?? DEFAULTS.maxPackages}`);
-  console.log(`  credential needed    ${credName ? `credentials.${credName}` : "none (local tracker)"}`);
-
-  const problems = validate(config);
-  if (problems.length) {
-    console.log("\nnot ready:");
-    for (const p of problems) console.log(`  - ${p}`);
-    process.exit(2);
-  }
-  console.log("\nready. Run 'verify' to confirm the tracker is actually reachable.");
-}
-
-function cmdShow() {
-  const { config, found } = loadConfig();
-  if (!found.length) die("No configuration found. Run 'check' for the layer paths.");
-  console.log(JSON.stringify(forDisplay(config), null, 2));
-}
-
-function cmdPath(arg?: string) {
-  const root = repoRoot();
-  const layers = arg ? [arg as Layer] : LAYERS;
-  for (const layer of layers) {
-    if (!LAYERS.includes(layer)) die(`Unknown layer "${layer}". Use one of: ${LAYERS.join(", ")}`);
-    console.log(`${layer.padEnd(6)} ${layerPath(layer, root) ?? "n/a (needs a git repository)"}`);
-  }
-}
-
-async function cmdWrite(layer?: string) {
-  if (!layer || !LAYERS.includes(layer as Layer)) {
-    die(`Usage: write <${LAYERS.join("|")}>  — the layer's full JSON content on stdin.`);
-  }
-  const raw = await Bun.stdin.text();
-  if (!raw.trim()) die("Nothing on stdin. Pipe the layer's full JSON content in.");
-  let parsed: any;
+/** Run one config call, turning an agent-config failure into its own diagnosis and exit code. */
+async function guarded<T>(call: () => T | Promise<T>): Promise<T> {
   try {
-    parsed = JSON.parse(raw);
+    return await call();
   } catch (e: any) {
-    die(`stdin is not valid JSON: ${e.message}`);
+    if (e instanceof AgentConfigError) die(e.message, e.exitCode === 127 ? 1 : e.exitCode);
+    throw e;
   }
-  parsed.version ??= 1;
-  let written: ReturnType<typeof writeLayer>;
-  try {
-    written = writeLayer(layer as Layer, parsed);
-  } catch (e: any) {
-    die(e.message);
+}
+
+async function cmdShow(json: boolean) {
+  const plan = await guarded(startPlan);
+  const layers = await guarded(layerPaths);
+  if (json) return console.log(JSON.stringify({ ...plan, layers }, null, 2));
+
+  const { config, provenance } = plan;
+  console.log("Config layers (later overrides earlier):");
+  for (const one of layers) {
+    if (!one.path) console.log(`  · ${one.layer.padEnd(9)} (needs a git repository)`);
+    else console.log(`  ${one.exists ? "✓" : "·"} ${one.layer.padEnd(9)} ${one.path}${one.exists ? "" : " (absent)"}`);
   }
-  console.log(`wrote ${layer} layer: ${written.path}`);
-  const g = written.gitignore;
-  if (g?.action === "added") console.log(`gitignored the local layer in ${g.path}`);
-  if (g?.action === "already-ignored") console.log(`local layer already gitignored via ${g.path}`);
+
+  const from = (key: string) => (provenance[key] ? `  [${provenance[key]}]` : "");
+  const t = config.tracker ?? {};
+  const kind = t.kind || "";
+  const target = t.path ?? t.repo ?? (t.site ? `${t.site} ${t.project ?? ""}`.trim() : undefined) ?? t.team;
+  const credName = kind ? CREDENTIAL_FOR[kind as TrackerKind] : null;
+  const cred = credName ? config.credentials?.[credName] : undefined;
+  console.log("\nEffective settings:");
+  console.log(`  tracker.kind         ${kind || "(empty: Phase 1 discovers the tracker)"}${from("tracker.kind")}`);
+  if (kind) console.log(`  tracker target       ${target ?? "(not set)"}`);
+  if (kind === "github") console.log(`  github auth          ${cred ? "token" : t.githubAuth ?? "gh"}${from("tracker.githubAuth")}`);
+  if (credName && cred) console.log(`  credential           credentials.${credName}: ${describeCredential(cred)}`);
+  console.log(`  questions.path       ${config.questions?.path || "(empty: near the work)"}${from("questions.path")}`);
+  console.log(`  questions.human      ${config.questions?.human || "(not set)"}${from("questions.human")}`);
+  console.log(`  models.judgment      ${config.models?.judgment || "(inherit session model)"}${from("models.judgment")}`);
+  console.log(`  models.mechanical    ${config.models?.mechanical || "(inherit session model)"}${from("models.mechanical")}`);
+  console.log(`  maxParallelAgents    ${config.defaults?.maxParallelAgents}${from("defaults.maxParallelAgents")}`);
+  console.log(`  maxPackages          ${config.defaults?.maxPackages}${from("defaults.maxPackages")}`);
+  console.log(`  verifyOnDisk         ${config.defaults?.verifyOnDisk}${from("defaults.verifyOnDisk")}`);
+
+  for (const problem of plan.problems) console.log(`\n! ${problem.message}`);
+  const missing = plan.actions.flatMap((action) => action.keys);
+  const outstanding = missing.length ? `Missing: ${missing.join(", ")}` : `Outstanding: ${plan.actions.map((action) => action.id).join(", ")}`;
+  console.log(plan.ready ? "\nReady." : `\nNot ready. ${outstanding}. Run: agent-config start orchestrate`);
+  if (!plan.ready) process.exit(2);
+}
+
+async function cmdPath(arg?: string) {
+  const layers = await guarded(layerPaths);
+  const wanted = arg ? layers.filter((one) => one.layer === (arg as Layer)) : layers;
+  if (!wanted.length) die(`Unknown layer "${arg}". Use one of: ${layers.map((one) => one.layer).join(", ")}`);
+  for (const one of wanted) console.log(`${one.layer.padEnd(9)} ${one.path ?? "n/a (needs a git repository)"}`);
 }
 
 async function cmdVerify() {
-  const { config, found } = loadConfig();
-  if (!found.length) die("No configuration found — nothing to verify. Run onboarding first.");
-  const problems = validate(config);
-  if (problems.length) {
-    console.error("Config is incomplete:");
-    for (const p of problems) console.error(`  - ${p}`);
-    process.exit(2);
-  }
-  const result = await verifyTracker(config);
+  const config = await guarded(loadConfig);
+  const kind = config.tracker?.kind;
+  if (!kind) die("tracker.kind is empty: Phase 1 discovers the tracker each time, so there is nothing to verify.", 2);
+  const credName = CREDENTIAL_FOR[kind];
+  // GitHub without a configured token goes through gh; every other remote tracker requires one.
+  const secret = credName && config.credentials?.[credName] ? credName : undefined;
+  const { token } = await guarded(() => loadWithSecret(secret));
+  const result = await verifyTracker(config, token);
   console.log(result.ok ? `OK — ${result.detail}` : `FAILED — ${result.detail}`);
   process.exit(result.ok ? 0 : 1);
 }
 
-function cmdGitignore() {
-  const g = ensureGitignored();
-  if (g.action === "no-repo") die("Not in a git repository — the local layer does not apply here.");
-  console.log(g.action === "added" ? `added the local-layer pattern to ${g.path}` : `already ignored via ${g.path}`);
-}
-
 const [cmd, ...rest] = process.argv.slice(2);
 switch (cmd) {
-  case "check":
-    await cmdCheck();
-    break;
   case "show":
-    cmdShow();
+    await cmdShow(rest.includes("--json"));
     break;
   case "path":
-    cmdPath(rest[0]);
-    break;
-  case "write":
-    await cmdWrite(rest[0]);
+    await cmdPath(rest[0]);
     break;
   case "verify":
     await cmdVerify();
-    break;
-  case "gitignore":
-    cmdGitignore();
     break;
   case "help":
   case undefined:
     console.log(
       [
-        "orchestrate config (ACS v1)",
+        "orchestrate config (through agent-config)",
         "",
-        "  check              layers, effective settings, what's missing  (exit 2 = not ready)",
-        "  show               merged config; credentials shown as descriptions, never values",
-        "  path [layer]       where global | repo | local live",
-        "  write <layer>      write that layer from JSON on stdin (refuses inlined secrets)",
+        "  show [--json]      layers, effective settings and their source  (exit 2 = not ready)",
+        "  path [layer]       where global | repo | user-repo | local live",
         "  verify             resolve the credential and make one real call to the tracker",
-        "  gitignore          ensure the local layer is gitignored",
+        "",
+        "Write a layer with: agent-config write orchestrate --layer <layer>  (JSON on stdin)",
       ].join("\n"),
     );
     break;

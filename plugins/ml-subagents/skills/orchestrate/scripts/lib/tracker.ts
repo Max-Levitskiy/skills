@@ -1,12 +1,11 @@
-// The "verify with a real call" half of the SCS onboarding contract.
-// One reachability probe per tracker backend. Credentials are resolved here and
-// nowhere earlier — a `config check` must never trigger a Touch ID prompt.
+// The "verify with a real call" half of the onboarding contract.
+// One reachability probe per tracker backend. The caller resolves the token through
+// `agent-config load` and only when this probe needs it, so `show` never triggers a Touch ID prompt.
 
 import { spawnSync } from "child_process";
 import { accessSync, constants, statSync } from "fs";
 import { dirname } from "path";
-import { CREDENTIAL_FOR, expandPath, type OrchestrateConfig, type TrackerKind } from "./config";
-import { resolveCredential } from "./credentials";
+import { expandPath, type OrchestrateConfig, type TrackerKind } from "./config";
 
 export interface VerifyResult {
   ok: boolean;
@@ -88,26 +87,13 @@ async function verifyLinear(team: string, token: string): Promise<VerifyResult> 
   return { ok: true, detail: `reached Linear team ${node.key} ("${node.name}")` };
 }
 
-export async function verifyTracker(c: OrchestrateConfig): Promise<VerifyResult> {
+/** `token` is the tracker's resolved credential, or null when it has none (a local tracker, or gh). */
+export async function verifyTracker(c: OrchestrateConfig, token: string | null): Promise<VerifyResult> {
   const kind = c.tracker?.kind;
-  if (!kind) return { ok: false, detail: "tracker.kind is not set" };
+  if (!kind) return { ok: false, detail: "tracker.kind is not set: Phase 1 discovers the tracker, so there is nothing to verify" };
 
   if (kind === "file" || kind === "tasknotes") return verifyLocal(kind, c.tracker?.path);
-
-  const credName = CREDENTIAL_FOR[kind];
-  let token: string | null = null;
-  if (credName) {
-    const ref = c.credentials?.[credName];
-    if (ref) {
-      try {
-        token = resolveCredential(ref, credName); // lazy: only reached when a call needs it
-      } catch (e: any) {
-        return { ok: false, detail: e.message };
-      }
-    } else if (kind !== "github") {
-      return { ok: false, detail: `credentials.${credName} is not set` };
-    }
-  }
+  if (kind !== "github" && !token) return { ok: false, detail: `the ${kind} tracker needs its credential, and none was resolved` };
 
   try {
     if (kind === "github") return await verifyGithub(c.tracker!.repo!, token);
