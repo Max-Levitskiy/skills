@@ -423,6 +423,26 @@ describe("watch", () => {
       expect(herdrCalls("agent", "prompt")).toHaveLength(2);
     });
 
+    test("once sent, the pane is quiet until it starts on it, and needs nobody until then", async () => {
+      const { result, stdout } = start();
+      herdr.status(result.herdrAgent, "working");
+      start({ attempt: 2 });
+      const watch = watching(stdout, { attempt: 2 });
+      await Bun.sleep(300);
+
+      herdr.status(result.herdrAgent, "idle");
+      await prompts(2);
+      await Bun.sleep(300);
+      expect(watch.lines()).toEqual([]);
+      expect(existsSync(join(work, "2.watch"))).toBe(false);
+
+      herdr.status(result.herdrAgent, "working");
+      await Bun.sleep(300);
+      herdr.status(result.herdrAgent, "idle");
+      expect((await watch.until(1)).map((l) => JSON.parse(l))).toEqual([NEEDS]);
+      watch.child.kill();
+    });
+
     test("a new pane's first, kept with a later try's report command when that try comes first", async () => {
       const first = start();
       run("stop", { stdin: first.stdout });
