@@ -1,9 +1,12 @@
-"""End-to-end public helpers use only a temporary fake CLI and isolated HOME."""
+"""End-to-end public helpers use only a temporary fake CLI and isolated HOME.
+Config goes through the real agent-config CLI in this checkout (it runs on bun)."""
 import json,os,shutil,subprocess,tempfile,unittest
 from pathlib import Path
 
 SKILL=Path(__file__).resolve().parents[1]
 NODE=os.environ.get("HERDR_TEST_NODE","node")
+AGENT_CONFIG=os.environ.get("AGENT_CONFIG_ROOT",str(SKILL.parents[2]/"ml-agent-config"))
+BUN=os.environ.get("HERDR_TEST_BUN") or shutil.which("bun")
 FIXTURE=Path(__file__).with_name("fake_cli.py")
 MUTATIONS={("workspace","create"),("tab","create"),("pane","split"),("agent","start"),("agent","prompt"),("pane","close")}
 
@@ -13,9 +16,11 @@ class Helpers(unittest.TestCase):
   self.root=Path(self.tmp.name);self.log=self.root/"calls.jsonl"
   for name in ("herdr","wsl","wsl.exe"):
    file=self.root/name;shutil.copyfile(FIXTURE,file);file.chmod(0o755)
-  self.env={**os.environ,"HOME":str(self.root),"PATH":str(self.root)+os.pathsep+"/usr/bin:/bin",
+  self.env={**os.environ,"HOME":str(self.root),"PATH":os.pathsep.join([str(self.root),str(Path(BUN).parent),"/usr/bin:/bin"]),
+            "AGENT_CONFIG_ROOT":AGENT_CONFIG,
             "FAKE_HERDR_LOG":str(self.log),"HERDR_PANE_ID":"inherited-wrong-pane",
             "HERDR_SESSION":"inherited-wrong-session","HERDR_SOCKET_PATH":"/wrong.sock"}
+  for k in ("CLAUDE_CONFIG_DIR","CODEX_HOME"):self.env.pop(k,None)
   self.addCleanup(self.tmp.cleanup)
  def calls(self):return [json.loads(x) for x in self.log.read_text().splitlines()] if self.log.exists() else []
  def commands(self):
@@ -188,6 +193,25 @@ class Helpers(unittest.TestCase):
  def test_sample_config_validates(self):
   self.run_helper("config","write","global",input=(SKILL/"config.example.json").read_text())
   self.run_helper("config","check")
+ def test_written_preset_is_listed(self):
+  self.run_helper("config","write","global",input=json.dumps({"agents":{"probe":{"command":["claude"],"description":"written"}}}))
+  stored=json.loads((self.root/".agents/config/herdr/config.json").read_text())
+  self.assertIn("schemaVersion",stored);self.assertNotIn("version",stored)
+  presets={p["name"]:p for p in json.loads(self.run_helper("presets","--json").stdout)["presets"]}
+  self.assertEqual(presets["probe"]["description"],"written");self.assertIn("claude",presets)
+ def test_unconfigured_is_ready(self):
+  data=json.loads(self.run_helper("config","check").stdout)
+  self.assertTrue(data["ready"]);self.assertEqual(data["found"],[]);self.assertIn("codex",data["presets"])
+ def test_v1_config_plans_adopt(self):
+  legacy=self.root/".agents/skill-config/herdr/config.json";legacy.parent.mkdir(parents=True)
+  legacy.write_text(json.dumps({"version":1,"agents":{"old":{"command":["claude"]}}}))
+  data=json.loads(self.run_helper("config","check",ok=False).stdout)
+  self.assertFalse(data["ready"]);self.assertIn("agent-config:adopt",data["actions"])
+ def test_without_agent_config_runs_on_builtins(self):
+  self.env.pop("AGENT_CONFIG_ROOT")
+  r=self.run_helper("presets","--json")
+  self.assertIn("claude",[p["name"] for p in json.loads(r.stdout)["presets"]]);self.assertIn("agent-config is not installed",r.stderr)
+  self.run_helper("config","write","global",input="{}",ok=False)
  def test_resolver_opaque_ids_and_explicit_rename(self):
   self.assertEqual(self.run_helper("resolve","opaque#two",resolver=True).stdout.strip(),"opaque#two")
   self.log.unlink()

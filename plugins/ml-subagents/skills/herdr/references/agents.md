@@ -61,7 +61,10 @@ Node 24.12+ can execute the same TypeScript file. Native start/prompt capabiliti
 required. Busy/ambiguous turns are refused. Replies are bounded screen text with
 task_verified:false, not scraped final answers.
 Use --machine, --session or --wsl for explicit routing; inspect --help.
-ACS command argv/layers remain supported. Canonical binaries infer kind; arbitrary
-wrappers need an explicitly supported launch design. Legacy screen markers are accepted
-but unused. Default start creates a separate workspace; --pane reuses a shell and
---anchor-pane splits a known pane. The sample config documents migration.
+Presets are agent-config (ACS v2) keys: `agent-config describe herdr` lists them, the
+`/agent-config` pane edits them, `config check|show|write` here does the same. Every key
+has a default, so no setup is needed. Presets left at the v1 path `.agents/skill-config/herdr/`
+are not read until `agent-config adopt herdr` copies them. Canonical binaries infer kind;
+arbitrary wrappers need an explicitly supported launch design. Legacy screen markers are
+accepted but unused. Default start creates a separate workspace; --pane reuses a shell and
+--anchor-pane splits a known pane. config.example.json shows every key.

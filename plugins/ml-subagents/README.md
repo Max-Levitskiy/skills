@@ -51,11 +51,11 @@ One line back is enough. If your answer matches the default, nothing needs redoi
 
 Optional — with no config the skill discovers the project's tracker and runs on defaults. Configure it to skip that discovery, tier models, or point work at a hosted issue tracker.
 
-Settings follow the [Agent Config Standard](../../standards/agent-config.md): `global` → `repo` → `local`, deep-merged, with a bundled CLI.
+Settings follow the [Agent Config Standard](../../standards/agent-config.md), v2: orchestrate declares its keys in [`skills/orchestrate/agent-config.json`](skills/orchestrate/agent-config.json) and reads them through the `agent-config` CLI from [`ml-agent-config`](../ml-agent-config), which this plugin depends on. Layers are `global` → `repo` → `user-repo` → `local`, deep-merged. Onboarding asks only for what the chosen tracker needs, and on Claude Code `/agent-config` opens a pane to change any answer.
 
 ```bash
 O="$CLAUDE_PLUGIN_ROOT/skills/orchestrate/scripts/orchestrate-config.ts"
-bun "$O" check     # layers, effective settings, what's missing
+bun "$O" show      # effective settings and the layer each came from
 bun "$O" verify    # resolve the credential and make one real call
 ```
 
@@ -63,11 +63,13 @@ bun "$O" verify    # resolve the credential and make one real call
 | --- | --- | --- |
 | A `tasks.md` / `TODO.md` file | `file` | none |
 | Task folder with frontmatter files (e.g. Obsidian TaskNotes) | `tasknotes` | none |
-| GitHub issues | `github` | `githubToken`, or none if the `gh` CLI is authenticated |
+| GitHub issues | `github` | none if the `gh` CLI is authenticated; `githubToken` with `tracker.githubAuth: "token"` |
 | Jira | `jira` | `jiraToken` (+ `tracker.email`) |
 | Linear | `linear` | `linearToken` |
 
-Credentials are stored as *references* — 1Password, an env var, a `.env` file, macOS Keychain, or a shell command — never as values. They resolve lazily, so `check` and `show` never trigger a password-manager prompt, and a resolved secret never reaches argv, logs, or stdout. Add `"cacheVar": "GITHUB_TOKEN"` to a reference and export that variable once per shell session to skip re-resolving (and re-prompting) in every one of the short-lived processes an orchestration spawns; nothing is cached to disk. Writing the local layer gitignores it for you, and `write` refuses any config with a token inlined.
+Credentials are stored as *references* — 1Password, an env var, a `.env` file, macOS Keychain, or a shell command — never as values. They resolve lazily, so `show` never triggers a password-manager prompt, and a resolved secret reaches the CLI on a separate file descriptor, never argv, logs, or stdout. Add `"cacheVar": "GITHUB_TOKEN"` to a reference and export that variable once per shell session to skip re-resolving (and re-prompting) in every one of the short-lived processes an orchestration spawns; nothing is cached to disk. `agent-config write` gitignores the local layer and refuses any config with a token inlined.
+
+**Upgrading from 0.3.x:** a config at the old `~/.agents/skill-config/orchestrate/` path is copied into `.agents/config/` by agent-config's adopt step the first time the skill runs. The old file is left for you to delete.
 
 Every supported key is documented in [`config.example.json`](skills/orchestrate/config.example.json).
 
@@ -89,7 +91,9 @@ skills/orchestrate/
 ├── references/
 │   ├── agent-prompt.md             worker prompt scaffold + a worked example
 │   └── question-protocol.md        folder layout, question template, writing rules
-├── scripts/orchestrate-config.ts   ACS v1 config CLI
+├── agent-config.json               declared config keys (ACS v2)
+├── actions/                        onboard and verify, read by agent-config's plan
+├── scripts/orchestrate-config.ts   show, path, and verify the config
 ├── config.example.json             every supported key
 └── evals/                          eval set + fixture workspace
 ```
@@ -155,7 +159,10 @@ Changes from the older helper:
 - Busy/unknown/blocked agents are inspected rather than automatically prompted.
   Ambiguous delivery errors retain observation/IDs; no blind resend occurs.
 
-ACS config layers and preset command arrays are preserved. See
+Presets live in agent-config v2 layers, declared in
+[agent-config.json](skills/herdr/agent-config.json) and read through the `agent-config` CLI;
+`config write` goes through `agent-config write`. A preset file at the old
+`~/.agents/skill-config/herdr/` path is copied over by `agent-config adopt herdr`. See
 [config.example.json](skills/herdr/config.example.json). Config output redacts environment
 values and credential references; it does not resolve secrets or log in to agents.
 

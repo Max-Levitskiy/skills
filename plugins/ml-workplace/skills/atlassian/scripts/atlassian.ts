@@ -9,17 +9,17 @@
 import { readFileSync } from "fs";
 import { basename } from "path";
 import {
-  loadConfig,
-  layerPath,
-  resolveProduct,
-  validate,
-  ensureGitignored,
+  AgentConfigError,
+  describeCredential,
   expandPath,
+  layerPaths,
+  loadConfig,
+  resolveProduct,
+  startPlan,
+  validate,
   type AtlassianConfig,
-  type Layer,
   type Product,
 } from "./lib/config";
-import { describeCredential } from "./lib/credentials";
 import {
   checkSafety,
   isWriteCommand,
@@ -121,9 +121,26 @@ function fail(message: string, code = 1): never {
 
 // ---------------------------------------------------------------- clients
 
+/** The ready config, or a first-run message: missing keys are expected, not a crash. */
+function readyConfig(): AtlassianConfig {
+  try {
+    return loadConfig();
+  } catch (e) {
+    if (e instanceof AgentConfigError && e.exitCode === 2) {
+      fail(
+        `The Atlassian skill is not configured yet.\n\n${e.message}\n\n` +
+          `This is the expected first-run state. Run \`agent-config start atlassian\`, or ask Claude to walk you through setup.`,
+        3,
+      );
+    }
+    if (e instanceof AgentConfigError) fail(e.message, e.exitCode === 127 ? 127 : 1);
+    throw e;
+  }
+}
+
 function context(product: Product) {
-  const loaded = loadConfig();
-  const problems = validate(loaded.config, product);
+  const config = readyConfig();
+  const problems = validate(config, product);
   if (problems.length) {
     fail(
       `${product} is not configured yet:\n  - ${problems.join("\n  - ")}\n\n` +
@@ -132,8 +149,8 @@ function context(product: Product) {
       3,
     );
   }
-  const site = resolveProduct(loaded.config, product);
-  return { config: loaded.config, site, http: new HttpClient(site) };
+  const site = resolveProduct(config, product);
+  return { config, site, http: new HttpClient(site) };
 }
 
 /**
@@ -147,7 +164,7 @@ function context(product: Product) {
  */
 function guardReadOnly(product: Product, sub: string | undefined) {
   if (!isWriteCommand(product, sub)) return;
-  const verdict = checkSafety(loadConfig().config, "write");
+  const verdict = checkSafety(readyConfig(), "write");
   if (!verdict.allowed) fail(`Refusing to run '${product} ${sub}'. ${verdict.reason}`);
 }
 
@@ -162,7 +179,7 @@ function confluence(args?: Args) {
 }
 
 /** `--scope x` picks one, `--no-scope` disables, otherwise the configured default. */
-function scopeFrom(config: ReturnType<typeof loadConfig>["config"], args?: Args): NamedScope | null {
+function scopeFrom(config: AtlassianConfig, args?: Args): NamedScope | null {
   if (args && A.bool(args, "no-scope")) return null;
   return pickScope(config, args ? A.str(args, "scope") : undefined);
 }
@@ -179,20 +196,23 @@ async function cmdConfig(args: Args) {
   const sub = args.positional[0] ?? "check";
 
   if (sub === "path") {
-    const layer = (A.str(args, "layer") ?? "global") as Layer;
-    const p = layerPath(layer);
-    if (!p) fail(`The ${layer} layer needs a git repository. Run inside one, or use --layer global.`);
-    out(p);
+    const layer = A.str(args, "layer") ?? "global";
+    const found = layerPaths().find((one) => one.layer === layer);
+    if (!found) fail(`Unknown layer "${layer}". Layers: global, repo, user-repo, local.`);
+    if (!found.path) fail(`The ${layer} layer needs a git repository. Run inside one, or use --layer global.`);
+    out(found.path);
     return;
   }
 
-  if (sub === "gitignore") {
-    const { path, added } = ensureGitignored();
-    out(added ? `Added the local config pattern to ${path}` : `${path} already ignores the local config layer.`);
-    return;
+  // start, not load: show and scopes are how a half-configured skill is inspected.
+  let plan: ReturnType<typeof startPlan>;
+  try {
+    plan = startPlan();
+  } catch (e) {
+    if (e instanceof AgentConfigError) fail(e.message, e.exitCode === 127 ? 127 : 1);
+    throw e;
   }
-
-  const loaded = loadConfig();
+  const loaded = { config: plan.config };
 
   if (sub === "scopes") {
     const scopes = listScopes(loaded.config);
@@ -238,11 +258,18 @@ async function cmdConfig(args: Args) {
   }
 
   if (sub === "show") {
-    if (A.bool(args, "json")) return json(loaded);
-    const lines: string[] = ["## Config layers", ""];
-    for (const { layer, path } of loaded.found) lines.push(`- ${layer}: ${path}`);
-    for (const { layer, path } of loaded.missing) lines.push(`- ${layer}: (not present) ${path}`);
-    if (!loaded.found.length) lines.push("- none found — the skill is unconfigured");
+    const layers = layerPaths();
+    if (A.bool(args, "json")) return json({ ...plan, layers });
+    const lines: string[] = ["## Config layers (later overrides earlier)", ""];
+    for (const { layer, path, exists } of layers) {
+      lines.push(path ? `- ${layer}: ${exists ? "" : "(not present) "}${path}` : `- ${layer}: (needs a git repository)`);
+    }
+    if (!layers.some((one) => one.exists)) lines.push("- none found — the skill is unconfigured");
+    for (const problem of plan.problems) lines.push(`- ! ${problem.message}`);
+    if (!plan.ready) {
+      const missing = plan.actions.flatMap((action) => action.keys);
+      lines.push(`- not ready. Missing: ${missing.join(", ") || "see agent-config start atlassian"}`);
+    }
 
     for (const product of ["jira", "confluence"] as Product[]) {
       lines.push("", `## ${product}`, "");
@@ -269,11 +296,11 @@ async function cmdConfig(args: Args) {
         lines.push(`- ${name}${name === loaded.config.defaultScope ? " (default)" : ""}: ${bits.join(", ") || "(empty)"}`);
       }
     }
-    if (loaded.config.fields) {
+    if (Object.keys(loaded.config.fields ?? {}).length) {
       lines.push("", "## Field aliases", "");
       for (const [alias, id] of Object.entries(loaded.config.fields)) lines.push(`- ${alias} → ${id}`);
     }
-    if (loaded.config.people) {
+    if (Object.keys(loaded.config.people ?? {}).length) {
       lines.push("", "## People aliases", "");
       for (const [alias, id] of Object.entries(loaded.config.people)) lines.push(`- ${alias} → ${id}`);
     }
@@ -298,9 +325,17 @@ async function cmdConfig(args: Args) {
     return;
   }
 
-  if (sub !== "check") fail(`Unknown config command "${sub}". Try: check, show, scopes, scope, path, gitignore.`);
+  if (sub !== "check") fail(`Unknown config command "${sub}". Try: check, show, scopes, scope, path.`);
 
   // check: prove the credential works rather than just that a file exists.
+  if (!plan.ready) {
+    const missing = plan.actions.flatMap((action) => action.keys);
+    fail(
+      `Not configured yet. Missing: ${missing.join(", ") || "see agent-config start atlassian"}\n` +
+        `Run \`agent-config start atlassian\` and work its actions, then run this again.`,
+      3,
+    );
+  }
   const results: string[] = [];
   let anyConfigured = false;
   let anyFailed = false;
@@ -336,7 +371,7 @@ async function cmdConfig(args: Args) {
   out(results.join("\n"));
   if (!anyConfigured) {
     process.stderr.write(
-      "\nNothing is configured yet. Write a config layer (see config.example.json) and run this again.\n",
+      "\nNeither product can make a call yet: fix what is listed above with `agent-config write atlassian`, then run this again.\n",
     );
     process.exit(3);
   }
@@ -942,8 +977,7 @@ const HELP = `atlassian — Jira + Confluence over REST, for Cloud and Data Cent
   config show [--json]               resolved settings and where they came from
   config scopes                      configured work streams (jira projects + space)
   config scope <ISSUE-KEY>           which scope owns a ticket prefix
-  config path [--layer global|repo|local]
-  config gitignore                   ignore the local config layer
+  config path [--layer global|repo|user-repo|local]
 
 Scopes: commands that search or create accept --scope <name> to pick a work
 stream, or --no-scope to ignore the configured default. The scope supplies the

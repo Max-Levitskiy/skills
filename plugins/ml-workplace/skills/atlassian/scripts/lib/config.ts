@@ -1,27 +1,33 @@
-// Skill Config Standard (SCS v1) loader — see standards/skill-config.md
-// Layers: ~/.agents (global) -> <repo>/.agents (repo) -> config.local.json (local)
+// Atlassian's config, read through the agent-config CLI (ACS v2) — see
+// plugins/ml-agent-config/docs/working-actions.md. The keys are declared in
+// ../../agent-config.json; this file spawns the CLI, types what it answers, and holds the
+// inference that turns a few keys into a usable site. There is no credential resolver here: a
+// token arrives on fd 3 of `agent-config load`, never on stdout, argv or disk.
 
+import { spawn, spawnSync } from "child_process";
 import { homedir } from "os";
-import { join, isAbsolute, resolve, dirname } from "path";
-import { spawnSync } from "child_process";
-import { readFileSync, writeFileSync, mkdirSync, existsSync, appendFileSync } from "fs";
+import { isAbsolute, join, resolve } from "path";
 
-export const SKILL_NAME = "atlassian";
-export const LOCAL_GITIGNORE_PATTERN = ".agents/skill-config/*/config.local.json";
+const NAME = "atlassian";
+/** The skill folder, which holds agent-config.json. Passed as --from, so a git checkout works too. */
+const SKILL_DIR = resolve(import.meta.dir, "..", "..");
+const INSTALL_LINK = "https://github.com/Max-Levitskiy/skills/tree/main/plugins/ml-agent-config";
 
-export type Layer = "global" | "repo" | "local";
+export type Layer = "global" | "repo" | "user-repo" | "local";
 export type Product = "jira" | "confluence";
 export type Deployment = "cloud" | "server";
 export type AuthMode = "basic" | "bearer";
 
+/** A reference to where a secret lives. Never the secret. */
 export interface CredentialRef {
-  source: "1password" | "env" | "dotenv" | "keychain" | "command";
+  source: string;
   ref?: string;
   account?: string;
   var?: string;
   path?: string;
   service?: string;
   command?: string;
+  cacheVar?: string;
 }
 
 export interface StorageTarget {
@@ -44,7 +50,6 @@ export interface ProductSettings {
 }
 
 export interface AtlassianConfig {
-  version?: number;
   credentials?: {
     /** Used by both products unless a product-specific token is set. */
     token?: CredentialRef;
@@ -68,17 +73,162 @@ export interface AtlassianConfig {
   people?: Record<string, string>;
   /** Standing limits, independent of any --yes passed at the call site. */
   safety?: { allowDelete?: boolean; allowPurge?: boolean; readOnly?: boolean };
-  defaults?: { pageSize?: number; maxResults?: number; issueType?: string };
+  defaults?: { issueType?: string };
   storage?: { exports?: StorageTarget };
 }
 
+export interface Problem {
+  code: string;
+  message: string;
+}
+
+/** What `agent-config start` answers: ready or not, with the merged config either way. */
+export interface Plan {
+  ready: boolean;
+  config: AtlassianConfig;
+  provenance: Record<string, string>;
+  actions: { id: string; keys: string[] }[];
+  problems: Problem[];
+  guide: string;
+}
+
+/** A failed CLI call, with the CLI's own diagnosis and exit code (2 config, 3 credential, 4 schema). */
+export class AgentConfigError extends Error {
+  constructor(message: string, readonly exitCode: number) {
+    super(message);
+  }
+}
+
 /**
- * $HOME first, matching POSIX semantics. Bun's os.homedir() caches the value at
- * process start, so honouring the environment is both more correct and the only
- * way a test (or a CI job with its own HOME) can redirect the global layer.
+ * The agent-config binary, found the way working-actions.md says: AGENT_CONFIG_ROOT, then PATH,
+ * then the harness plugin caches. Never a reconstructed install path.
  */
-export function configHome(): string {
-  return process.env.HOME || homedir();
+function binary(): string {
+  const root = process.env.AGENT_CONFIG_ROOT;
+  if (root) return join(root, "bin", "agent-config");
+  const onPath = Bun.which("agent-config");
+  if (onPath) return onPath;
+  const caches = [
+    join(process.env.CLAUDE_CONFIG_DIR || join(homedir(), ".claude"), "plugins", "cache"),
+    join(process.env.CODEX_HOME || join(homedir(), ".codex"), "plugins", "cache"),
+  ];
+  for (const cache of caches) {
+    const found = [...new Bun.Glob("*/ml-agent-config/*/bin/agent-config").scanSync({ cwd: cache, onlyFiles: false })]
+      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+      .pop();
+    if (found) return join(cache, found);
+  }
+  throw new AgentConfigError(`agent-config is not installed, and the Atlassian skill reads its config through it: ${INSTALL_LINK}`, 127);
+}
+
+function failure(args: string[], code: number, stderr: string): AgentConfigError {
+  const said = stderr.trim() || `agent-config ${args[0]} exited ${code}`;
+  return new AgentConfigError(said, code);
+}
+
+/** One CLI call, JSON on stdout. */
+function run<T>(args: string[]): T {
+  const result = spawnSync(binary(), [...args, "--from", SKILL_DIR], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  if (result.error) throw new AgentConfigError(result.error.message, 1);
+  if (result.status !== 0) throw failure(args, result.status ?? 1, result.stderr);
+  return JSON.parse(result.stdout) as T;
+}
+
+/**
+ * The declaration fills unset keys with "" or "auto" so every key has a value to show and edit.
+ * Here both mean "not set", so the inference below reads them as absent, exactly as before.
+ */
+const UNSET_WHEN_EMPTY = [
+  "auth.mode",
+  "auth.email",
+  "jira.authMode",
+  "jira.email",
+  "jira.defaultProject",
+  "confluence.baseUrl",
+  "confluence.deployment",
+  "confluence.authMode",
+  "confluence.email",
+  "confluence.defaultSpace",
+  "defaultScope",
+  "defaults.issueType",
+];
+
+function normalise(config: AtlassianConfig): AtlassianConfig {
+  for (const path of UNSET_WHEN_EMPTY) {
+    const parts = path.split(".");
+    const leaf = parts.pop()!;
+    let parent: any = config;
+    for (const part of parts) parent = parent?.[part];
+    if (parent && (parent[leaf] === "" || parent[leaf] === "auto")) delete parent[leaf];
+  }
+  return config;
+}
+
+/** What the skill still needs. Not being configured is an answer here, not an error. */
+export function startPlan(): Plan {
+  const plan = run<Plan>(["start", NAME]);
+  return { ...plan, config: normalise(plan.config) };
+}
+
+/** The merged config. Fails (exit 2) when a required key is missing. */
+export function loadConfig(): AtlassianConfig {
+  return normalise(run<{ config: AtlassianConfig }>(["load", NAME]).config);
+}
+
+const secrets = new Map<string, Promise<string>>();
+
+/**
+ * One secret, from fd 3 of `agent-config load`. Cached per key for the process, so Jira and
+ * Confluence sharing credentials.token cost one resolution, and only when a call needs it.
+ */
+export function loadSecret(key: string): Promise<string> {
+  let pending = secrets.get(key);
+  if (!pending) {
+    pending = readSecret(key);
+    secrets.set(key, pending);
+  }
+  return pending;
+}
+
+async function readSecret(key: string): Promise<string> {
+  const args = ["load", NAME, "--secrets", key, "--from", SKILL_DIR];
+  const child = spawn(binary(), args, { stdio: ["ignore", "ignore", "pipe", "pipe"] });
+  const read = (stream: NodeJS.ReadableStream | null) =>
+    new Promise<string>((done) => {
+      let text = "";
+      if (!stream) return done(text);
+      stream.on("data", (chunk) => (text += chunk));
+      stream.on("end", () => done(text));
+    });
+  const [stderr, out, code] = await Promise.all([
+    read(child.stderr),
+    read(child.stdio[3] as NodeJS.ReadableStream),
+    new Promise<number>((done) => child.on("close", (exit) => done(exit ?? 1))),
+  ]);
+  if (code !== 0) throw failure(args, code, stderr);
+  const value = (JSON.parse(out) as Record<string, string>)[key];
+  if (!value) throw new AgentConfigError(`agent-config resolved no value for ${key}`, 3);
+  return value;
+}
+
+/** Where each layer lives; `path` is null for a layer that needs a repository this is not in. */
+export function layerPaths(): { layer: Layer; path: string | null; exists: boolean }[] {
+  return run<{ layers: { layer: Layer; path: string | null; exists: boolean }[] }>(["path", NAME]).layers;
+}
+
+/** How a reference reads to a person: where the secret lives, never the secret. */
+export function describeCredential(ref: CredentialRef): string {
+  const where =
+    ref.source === "1password" ? `1Password: ${ref.ref}${ref.account ? ` (account ${ref.account})` : ""}`
+    : ref.source === "env" ? `environment variable ${ref.var}`
+    : ref.source === "dotenv" ? `${ref.path} → ${ref.var}`
+    : ref.source === "keychain" ? `macOS Keychain: ${ref.service} / ${ref.account}`
+    : ref.source === "command" ? `command: ${ref.command}`
+    : `unknown source "${ref.source}"`;
+  return ref.cacheVar ? `${where} (cached in $${ref.cacheVar} when set)` : where;
 }
 
 export function repoRoot(): string | null {
@@ -87,65 +237,9 @@ export function repoRoot(): string | null {
   return r.stdout.trim() || null;
 }
 
-export function layerPath(layer: Layer, root = repoRoot()): string | null {
-  const dir = `.agents/skill-config/${SKILL_NAME}`;
-  if (layer === "global") return join(configHome(), dir, "config.json");
-  if (!root) return null; // repo/local layers need a git repo
-  return join(root, dir, layer === "repo" ? "config.json" : "config.local.json");
-}
-
-/** Deep merge per SCS: objects merge, arrays/scalars replace, explicit null deletes. */
-function merge(base: any, over: any): any {
-  if (over === null) return undefined;
-  if (Array.isArray(over) || typeof over !== "object" || over === undefined) return over;
-  if (typeof base !== "object" || base === null || Array.isArray(base)) base = {};
-  const out: any = { ...base };
-  for (const [k, v] of Object.entries(over)) {
-    const merged = merge(base[k], v);
-    if (merged === undefined) delete out[k];
-    else out[k] = merged;
-  }
-  return out;
-}
-
-export interface LoadedConfig {
-  config: AtlassianConfig;
-  /** Which layers were actually found on disk, in precedence order. */
-  found: { layer: Layer; path: string }[];
-  missing: { layer: Layer; path: string }[];
-}
-
-export function loadConfig(): LoadedConfig {
-  const root = repoRoot();
-  const found: { layer: Layer; path: string }[] = [];
-  const missing: { layer: Layer; path: string }[] = [];
-  let config: AtlassianConfig = {};
-
-  for (const layer of ["global", "repo", "local"] as Layer[]) {
-    const p = layerPath(layer, root);
-    if (!p) continue;
-    let raw: string;
-    try {
-      raw = readFileSync(p, "utf8");
-    } catch {
-      missing.push({ layer, path: p });
-      continue;
-    }
-    let parsed: any;
-    try {
-      parsed = JSON.parse(raw);
-    } catch (e: any) {
-      throw new Error(`Config at ${p} is not valid JSON: ${e.message}`);
-    }
-    config = merge(config, parsed);
-    found.push({ layer, path: p });
-  }
-  return { config, found, missing };
-}
-
 /** Resolve a configured path: `~` expands to home, relative resolves from repo root (or cwd). */
 export function expandPath(p: string): string {
-  if (p.startsWith("~/")) return join(configHome(), p.slice(2));
+  if (p.startsWith("~/")) return join(process.env.HOME || homedir(), p.slice(2));
   if (isAbsolute(p)) return p;
   return resolve(repoRoot() ?? process.cwd(), p);
 }
@@ -176,6 +270,8 @@ export interface ResolvedProduct {
   credential: CredentialRef;
   /** Which config key the credential came from, for error messages. */
   credentialKey: string;
+  /** The token, resolved on first use. Listing config or printing help never prompts. */
+  secret: () => Promise<string>;
 }
 
 function stripSlash(u: string): string {
@@ -220,6 +316,7 @@ export function resolveProduct(cfg: AtlassianConfig, product: Product): Resolved
     email: settings.email ?? cfg.auth?.email,
     credential,
     credentialKey,
+    secret: () => loadSecret(credentialKey),
   };
 }
 
@@ -238,7 +335,11 @@ function validateCredential(ref: CredentialRef | undefined, key: string): string
   return required.filter((f) => !(ref as any)[f]).map((f) => `${key}.${f} is required for source "${ref.source}"`);
 }
 
-/** What's missing before this product can make a call. Empty array = ready. */
+/**
+ * What's missing before this product can make a call. Empty array = ready. `agent-config` checks
+ * the declared keys; this adds what a declaration can't say: Confluence's host on Data Center,
+ * basic auth's email under a mode override, and the per-product token overrides.
+ */
 export function validate(cfg: AtlassianConfig, product: Product): string[] {
   const problems: string[] = [];
   const settings = cfg[product] ?? {};
@@ -266,30 +367,4 @@ export function validate(cfg: AtlassianConfig, product: Product): string[] {
       : validateCredential(cfg.credentials?.token, "credentials.token")),
   );
   return problems;
-}
-
-/** Write a config layer, creating parent directories. Returns the path written. */
-export function writeLayer(layer: Layer, config: AtlassianConfig): string {
-  const path = layerPath(layer);
-  if (!path) throw new Error(`The ${layer} layer requires a git repository; run from inside one or use --layer global.`);
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, JSON.stringify(config, null, 2) + "\n");
-  return path;
-}
-
-/**
- * Ensure the local layer can't be committed. Done at write time because asking
- * the user to remember is how secrets-adjacent files end up in git history.
- */
-export function ensureGitignored(): { path: string; added: boolean } {
-  const root = repoRoot();
-  if (!root) throw new Error("Not inside a git repository — nothing to gitignore.");
-  const path = join(root, ".gitignore");
-  const existing = existsSync(path) ? readFileSync(path, "utf8") : "";
-  if (existing.split("\n").some((l) => l.trim() === LOCAL_GITIGNORE_PATTERN)) {
-    return { path, added: false };
-  }
-  const prefix = existing && !existing.endsWith("\n") ? "\n" : "";
-  appendFileSync(path, `${prefix}${LOCAL_GITIGNORE_PATTERN}\n`);
-  return { path, added: true };
 }

@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
-// Optional ACS preset adapter. Native CLI owns launch, prompt submission and waits.
-import { agents, defaults, expandPath, layerPath, loadConfig, resolvePreset, validate, writeLayer, type Layer } from "./lib/config.ts";
+// Optional preset adapter; presets come from agent-config (ACS v2). Native CLI owns launch, prompt submission and waits.
+import { agents, defaults, expandPath, layerPath, layerPaths, LAYERS, loadConfig, resolvePreset, startPlan, validate, writeLayer, type Layer } from "./lib/config.ts";
 import { HerdrClient, outcome, validateRead } from "./lib/herdr-client.mjs";
 import { readFileSync } from "node:fs";
 import { basename } from "node:path";
@@ -12,7 +12,7 @@ herdr-agent.ts start [preset] [--prompt TEXT] [--name NAME] [--kind KIND]
 herdr-agent.ts ask TARGET TEXT [--timeout MS] [--lines N] [--max-chars N] [--json]
 herdr-agent.ts read TARGET [--source visible|detection|recent|recent-unwrapped] [--lines N]
 herdr-agent.ts stop TARGET --force
-herdr-agent.ts config check|show|path [global|repo|local]|write LAYER
+herdr-agent.ts config check|show|path [LAYER]|write LAYER   (layers: global, repo, user-repo, local)
 Target flags: --session NAME | --machine PROFILE; --wsl DISTRO; --herdr-bin PATH
 No --remote flag: use a saved machine or run the CLI on that host.
 Native start/prompt capability is required; no legacy timing/Enter retries.
@@ -53,29 +53,29 @@ function kindFor(preset: any, override?: string) {
 }
 function print(value: any, json: boolean) { console.log(json ? JSON.stringify(value,null,2) : typeof value==="string" ? value : JSON.stringify(value,null,2)); }
 function configCommand(f: any) {
-  const sub=f.rest[0] || "check"; const loaded=loadConfig();
+  const sub=f.rest[0] || "check";
   const layer=(f.rest[1] || "global") as Layer;
-  if (!["global","repo","local"].includes(layer)) throw new Error("Expected global/repo/local layer");
+  if (!LAYERS.includes(layer)) throw new Error("Expected "+LAYERS.join("/")+" layer");
   if (sub==="path") return console.log(layerPath(layer) || "This layer needs a Git repository");
   if (sub==="write") {
     const c=JSON.parse(readFileSync(0,"utf8")); const errors=validate(c);
     if (errors.length) throw new Error(errors.join("; "));
-    return print(writeLayer(layer,{version:1,...c}),true);
+    return print(writeLayer(layer,c),true);
   }
   if (sub==="show") {
-    const safe:any={...loaded.config};
-    if (safe.credentials) safe.credentials=Object.fromEntries(Object.keys(safe.credentials).map(k=>[k,"[reference omitted]"]));
+    const safe:any=loadConfig();
     for (const group of ["agents","defaults"]) if (safe[group]) {
-      safe[group]=JSON.parse(JSON.stringify(safe[group]));
       const records=group==="agents" ? Object.values(safe[group]) : [safe[group]];
       for (const record of records) { const r = record as any; if (r.env) r.env=Object.fromEntries(Object.keys(r.env).map(k=>[k,"[redacted]"])); }
     }
     return print(safe,true);
   }
   if (sub!=="check") throw new Error("Expected config check/show/path/write");
-  const errors=validate(loaded.config);
-  print({found:loaded.found,legacy:loaded.legacy,presets:Object.keys(agents(loaded.config)),errors},true);
-  if (errors.length) process.exitCode=1;
+  const plan=startPlan(); const errors=validate(plan.config);
+  const found=layerPaths().filter(l=>l.exists).map(({layer,path})=>({layer,path}));
+  print({ready:plan.ready,found,presets:Object.keys(agents(plan.config)),errors,
+    actions:plan.actions.map(a=>a.id),problems:plan.problems},true);
+  if (errors.length || !plan.ready) process.exitCode=1;
 }
 function main() {
   const [sub,...argv]=process.argv.slice(2);
@@ -90,16 +90,16 @@ function main() {
   if (count!==null && f.rest.length>count) throw new Error("Unexpected positional arguments");
   if (["start","read","ask","stop"].includes(sub) && f.rest[0]!==undefined && !f.rest[0].trim())
     throw new Error("Preset/agent target must be nonempty");
-  const loaded=loadConfig(); const errors=validate(loaded.config);
+  const config=loadConfig(); const errors=validate(config);
   if (errors.length) throw new Error(errors.join("; "));
-  const d=defaults(loaded.config);
+  const d=defaults(config);
   let preset:any;
-  if (sub==="start") preset=resolvePreset(loaded.config,f.rest[0]);
+  if (sub==="start") preset=resolvePreset(config,f.rest[0]);
   const scope={session:f.session || (!f.machine ? preset?.session : undefined),machine:f.machine,wsl:f.wsl,binary:f.binary};
   if (f.machine && preset?.session) throw new Error("Machine profile conflicts with preset session; select a preset/target explicitly");
   const client=new HerdrClient(scope,{maxChars:f.maxChars || 16384});
   if (sub==="presets") {
-    return print({defaults:{agent:d.agent,split:d.split,focus:d.focus},presets:Object.entries(agents(loaded.config)).map(([name,p]:any)=>
+    return print({defaults:{agent:d.agent,split:d.split,focus:d.focus},presets:Object.entries(agents(config)).map(([name,p]:any)=>
       ({name,command:p.command,kind:p.kind,description:p.description,session:p.session,env_keys:Object.keys(p.env||{})}))},f.json);
   }
   if (sub==="running") return print(client.run(["agent","list"]).agents || [],f.json);

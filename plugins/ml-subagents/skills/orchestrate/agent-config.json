@@ -1,0 +1,161 @@
+{
+  "$schema": "../../../ml-agent-config/agent-config.schema.json",
+  "version": 2,
+  "name": "orchestrate",
+  "schema": {
+    "version": 1,
+    "keys": {
+      "tracker.kind": {
+        "description": "Where work packages are tracked: file, tasknotes, github, jira or linear. Empty means Phase 1 discovers the project's tracker each time",
+        "layer": "repo",
+        "default": "",
+        "type": "string",
+        "enum": ["", "file", "tasknotes", "github", "jira", "linear"]
+      },
+      "tracker.githubAuth": {
+        "description": "How the github tracker authenticates: gh uses the gh CLI's own login (a configured credentials.githubToken still wins); token requires credentials.githubToken",
+        "layer": "global",
+        "default": "gh",
+        "type": "string",
+        "enum": ["gh", "token"]
+      },
+      "tracker.labels": {
+        "description": "Labels applied to every package entry the orchestrator creates",
+        "layer": "repo",
+        "default": [],
+        "type": "array",
+        "items": { "type": "string" }
+      },
+      "questions.path": {
+        "description": "Where question documents collect, relative to the work. Empty means a questions/ folder near the work",
+        "layer": "repo",
+        "default": "",
+        "type": "string"
+      },
+      "questions.human": {
+        "description": "Who answers the question documents, e.g. \"Alex (product lead)\"",
+        "layer": "repo",
+        "default": "",
+        "type": "string"
+      },
+      "models.judgment": {
+        "description": "Model for judgment-heavy drafting, e.g. opus. Empty means every worker inherits the session model",
+        "layer": "global",
+        "default": "",
+        "type": "string"
+      },
+      "models.mechanical": {
+        "description": "Model for mechanical work, e.g. haiku. Empty means every worker inherits the session model",
+        "layer": "global",
+        "default": "",
+        "type": "string"
+      },
+      "defaults.maxParallelAgents": {
+        "description": "How many workers run at once in one wave",
+        "layer": "global",
+        "default": 5,
+        "type": "integer",
+        "minimum": 1
+      },
+      "defaults.maxPackages": {
+        "description": "How many work packages one parent task is split into at most",
+        "layer": "global",
+        "default": 8,
+        "type": "integer",
+        "minimum": 1
+      },
+      "defaults.verifyOnDisk": {
+        "description": "Read every worker's output file before closing its package, instead of trusting its report",
+        "layer": "global",
+        "default": true,
+        "type": "boolean"
+      }
+    },
+    "groups": [
+      {
+        "when": {
+          "tracker.kind": ["file", "tasknotes"]
+        },
+        "keys": {
+          "tracker.path": {
+            "description": "The tracker file (file) or the task folder (tasknotes), relative to the repo root",
+            "layer": "repo",
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      {
+        "when": {
+          "tracker.kind": "github"
+        },
+        "keys": {
+          "tracker.repo": {
+            "description": "The GitHub repository issues are filed in, as owner/repo",
+            "layer": "repo",
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+          }
+        }
+      },
+      {
+        "when": {
+          "tracker.kind": "github",
+          "tracker.githubAuth": "token"
+        },
+        "keys": {
+          "credentials.githubToken": {
+            "description": "Where a GitHub token with issues: write lives. A reference, never the token",
+            "layer": "global"
+          }
+        }
+      },
+      {
+        "when": {
+          "tracker.kind": "jira"
+        },
+        "keys": {
+          "tracker.site": {
+            "description": "The Jira site host, e.g. acme.atlassian.net",
+            "layer": "repo",
+            "type": "string",
+            "minLength": 1
+          },
+          "tracker.project": {
+            "description": "The Jira project key, e.g. LAUNCH",
+            "layer": "repo",
+            "type": "string",
+            "minLength": 1
+          },
+          "tracker.email": {
+            "description": "The Atlassian account email the API token belongs to",
+            "layer": "global",
+            "type": "string",
+            "minLength": 1
+          },
+          "credentials.jiraToken": {
+            "description": "Where the Atlassian API token lives. A reference, never the token",
+            "layer": "global"
+          }
+        }
+      },
+      {
+        "when": {
+          "tracker.kind": "linear"
+        },
+        "keys": {
+          "tracker.team": {
+            "description": "The Linear team key, e.g. ENG",
+            "layer": "repo",
+            "type": "string",
+            "minLength": 1
+          },
+          "credentials.linearToken": {
+            "description": "Where the Linear personal API key lives. A reference, never the key",
+            "layer": "global"
+          }
+        }
+      }
+    ]
+  }
+}

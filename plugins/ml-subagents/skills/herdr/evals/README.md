@@ -15,7 +15,8 @@ node --test tests/test_client.mjs
 ```
 
 Python tests invoke the public TypeScript/Python helpers with a fake executable, temporary
-HOME and deadlines. Node 24.12+ can run TypeScript; Bun remains the normal helper runtime.
+HOME and deadlines. Config goes through the real `agent-config` CLI of this checkout
+(override with `AGENT_CONFIG_ROOT`), which needs `bun` on PATH (or `HERDR_TEST_BUN`). Node 24.12+ can run TypeScript; Bun remains the normal helper runtime.
 The core test with 100 fixture tasks checks worker bounds, not live fleet capacity.
 
 ## Reported independent live results (2026-09-30)

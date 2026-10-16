@@ -1,23 +1,21 @@
 {
-  "//": "Example only. Copy to ~/.agents/config/orchestrate/config.json (global),",
-  "//1": "<repo>/.agents/config/orchestrate/config.json (repo, committed), or",
-  "//2": "<repo>/.agents/config/orchestrate/config.local.json (local, gitignored).",
-  "//3": "Never put a token itself in here — only a reference to where it lives.",
-  "//4": "Every key is optional: with no config at all the skill discovers the tracker",
-  "//5": "from the project and runs with the defaults shown below.",
-  "//6": "The older ~/.agents/skill-config/orchestrate/ location is still read, at lower",
-  "//7": "precedence, so an existing setup keeps working. See standards/agent-config.md.",
+  "//": "Example only. Write it with `agent-config write orchestrate --layer <layer>`, never by hand:",
+  "//1": "write stamps schemaVersion, keeps a schema snapshot, and gitignores the local layer.",
+  "//2": "Layers: global ~/.agents/config/orchestrate/config.json, repo <repo>/.agents/config/orchestrate/config.json",
+  "//3": "(committed), user-repo, and local <repo>/.agents/config/orchestrate/config.local.json (gitignored).",
+  "//4": "Never put a token itself in here, only a reference to where it lives.",
+  "//5": "Every key is optional: with no config the skill discovers the tracker and runs on the defaults below.",
+  "//6": "The declared keys are in agent-config.json; `agent-config describe orchestrate` lists them.",
 
-  "version": 1,
-
-  "//tracker": "Where work packages are tracked. kind is one of: file, tasknotes, github, jira, linear. Only github/jira/linear need a credential.",
+  "//tracker": "Where work packages are tracked. kind is one of: file, tasknotes, github, jira, linear, or empty to discover it each time. Only github/jira/linear need a credential.",
   "tracker": {
     "kind": "file",
     "//path": "file | tasknotes — repo-relative path to the tracker file, or the task folder for tasknotes.",
     "path": "tasks.md",
 
-    "//github": "kind=github — the issue repo. Auth falls back to the gh CLI when credentials.githubToken is absent.",
+    "//github": "kind=github — the issue repo. githubAuth gh uses the gh CLI's login unless credentials.githubToken is set; token requires it.",
     "repo": "acme/launch",
+    "githubAuth": "gh",
 
     "//jira": "kind=jira — site host, project key, and the Atlassian account email the token belongs to.",
     "site": "acme.atlassian.net",

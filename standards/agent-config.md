@@ -1,8 +1,8 @@
-# Agent Config Standard (ACS v1)
+# Agent Config Standard (ACS v2)
 
 How a skill or subagent stores per-user and per-project settings, and how it gets hold of secrets without ever committing one.
 
-Status: **active**. Applies to any skill, subagent, command, or hook in this marketplace that needs configuration. Canonical implementation: [`plugins/ml-agent-config`](../plugins/ml-agent-config). Reference implementations of this v1 library: [`orchestrate`](../plugins/ml-subagents/skills/orchestrate) (optional config) and [`herdr`](../plugins/ml-subagents/skills/herdr) (no credential at all — presets only). [`fellow`](../plugins/ml-workplace/skills/fellow) (credential-backed) has moved to v2: it declares its keys in `agent-config.json` and reads its config through the `agent-config` CLI, as [`working-actions.md`](../plugins/ml-agent-config/docs/working-actions.md) describes.
+Status: **active**. Applies to any skill, subagent, command, or hook in this marketplace that needs configuration. Canonical implementation: [`plugins/ml-agent-config`](../plugins/ml-agent-config) and its `agent-config` CLI. Every component declares its keys in an `agent-config.json` and reads its config through that CLI, as [`working-actions.md`](../plugins/ml-agent-config/docs/working-actions.md) describes: [`fellow`](../plugins/ml-workplace/skills/fellow) and [`atlassian`](../plugins/ml-workplace/skills/atlassian) (credential-backed), [`orchestrate`](../plugins/ml-subagents/skills/orchestrate) (a credential only for some trackers), [`herdr`](../plugins/ml-subagents/skills/herdr) (no credential at all — presets only), and [`grill-with-ui`](../plugins/ml-grilling/skills/grill-with-ui) (optional remote-mode settings).
 
 ## Why this exists
 
@@ -14,24 +14,22 @@ None of that is specific to skills. A subagent calling the same API needs the sa
 
 ## Locations and precedence
 
-Three layers. Later layers override earlier ones.
+Four layers. Later layers override earlier ones.
 
 | Layer | Path | Committed? | Holds |
 | --- | --- | --- | --- |
 | **global** | `~/.agents/config/<name>/config.json` | n/a (outside repo) | your defaults across every project |
 | **repo** | `<repo>/.agents/config/<name>/config.json` | **yes** | settings the whole team shares |
+| **user-repo** | `~/.agents/config/<name>/user-repo/<repo identity>/config.json` | n/a (outside repo) | your settings for one repository, in every worktree of it |
 | **local** | `<repo>/.agents/config/<name>/config.local.json` | **no — gitignored** | per-checkout overrides, personal paths |
-| *legacy* | the same three files under `.agents/skill-config/<name>/` | as above | read-only compatibility with SCS v1 — see [Migrating](#migrating-from-scs-v1) |
 
-`<repo>` is the git top level (`git rev-parse --show-toplevel`). Outside a git repo, only the global layer applies — a component must still work in that case, since plenty of useful work happens in a scratch directory.
+`<repo>` is the git top level (`git rev-parse --show-toplevel`). The repo identity is the origin (`github.com/Owner/Name`), or an id minted by `agent-config repos register` for a repository with none. Outside a git repo, only the global layer applies — a component must still work in that case, since plenty of useful work happens in a scratch directory.
 
 `<name>` names one tool — the skill name, or the name a skill and its subagent share. One namespace, deliberately: a skill and its subagent are the same tool wearing two hats, and they should read the same file. Forcing two configs would make the user answer the same questions twice and then keep both copies in sync by hand. Pick one name per tool and use it from every component that serves that tool. A plugin holding several tools uses several names (`ml-workplace` reads both `fellow` and `atlassian`), and a name never changes when its plugin is renamed or regrouped. Names are directory names, so different tools never collide.
 
-Within each layer the legacy path is read first, so a value in the current path wins over the same value in the legacy one. That ordering is the safe one — a user who has written the new file has clearly chosen it, while the old file may be months stale, and letting it win would silently undo an edit the user just made.
-
 ### Merge semantics
 
-Deep merge, in order global → repo → local:
+Deep merge, in order global → repo → user-repo → local:
 
 - Objects merge key by key.
 - Scalars and **arrays replace wholesale**. Arrays are configuration values, not accumulators; a user overriding `["a","b"]` with `["c"]` means `["c"]`, and any other rule makes it impossible to remove an inherited entry.
@@ -49,14 +47,14 @@ Two reserved top-level keys; everything else is the component's own namespace.
 
 ```json
 {
-  "version": 1,
+  "schemaVersion": 1,
   "credentials": {
     "apiKey": { "source": "1password", "ref": "op://Vault/Item/field" }
   }
 }
 ```
 
-- `version` — integer, currently `1`. Lets a loader detect and migrate an older shape instead of crashing on it.
+- `schemaVersion` — the version of the component's declared schema the answers were written against. `agent-config write` stamps it, and saves a snapshot of that schema beside the file, so a later schema change can be migrated instead of misread.
 - `credentials` — map of logical name → credential reference (below).
 
 ## Credential references
@@ -116,7 +114,7 @@ Name it whatever a plain `env` source would use for the same secret. Then moving
 ### Resolution rules
 
 - Resolve **lazily** — only when a call actually needs the secret. Listing config shouldn't shell out to a password manager and trigger a Touch ID prompt.
-- Honour **`cacheVar`** before consulting `source`, so repeated invocations cost one prompt per shell session rather than one per process. Cache only in the environment: an env var dies with the shell, which is the property that makes it safe to hold a secret in. **Never write a resolved secret to disk** — no cache file, no TTL directory under `~/.cache`, no temp file. And never add a helper that prints the secret so the user can export it; the reference is already visible in `config show`, which is enough to write the `export` line by hand.
+- Honour **`cacheVar`** before consulting `source`, so repeated invocations cost one prompt per shell session rather than one per process. Cache only in the environment: an env var dies with the shell, which is the property that makes it safe to hold a secret in. **Never write a resolved secret to disk** — no cache file, no TTL directory under `~/.cache`, no temp file. And never add a helper that prints the secret so the user can export it; the reference is already visible in `agent-config describe`, which is enough to write the `export` line by hand.
 - **Never print, log, or echo a resolved secret**, and never pass it as a command-line argument (argv is world-readable via `ps`). Pass it through the environment or stdin.
 - On failure, report *which* reference failed and how to fix it — `op read op://Vault/Item/field failed: not signed in — run 'op signin'` — never dump the raw error and leave the user guessing.
 
@@ -124,12 +122,11 @@ Name it whatever a plain `env` source would use for the same secret. Then moving
 
 Config will be missing the first time, and that moment decides whether the tool feels finished or broken. A conforming skill or command must:
 
-1. **Detect** missing or incomplete config before doing any work, and treat it as an expected state rather than an error.
+1. **Detect** missing or incomplete config before doing any work, and treat it as an expected state rather than an error. `agent-config start <name>` does this: `ready: false` with an action list is a plan, not a failure.
 2. **Ask**, don't assume. Walk the user through the questions that actually matter — where their credential lives, which account/workspace to use, what output to keep and where.
 3. **Offer the layer with a reason.** Most users don't know whether a setting belongs in global or repo. Recommend one and say why: identity and credentials usually global, project identity repo, personal paths local.
-4. **Write the file** and tell the user the exact path.
-5. **Add the local file to `.gitignore`** when writing the local layer — append `.agents/config/*/config.local.json` to the repo's `.gitignore` if it isn't already matched. Doing this at write time is the only reliable moment; asking the user to remember is how secrets get committed.
-6. **Verify before declaring success** — resolve the credential and make one real call. "Configured" should mean "working", not "file written".
+4. **Write the layer with `agent-config write`** and tell the user the exact path. Never with a file-writing tool: `write` refuses an inlined secret and a value the declared schema refuses, stamps the schema version, journals the previous contents, and gitignores the local layer. Doing that at write time is the only reliable moment; asking the user to remember is how secrets get committed.
+5. **Verify before declaring success** — the component's `verify` action resolves the credential and makes one real call. "Configured" should mean "working", not "file written".
 
 Onboarding should be re-runnable so users can change their minds without hand-editing JSON.
 
@@ -141,11 +138,13 @@ A subagent reads config exactly as above — same paths, same merge, same refere
 
 **Treat credential failure as data.** A credential reference can require a human: Touch ID for the keychain, `op signin` for 1Password, an unlocked vault for a `command` source. A subagent cannot assume any of those prompts get answered, so it must not block on one indefinitely. On failure or timeout it returns the failing logical name, the source, and the fix as part of its result, and exits non-zero. A hang is the worst outcome available — the caller learns nothing and waits forever, whereas a reported failure lets the caller ask the human once and retry.
 
+`agent-config load` makes both structural: it never returns an action list, exits 2 naming the missing keys, and exits 3 naming the unresolvable reference and its fix. A subagent whose whole config surface is `load` has nothing to onboard with.
+
 Both rules are testable the same way: run the subagent with no config file, and again with a deliberately broken credential reference. It must terminate promptly in both cases, naming what is missing, and must never emit a question.
 
 ## Component-specific keys
 
-Beyond `version` and `credentials`, the component owns its namespace. Because `<name>` is shared, so are the keys — name them for the tool, not for whichever component happens to read them first. Two conventions worth following because they recur:
+Beyond `schemaVersion` and `credentials`, the component owns its namespace. Because `<name>` is shared, so are the keys — name them for the tool, not for whichever component happens to read them first. Two conventions worth following because they recur:
 
 **Storage paths** — when a component writes artifacts, let the user say where and whether at all:
 
@@ -163,32 +162,17 @@ Relative paths resolve from the repo root; `~` expands to home. Supporting both 
 
 **Say what a key holds.** A key holding more than text — a number, a fixed set of values, an object, a map of named entries — declares it as JSON Schema in its key entry (`type`, `enum`, `properties`, `additionalProperties`, `items`; shared shapes in `schema.$defs`). `write` then refuses a value no consumer could read, and the `/agent-config` pane draws a field for each part instead of a line of JSON. The keywords are listed in `plugins/ml-agent-config/docs/working-actions.md`, under "What a key holds".
 
-## Using the shared library
+## Declaring and reading config
 
-The canonical implementation is [`plugins/ml-agent-config`](../plugins/ml-agent-config): a skill that teaches this protocol, plus `lib/config.ts` (layer paths, merge, gitignore, validation) and `lib/credentials.ts` (resolution) beside it. Those files define the API — read the signatures there rather than trusting a copy of them in prose.
+There is no importable library. The `agent-config` CLI in [`plugins/ml-agent-config`](../plugins/ml-agent-config) is the only interface, which is what stops a credential resolver spreading by copy the way v1's vendored one did. A component:
 
-Consumers **vendor** both files verbatim into `scripts/lib/vendor/agent-config/`, under a provenance header naming the canonical path plus the sync and check commands, then a sentinel line — everything below it is canonical bytes. A runtime dependency between plugins would break whenever a user has one installed and not the other; a copy always works. Drift is caught by diffing below the sentinel rather than against a recorded commit hash: a hash churns the vendored file on every sync even when the content is identical, and it misses the case that actually happens — someone editing the copy. Run `plugins/ml-agent-config/skills/setup/scripts/vendor.sh sync` to refresh every copy, and `vendor.sh check` to fail when any has drifted.
+1. **Declares its keys** in `agent-config.json` — at the plugin root for a one-tool plugin, in `skills/<skill>/` for a plugin holding several. Each key has a description, a recommended layer, a default when it has one (a key with none is required), and JSON Schema for what it holds. Keys that only matter in some setups go in a `groups` entry with a `when` condition. The format is [`agent-config.schema.json`](../plugins/ml-agent-config/agent-config.schema.json).
+2. **Ships its actions** beside the declaration, in `actions/`: `onboard.md` (the questions, written for the agent) when any key is required, and `verify.md` (one real call).
+3. **Starts its skill with the five lines** from [`working-actions.md`](../plugins/ml-agent-config/docs/working-actions.md) — find the binary, `agent-config start <name>`, branch on `ready`.
+4. **Reads config in its scripts with `agent-config load <name> --from <skill dir>`**: config on stdout, requested secrets as one JSON object on fd 3, never on stdout, argv or disk. It writes with `agent-config write`, reading the layer first, since `write` replaces it.
+5. **Depends on `ml-agent-config`** in its `plugin.json`, so installing the component installs the CLI.
 
-A component's own `lib/config.ts` then holds three things and nothing else — its config interface, its `validate()`, and thin re-exports so callers never import the vendor path directly:
-
-```ts
-import { loadConfig as load, validateCredentialRef, type BaseConfig } from "./vendor/agent-config/config";
-
-const NAME = "fellow";
-
-export interface FellowConfig extends BaseConfig {
-  workspace?: { subdomain?: string };
-}
-
-export const loadConfig = () => load<FellowConfig>(NAME);
-
-export function validate(c: FellowConfig): string[] {
-  const problems = c.workspace?.subdomain ? [] : ["workspace.subdomain is not set"];
-  return [...problems, ...validateCredentialRef("apiKey", c.credentials?.apiKey)];
-}
-
-export { repoRoot, expandPath, type Layer } from "./vendor/agent-config/config";
-```
+Worked example: fellow — [`agent-config.json`](../plugins/ml-workplace/skills/fellow/agent-config.json), [`actions/`](../plugins/ml-workplace/skills/fellow/actions), and [`scripts/lib/config.ts`](../plugins/ml-workplace/skills/fellow/scripts/lib/config.ts), which spawns the CLI and types what it answers.
 
 ## Documenting it
 
@@ -196,20 +180,18 @@ Ship a `config.example.json` next to the component showing every supported key w
 
 ## Migrating from SCS v1
 
-The previous standard, Skill Config Standard v1, used `.agents/skill-config/<skill>/`. Those files are still read, at lower precedence within each layer, so existing setups keep working untouched. This is a compatibility fallback, not a second supported location: write only to `.agents/config/`, and document only `.agents/config/`.
-
-agent-config v2 does this for you: when a v1 file's layer has no `.agents/config/` file yet, `agent-config start` emits an `agent-config:adopt` action that copies it over (`agent-config adopt <name>`), and leaves the old file in place. By hand, move the directory (`mv .agents/skill-config/<name> .agents/config/<name>`, and the same under `~`) and update the ignore pattern in `.gitignore` from `.agents/skill-config/*/config.local.json` to `.agents/config/*/config.local.json`. A component that reads a legacy file should say so once, naming both paths, so the user knows a move is available. No removal date is set; the fallback is read indefinitely until one is.
+The previous standard, Skill Config Standard v1, used `.agents/skill-config/<skill>/`. v2 does not read those files. When a v1 file's layer has no `.agents/config/` file yet, `agent-config start` emits an `agent-config:adopt` action ahead of onboarding, which copies it over through `write` (`agent-config adopt <name>`) and leaves the old file in place. When both exist, only the new one is read and `start` reports the old one as a `legacy-config-path` problem. Write and document only `.agents/config/`.
 
 ## Checklist
 
-- [ ] Reads global → repo → local with deep merge, `null` deletes, arrays replace
-- [ ] Within a layer, `.agents/config/` wins over legacy `.agents/skill-config/`
+- [ ] Declares every key it reads in `agent-config.json`, with a description, layer, default where there is one, and JSON Schema for anything more than text
+- [ ] Reads config only through `agent-config load`, and writes only through `agent-config write`
 - [ ] Works with only the global layer (outside a git repo)
 - [ ] A plugin's skill and subagent load the same `<name>`
 - [ ] No secret is ever written to a config file
-- [ ] Secrets resolve lazily, honour `cacheVar` before their source, and never reach argv, logs, stdout, or disk
-- [ ] Missing config triggers onboarding in a skill — and in a subagent, a report naming the missing keys and their path, never a question
+- [ ] Secrets arrive on fd 3 of `load`, and never reach argv, logs, stdout, or disk
+- [ ] Missing config triggers onboarding in a skill (`start` → `onboard` action) — and in a subagent, `load`'s report naming the missing keys, never a question
 - [ ] A subagent with an unresolvable credential exits non-zero naming the reference, rather than blocking on a prompt
-- [ ] Onboarding gitignores `.agents/config/*/config.local.json` and verifies with a real call
-- [ ] Vendored library files carry a provenance header and match the canonical copy
+- [ ] A `verify` action makes one real call
+- [ ] `plugin.json` depends on `ml-agent-config`
 - [ ] `config.example.json` documents every key

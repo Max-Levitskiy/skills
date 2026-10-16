@@ -57,67 +57,35 @@ Everything else adapts to the project; these do not.
 **Optional.** With no config at all the skill discovers the project's tracker in Phase 1 and
 runs on defaults; config only caches those decisions so you stop re-making them.
 
-Three layers under `.agents/config/orchestrate/` — global, repo, local, later wins — per the
-[Agent Config Standard](https://github.com/Max-Levitskiy/skills/blob/main/standards/agent-config.md).
-Throughout this document, `$O` means the bundled config CLI:
+Run this first, before decomposing anything:
 
 ```bash
-O="<this-skill-dir>/scripts/orchestrate-config.ts"   # installed as a plugin:
-                                                     # $CLAUDE_PLUGIN_ROOT/skills/orchestrate/scripts/orchestrate-config.ts
-bun "$O" help
+AC=$(command -v agent-config || ls -d "$HOME"/.claude/plugins/cache/*/ml-agent-config/*/bin/agent-config \
+     "${CODEX_HOME:-$HOME/.codex}"/plugins/cache/*/ml-agent-config/*/bin/agent-config 2>/dev/null | tail -1)
+"$AC" start orchestrate
 ```
 
-**Run this once at the start of an orchestration**, before decomposing anything:
+Prints JSON. `ready: true` → proceed. `ready: false` → read the file at `guide` and follow it to work the `actions` list, then re-run. An empty `$AC` or `command not found` means agent-config isn't installed; tell the user and offer to install it from https://github.com/Max-Levitskiy/skills/tree/main/plugins/ml-agent-config.
 
-```bash
-bun "$O" check
-```
-
-- **Exits 0 (ready)** → use the settings it prints. They replace the discovery steps in
-  Phase 1: the tracker is already chosen, and so are the questions path and model tiers.
-- **Exits 2 with "No configuration yet"** → the expected first-run state, not an error.
-  Run [Onboarding](#onboarding). Never report it to the user as a failure.
-- **Exits 2 with "not ready"** → config exists but is incomplete; it lists exactly which
-  keys are missing. Fix those keys, don't rewrite the user's config.
+Use the `config` it prints. A set `tracker.kind` replaces the tracker discovery in Phase 1, and
+the questions path, model tiers and `defaults` apply as given. An empty `tracker.kind` is the
+unconfigured state, not an error: discover the tracker in Phase 1, then offer to save what you
+found by following `actions/onboard.md` next to this file. A config still at the old
+`.agents/skill-config/orchestrate/` path is copied over by the `agent-config:adopt` action before
+anything is asked.
 
 `tracker.kind` is one of `file`, `tasknotes`, `github`, `jira`, `linear`. The first two are
-local and need no credential, so a `file` tracker is a complete secret-free setup; only the
-three hosted trackers engage the credential path at all. Orchestrate's own keys —
-`questions.path`, `questions.human`, `models.judgment`, `models.mechanical`, and `defaults`
-— are documented with realistic values in `config.example.json` next to this file.
-
-### Onboarding
-
-Only when `check` reports missing configuration. **The `ml-agent-config:setup` skill owns the
-walkthrough** — which layer, credential-reference sources and their shapes, writing,
-gitignoring. Four questions are orchestrate's own; use `AskUserQuestion` so the user picks
-rather than types.
-
-1. **Where should work packages be tracked?** Look before asking and put the discovered
-   option first: an existing `tasks.md` or `TODO.md` (`file`), a task folder with frontmatter
-   task files such as Obsidian TaskNotes (`tasknotes`), or GitHub / Jira / Linear. If nothing
-   exists, recommend `file` with a new `tasks.md` next to the work — no credential, no setup.
-2. **Where does the credential live** — only for `github`, `jira`, `linear`. GitHub needs
-   none at all when `gh auth status` already succeeds; offer that first. If the source can
-   prompt (1Password, Keychain), add `cacheVar` to the reference and give the user the
-   one-line `export` that seeds it: orchestrate runs many short-lived processes, and without
-   it each one re-resolves the secret and raises its own Touch ID prompt.
-3. **Where do question docs collect, and who answers them** — `questions.path`,
-   `questions.human`.
-4. **Model tiering** — which model for judgment-heavy drafting versus mechanical work. Offer
-   to skip; unset means every worker inherits the session model.
-
-Then write it and confirm it works:
+local and need no credential; GitHub uses the `gh` CLI's login unless a token is configured; Jira
+and Linear need one. Every key is described in `agent-config.json` and shown with realistic values
+in `config.example.json`, both next to this file. The bundled CLI shows and checks what is set:
 
 ```bash
-echo '<layer JSON>' | bun "$O" write repo   # or: global | local
-bun "$O" verify                             # resolves the credential, makes one real call
+O="<this-skill-dir>/scripts/orchestrate-config.ts"
+bun "$O" show     # layers, effective settings and the layer each came from
+bun "$O" verify   # resolves the credential, makes one real call to the tracker
 ```
 
-`write` rejects a secret inlined in `credentials` and gitignores the local layer for you.
-**Onboarding is not finished until `verify` prints OK** — "configured" means working, not
-"file written". To change an answer, write the layer again; `bun "$O" show` prints the merged
-result with credentials described, never revealed.
+**Configured means `verify` printed OK**, not that a file was written.
 
 ## Phase 1 — Setup
 
@@ -126,7 +94,7 @@ terminology doc the project marks as canonical, style conventions, past feedback
 Every worker prompt will carry a "read these first" list built from what you find here.
 Orchestrating without this produces fluent, wrong output at scale.
 
-**Settle the tracker; never import your own.** If `check` printed a `tracker.kind`, that
+**Settle the tracker; never import your own.** If `start` printed a non-empty `tracker.kind`, that
 is the answer — use it. Otherwise look for what the project already uses: a tasks folder
 with frontmatter task files (e.g. Obsidian TaskNotes — needs `tags: [task]` and the
 project's field conventions), a `task-index.md` / `TODO.md`, GitHub issues (`gh`).
