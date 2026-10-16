@@ -452,7 +452,10 @@ describe("watch", () => {
     const { result, stdout } = start();
     herdr.status(result.herdrAgent, "working");
     const first = watching(stdout);
-    await Bun.sleep(200);
+    const end = Date.now() + 5000;
+    while (!(existsSync(join(work, "1.watch")) && readFileSync(join(work, "1.watch"), "utf8").trim() === "busy") && Date.now() < end) {
+      await Bun.sleep(25);
+    }
     first.child.kill();
     await first.child.exited;
 
