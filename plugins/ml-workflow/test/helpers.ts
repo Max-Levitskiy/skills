@@ -170,6 +170,11 @@ export class FakeHerdr {
     else rmSync(join(this.dir, "down"), { force: true });
   }
 
+  /** Makes the next `count` `agent start` calls fail as a pane whose shell is not at its prompt yet. */
+  shellLate(count: number) {
+    writeFileSync(join(this.dir, "shell-late"), String(count));
+  }
+
   /** Sets what `status server --json` prints in place of the recorded answer. */
   server(answer: string) {
     writeFileSync(join(this.dir, "server.json"), answer);

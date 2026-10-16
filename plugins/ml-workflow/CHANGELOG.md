@@ -2,6 +2,10 @@
 
 What each ml-workflow version changed. Every change to the plugin raises the version and adds its section here with `bun scripts/plugin-version.ts bump` (AGENTS.md, Releasing a plugin). Versions up to 0.9.0 are in the git history of `.claude-plugin/plugin.json`.
 
+## 0.11.1
+
+- Opening a watched step's pane no longer loses a try when the pane's shell is slow to its prompt: start tries agent start again for up to 60 s while no Claude holds the session (skills#119).
+
 ## 0.11.0
 
 - The reference coding loop is the end-to-end check: a gated spec kills it at every row of the C11 table with the real spore, claude and herdr, for background and watched implement, and docs/release-check.md lists what to check by hand in Claude Code before a release (skills#68).
