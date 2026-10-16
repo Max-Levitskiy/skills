@@ -6,12 +6,14 @@ on:
       - plugins/ml-workflow/**
       - .claude-plugin/marketplace.json
       - .github/workflows/ml-workflow.yml
+      - scripts/plugin-version*
   push:
     branches: [main]
     paths:
       - plugins/ml-workflow/**
       - .claude-plugin/marketplace.json
       - .github/workflows/ml-workflow.yml
+      - scripts/plugin-version*
 
 permissions:
   contents: read
@@ -79,6 +81,25 @@ jobs:
       - run: claude --version
       - run: claude plugin validate plugins/ml-workflow
       - run: claude plugin test plugins/ml-workflow
+
+  version:
+    name: version raised
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun test ./scripts/
+      # `claude plugin update` compares versions only: a change merged at the old version never
+      # reaches an installed copy (skills#115). Against the base branch's tip, so two pull
+      # requests that raise it to the same version cannot both merge. A pull request is checked out
+      # as its merge commit, whose first parent is that tip.
+      - run: bun scripts/plugin-version.ts check ml-workflow "$BASE"
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && 'HEAD^1' || github.event.before }}
 
   naming:
     name: plugin naming

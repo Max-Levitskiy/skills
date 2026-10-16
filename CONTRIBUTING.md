@@ -81,6 +81,8 @@ Test locally before pushing:
 
 Run `bash scripts/validate-naming.sh` — it must end with `Naming is valid.`
 
+Every later change to the plugin raises its `version`, or `claude plugin update` keeps the old copy: see AGENTS.md § Releasing a plugin.
+
 Then open a pull request. Also add a row to the **Plugins** table in the [README](README.md).
 
 ## References
