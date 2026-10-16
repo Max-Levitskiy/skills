@@ -64,11 +64,14 @@ Each sub-skill approves `spore` and `claude-spore` for the turn it runs in. To s
 
 **Following a run.** `start` and `continue` run `spore continue <runId> --wait --json` in the background and end the turn. When the run needs you or ends, Claude says so in one line and offers what to do right there: the outcomes of a decision, Retry, Mark done or Fail for a stuck step, the release of a quarantine, the claim line of a step waiting for its actor, or that a watched step waits for you in its pane. After you act it follows again; a watched step needs nothing typed here, so Claude says it once and keeps following until the pane's answer lands. Closing Claude stops the follow; the run stays where it was, and `/ml-workflow:continue` picks it up. Only outcomes the run lists are offered.
 
-**The run line and the live view.** While Claude follows a run, a line above the prompt says where it is, refreshed once a second, with `needs you` when it waits for you and a `view` button (hotkey `v`):
+**The run line and the live view.** While Claude follows a run, a line above the prompt says where it is and for how long, refreshed once a second, led by `needs you` when it waits for you, with a `view` button (hotkey `v`):
 
 ```text
-coding-loop-0238a2a3 at implement, visit 3, from test on red, try 1/3, red 2/3 in a row  [ view ]
+coding-loop-0238a2a3 at implement for 13 min, visit 3, from test on red, try 1/3, red 2/3 in a row [ view ]
+needs you  nightly-mon at publish for 2 min, visit 2, from check on ok [ view ]
 ```
+
+A narrow terminal gets the arrow cut down (`from check:ok`), then left out, before the line is cut.
 
 `view`, the menu's View or `/ml-workflow:view` opens the live view: the workflow drawn from the `workflow.dot` the run pinned, the current node in yellow and the arrow just taken in orange, beside `workflow.dot`, the node's `settings.json` lines and the head of its instructions (`more` for all of it). Where Claude Code draws pictures (kitty, Ghostty) it is a Graphviz picture; elsewhere, herdr included, a drawing in Braille dots. Graphviz and resvg ship inside the plugin as WebAssembly (`vendor/`), so nothing else is installed; `claude-spore draw --run <runId> --png <file>` or `--plain` draws a run outside Claude. Nothing is polled while neither the line nor the view shows.
 

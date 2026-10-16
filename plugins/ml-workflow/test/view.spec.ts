@@ -97,11 +97,13 @@ const at = (nodeId: string, visit: number, from: [string, string] | null = null)
   from: from && { nodeId: from[0], outcome: from[1] },
 });
 
-test("a running run: node and visit, the arrow just taken, the try and the loop count", () => {
+const MIN = 60_000;
+
+test("a running run: node, how long it has stood there and visit, the arrow just taken, the try and the loop count", () => {
   status("run_a", {
     position: at("implement", 3, ["test", "red"]),
     invocation: { attempt: 1, maxAttempts: 3, state: "scheduled" },
-    running: { attempt: 1, maxAttempts: 3, state: "started" },
+    running: { attempt: 1, maxAttempts: 3, state: "started", sinceMs: "0", forMs: String(13 * MIN + 20_000) },
     streaks: { test: { outcome: "red", count: 2, limit: 3 } },
   });
   const { exitCode, report } = helper(["line", "run_a", "--json"]);
@@ -110,18 +112,34 @@ test("a running run: node and visit, the arrow just taken, the try and the loop 
     runId: "run_a",
     db: DB,
     name: "coding-loop-0238a2a3",
-    text: "coding-loop-0238a2a3 at implement, visit 3, from test on red, try 1/3, red 2/3 in a row",
+    text: "coding-loop-0238a2a3 at implement for 13 min, visit 3, from test on red, try 1/3, red 2/3 in a row",
+    // The arrow cut down, then dropped, for a band too narrow for the whole line.
+    shorter: [
+      "coding-loop-0238a2a3 at implement for 13 min, visit 3, from test:red, try 1/3, red 2/3 in a row",
+      "coding-loop-0238a2a3 at implement for 13 min, visit 3, try 1/3, red 2/3 in a row",
+    ],
     needsYou: false,
     ended: false,
   });
   expect(calls()).toEqual(["status run_a --json --no-probe"]);
 });
 
-test("a run waiting for a decision needs you", () => {
-  status("run_b", { status: "waiting", position: at("approve", 1, ["test", "ok"]), waiting: { nodeId: "approve", signal: "approval" } });
-  expect(helper(["line", "run_b", "--json", "--db", DB]).report).toMatchObject({ text: "coding-loop-0238a2a3 at approve, visit 1, from test on ok", needsYou: true });
+test("a run waiting for a decision needs you, and says so first", () => {
+  status("run_b", { status: "waiting", position: at("approve", 1, ["test", "ok"]), waiting: { nodeId: "approve", signal: "approval", sinceMs: "0", forMs: "40000" } });
+  expect(helper(["line", "run_b", "--json", "--db", DB]).report).toMatchObject({ text: "coding-loop-0238a2a3 at approve for 40 s, from test on ok", needsYou: true });
   expect(calls()).toEqual([`status run_b --json --no-probe --db ${DB}`]);
-  expect(helper(["line", "run_b"]).stdout).toBe("coding-loop-0238a2a3 at approve, visit 1, from test on ok, needs you\n");
+  expect(helper(["line", "run_b"]).stdout).toBe("needs you  coding-loop-0238a2a3 at approve for 40 s, from test on ok\n");
+});
+
+test("a first visit says no visit, a stuck step how long it has been stuck, and a try in backoff no time", () => {
+  status("run_s", { startKey: "nightly-tue", position: at("build", 1), invocation: { attempt: 1, maxAttempts: 3 }, running: { state: "started", forMs: String(13 * MIN) } });
+  status("run_t", { status: "needs-intervention", position: at("test", 2, ["implement", "ok"]), intervention: { reason: "stuck", forMs: String(2 * 60 * MIN) } });
+  status("run_u", { position: at("test", 1), invocation: { attempt: 2, maxAttempts: 3 }, running: { state: "backoff", forMs: "0" } });
+  expect(["run_s", "run_t", "run_u"].map((id) => helper(["line", id, "--json"]).report)).toMatchObject([
+    { text: "nightly-tue at build for 13 min, try 1/3", shorter: [] },
+    { text: "coding-loop-0238a2a3 at test for 2 h, visit 2, from implement on ok", needsYou: true },
+    { text: "coding-loop-0238a2a3 at test, try 2/3" },
+  ]);
 });
 
 test("a try past the action's limit, after a person's retry, says so", () => {
@@ -129,7 +147,7 @@ test("a try past the action's limit, after a person's retry, says so", () => {
     position: at("implement", 1),
     invocation: { attempt: "4", maxAttempts: "3", state: "scheduled" },
   });
-  expect(helper(["line", "run_c", "--json"]).report.text).toBe("coding-loop-0238a2a3 at implement, visit 1, try 4 (past the limit of 3)");
+  expect(helper(["line", "run_c", "--json"]).report.text).toBe("coding-loop-0238a2a3 at implement, try 4 (past the limit of 3)");
 });
 
 test("a stuck step, a quarantine and a ready step for a person need you; an actor's step does not", () => {
@@ -146,7 +164,7 @@ test("an ended run says how it ended, and is ended", () => {
   status("run_j", { status: "cancelled", position: at("implement", 2), cancel: { reason: null } });
   status("run_k", { position: null });
   expect(["run_h", "run_i", "run_j", "run_k"].map((id) => helper(["line", id, "--json"]).report)).toMatchObject([
-    { text: "coding-loop-0238a2a3 completed at done, from approve on approved", ended: true, needsYou: false },
+    { text: "coding-loop-0238a2a3 completed at done, from approve on approved", shorter: ["coding-loop-0238a2a3 completed at done, from approve:approved", "coding-loop-0238a2a3 completed at done"], ended: true, needsYou: false },
     { text: "coding-loop-0238a2a3 failed at stopped, from tests_stuck on stop", ended: true },
     { text: "coding-loop-0238a2a3 cancelled at implement", ended: true },
     { text: "coding-loop-0238a2a3, not started yet", ended: false },

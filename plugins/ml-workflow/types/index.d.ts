@@ -11,8 +11,8 @@ export type MenuRow = { key: string; label: string; options: MenuOption[] }
 /** The rows, or why there are none: the helper's first stderr line, or that it gave no rows. */
 export type Menu = { rows: MenuRow[]; problem: string | null }
 
-/** `claude-spore line --json`: one run line. */
-export type RunLine = { runId: string; db: string | null; name: string; text: string; needsYou: boolean; ended: boolean }
+/** `claude-spore line --json`: one run line, and the shorter forms of its text for a narrow band. */
+export type RunLine = { runId: string; db: string | null; name: string; text: string; shorter?: string[]; needsYou: boolean; ended: boolean }
 
 /** A run the session follows, newest first, with its line once the helper gave one. */
 export type Followed = { runId: string; db: string | null; line: RunLine | null }

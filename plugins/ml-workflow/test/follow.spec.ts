@@ -274,7 +274,16 @@ describe.skipIf(!follows())(`following a run under a real spore ${version ?? ""}
     };
     const line = helper("line", runId, "--db", db, "--json");
     expect({ exitCode: line.exitCode, stderr: line.stderr }).toEqual({ exitCode: 0, stderr: "" });
-    expect(JSON.parse(line.stdout)).toEqual({ runId, db, name: "stuck-00000016", text: "stuck-00000016 at build, visit 1, try 1/1", needsYou: true, ended: false });
+    // A first visit says none; the time is the stuck step's `forMs`, the seconds since it got stuck.
+    expect(JSON.parse(line.stdout)).toEqual({
+      runId,
+      db,
+      name: "stuck-00000016",
+      text: expect.stringMatching(/^stuck-00000016 at build for \d+ s, try 1\/1$/),
+      shorter: [],
+      needsYou: true,
+      ended: false,
+    });
 
     const view = JSON.parse(helper("view", runId, "--db", db, "--json").stdout);
     expect(view.facts).toBe("needs-intervention, at build, visit 1, try 1/1");
