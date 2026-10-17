@@ -71,7 +71,7 @@ stories. Override any of them in your user-repo or local layer.
 | `calibration.sample` | `40` | Closed stories studied |
 | `calibration.staleDays` | `90` | When to suggest recalibrating |
 | `github.project`, `github.field` | `""`, `Size` | Project board (`owner/number`) and its number field; empty means labels |
-| `github.labelPrefix` | `size:` | Label prefix |
+| `labelPrefix` | `size:` | Size label prefix, where sizes are labels |
 
 Needs [ml-agent-config](../ml-agent-config). Jira also needs `ml-workplace` and its `atlassian`
 skill configured.

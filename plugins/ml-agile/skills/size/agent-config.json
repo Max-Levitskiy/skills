@@ -70,8 +70,8 @@
         "default": "Size",
         "type": "string"
       },
-      "github.labelPrefix": {
-        "description": "Prefix of the size label on GitHub issues when no Project board is set, e.g. size: gives size:5 or size:M",
+      "labelPrefix": {
+        "description": "Prefix of the size label, e.g. size: gives size:5 or size:M. Used on GitHub when no Project board is set, and on Jira when the scale is labels and no select field holds them",
         "layer": "repo",
         "default": "size:",
         "type": "string",
