@@ -170,20 +170,20 @@ The estimators are subagents. Their context holds the story, the reference-story
 their role prompt. It never holds the whole backlog or the calibration evidence. Calibration
 reads closed stories in batches and keeps only a short summary per story.
 
-### Proposed agent-config keys (names are placeholders to refine during implementation)
+### agent-config keys (as implemented in `plugins/ml-agile/skills/size/agent-config.json`)
 
 | Key | Layer | Default | Meaning |
 | --- | --- | --- | --- |
 | `tracker` | repo | `auto` | `auto` (Jira if the Atlassian skill is configured, else GitHub from the remote), `jira`, `github` |
-| `scale.kind` | repo | `fibonacci` | `fibonacci`, `numbers`, `tshirt` |
-| `scale.values` | repo | `[1,2,3,5,8,13]` | ordered values; numbers or labels |
+| `scale` | repo | `[1,2,3,5,8,13]` | ordered values, smallest first; numbers or labels (a list of labels is a T-shirt scale, so no separate kind key) |
 | `referenceStories` | repo | `{}` | scale value → `{ key, title, why }`, plus a `calibratedAt` date |
-| `split.threshold` | repo | `13` | stories at or above this value get a split proposal |
+| `split.threshold` | repo | `""` | stories at or above this value get a split proposal; empty means the largest value, so it works for any scale |
 | `sweep.max` | repo | `20` | stories sized per sweep run |
 | `calibration.sample` | repo | `40` | closed stories studied per calibration |
 | `calibration.staleDays` | repo | `90` | age after which the skill nudges a recalibration |
-| `github.project` | repo | `""` | GitHub Project board whose number field holds points; empty means labels |
-| `github.labelPrefix` | repo | `size:` | label prefix when labels are used |
+| `github.project` | repo | `""` | GitHub Project board (`owner/number`) whose field holds the size; empty means labels |
+| `github.field` | repo | `Size` | the Project field's name: a number field, or single-select for a label scale |
+| `labelPrefix` | repo | `size:` | label prefix wherever sizes are labels (GitHub without a board; Jira with a label scale and no select field) |
 
 ## Verified facts
 
@@ -227,8 +227,6 @@ None. Nothing was deferred during the interview.
 
 ## Open threads
 
-- The agent-config key names above are placeholders. Settle them when writing
-  `agent-config.json`.
 - Whether the skill should later compare estimates with actual effort (a retro-style
   "were our 5s really 5s?") was not discussed. The user mentioned "maybe we'll add some more
   ways to do that"; this is a candidate for a second skill in the plugin.

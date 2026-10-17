@@ -16,6 +16,8 @@ from the role files.
 
 **Spec:** `docs/ml-agile-sizing-design.md`; issues #136 (parent), #137–#141.
 
+> Task 1 settled the final key names: `scale` (one ordered list, no `scale.kind`), `split.threshold` empty = largest value, `github.field`, and `labelPrefix`. The design doc's key table is authoritative.
+
 ## Global Constraints
 
 - Plugin `ml-agile`, skill directory and frontmatter `name: size`, invoked `/ml-agile:size` (ADR 0001).

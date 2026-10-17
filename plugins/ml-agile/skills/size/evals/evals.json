@@ -1,0 +1,69 @@
+{
+  "skill_name": "size",
+  "note": "Prompts a real user would type. Running these needs a tracker: a GitHub repo with open and closed issues, or a configured Atlassian skill. Assertions describe what the run should demonstrate, not exact output text.",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "size #142",
+      "expected_output": "A proposed size for the issue with three estimator votes and their reasoning, written to the tracker only after the user confirms.",
+      "files": [],
+      "assertions": [
+        "Runs `agent-config start size` before anything else",
+        "Reads references/size-one.md, references/poker.md and exactly one tracker file; does not read sweep.md or calibrate.md unless reference stories are missing",
+        "Launches three estimator subagents (developer, tester, risk) in parallel, none of whose briefs contain another estimator's vote",
+        "The proposed size is a value on config.scale",
+        "Asks for confirmation listing the exact write before running any tracker write command"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "go through the backlog and size everything that isn't pointed yet, I want to know what's not ready for sprint planning",
+      "expected_output": "A report table of at most sweep.max stories with size, confidence, refinement needs and any split proposals, followed by one confirmation for all writes.",
+      "files": [],
+      "assertions": [
+        "Reads references/sweep.md and references/poker.md, not calibrate.md (unless reference stories are missing)",
+        "Fetches at most sweep.max + 1 stories and says how many remain when there are more",
+        "Every row has a size, including low-confidence rows, with what is missing listed",
+        "Stories at or above the split threshold get a split into vertical slices, each child sized",
+        "Asks one confirmation covering every size and every child story before writing"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "our reference stories are getting old, recalibrate them",
+      "expected_output": "A proposal table of one closed story per scale value with a one-line reason, gaps named, and the confirmed set written to the repo layer.",
+      "files": [],
+      "assertions": [
+        "Reads references/calibrate.md and the tracker file only",
+        "Summarises closed stories through batch subagents rather than reading every story into the main session",
+        "Reports scale values with no fitting story as gaps instead of stretching a story to fill them",
+        "Writes referenceStories with calibratedAt through `agent-config write size --layer repo`, merged into the existing layer, after confirmation",
+        "Tells the user which file to commit"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "can we switch to t-shirt sizes instead of fibonacci?",
+      "expected_output": "The scale changed to ordered labels in the repo layer, followed by a recalibration against the new scale.",
+      "files": [],
+      "assertions": [
+        "Writes scale as an ordered label list (e.g. [\"XS\",\"S\",\"M\",\"L\",\"XL\"]) to the repo layer, preserving the layer's other keys",
+        "Starts calibration against the new scale",
+        "Leaves sizes already on tickets untouched",
+        "Does not edit config files with a file tool"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "estimate PROJ-7 for me",
+      "expected_output": "In a repo with no reference stories yet, a calibration first, then the estimate.",
+      "files": [],
+      "assertions": [
+        "Notices that referenceStories is empty and says in one line that it calibrates first",
+        "Picks Jira because the Atlassian skill reports ready, or asks when it does not",
+        "Finds the Story Points field and asks before saving it as the Atlassian skill's fields.points",
+        "Proceeds to single sizing of PROJ-7 after calibration is confirmed"
+      ]
+    }
+  ]
+}
