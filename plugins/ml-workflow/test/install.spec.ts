@@ -52,7 +52,7 @@ test("with no spore on PATH it installs into ~/.local/bin and checks it", () => 
   const { exitCode, stdout, stderr } = install([localBin()]);
   expect(stderr).toBe("");
   expect(exitCode).toBe(0);
-  expect(stdout).toBe(`Installed spore 0.2.1 at ${join(localBin(), "spore")}.\n`);
+  expect(stdout).toBe(`Installed spore 0.4.0 at ${join(localBin(), "spore")}.\n`);
   const installed = Bun.spawnSync([join(localBin(), "spore"), "capabilities", "--json"]);
   expect(JSON.parse(installed.stdout.toString())).toEqual(CAPABILITIES);
 });
@@ -61,7 +61,7 @@ test("an update replaces the copy PATH selects, in its own folder", () => {
   fakeSpore(join(bin, "spore"), null);
   const { exitCode, stdout } = install([bin, localBin()]);
   expect(exitCode).toBe(0);
-  expect(stdout).toBe(`Installed spore 0.2.1 at ${join(bin, "spore")}.\n`);
+  expect(stdout).toBe(`Installed spore 0.4.0 at ${join(bin, "spore")}.\n`);
   expect(existsSync(join(localBin(), "spore"))).toBe(false);
   expect(readdirSync(bin)).toEqual(["spore"]);
 });
@@ -72,8 +72,8 @@ test("a symlinked copy is replaced where the link points, and the link keeps wor
   Bun.spawnSync(["ln", "-s", real, join(bin, "spore")]);
   const { exitCode, stdout } = install([bin]);
   expect(exitCode).toBe(0);
-  expect(stdout).toBe(`Installed spore 0.2.1 at ${real}.\n`);
-  expect(readFileSync(real, "utf8")).toContain("0.2.1");
+  expect(stdout).toBe(`Installed spore 0.4.0 at ${real}.\n`);
+  expect(readFileSync(real, "utf8")).toContain("0.4.0");
 });
 
 test("an install whose folder is not on PATH is not reported as success", () => {

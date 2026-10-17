@@ -21,7 +21,7 @@ claude plugin install ml-workflow@max-skills --scope project
 |---|---|---|
 | Claude Code, in a terminal | **2.1.290** | every sub-skill, before anything else; the mod at session start. Older: `claude update` |
 | Bun | **1.2.0** | `claude-spore`, before anything else; it exits 2 naming the version. Older: `bun upgrade` |
-| [`spore`](https://github.com/Web-tree/runspore) | **0.2.0**, answering `spore capabilities` with the `cli`, `host`, `kernel` and `store` contracts at 0.2 | `claude-spore doctor`: the mod at session start, silent when it fits, and `start`, `status`, `continue` and `author` after the Claude Code check. Missing or older: one line with the install or update command, run only when you say yes |
+| [`spore`](https://github.com/Web-tree/runspore) | **0.4.0**, answering `spore capabilities` with the `cli`, `host`, `kernel` and `store` contracts at 0.2. Older releases lack `continue --wait` (0.2.0) or the fixes following a run relies on (0.3.0) | `claude-spore doctor`: the mod at session start, silent when it fits, and `start`, `status`, `continue` and `author` after the Claude Code check. Missing or older: one line naming the version needed, the one found and the install or update command, run only when you say yes |
 
 claude.ai and Cowork refuse a plugin with a top-level `bin/`, so this plugin is for terminal Claude Code only.
 
@@ -84,8 +84,6 @@ coding-loop-0238a2a3 at implement, attempt 2 of 3, paused 14 min ago
 ```
 
 With none, or when `spore` cannot list them, it shows nothing; when every run is running by itself, it gives no hint.
-
-Following and cancelling need a `spore` with `continue --wait` and `cancel`, which the v0.2.0 release predates. Until a release has them, build `spore` from runspore's main branch: `cargo install --git https://github.com/Web-tree/runspore --locked --force runspore-cli`.
 
 ## Background Claude steps
 

@@ -18,37 +18,31 @@ on:
 permissions:
   contents: read
 
-env:
-  # The helper's specs run against spore built from this commit (docs/spec.md, Testing): the
-  # v0.2.0 tag predates async commands (Web-tree/runspore#71), which the interactive step needs,
-  # and `continue --wait` and `cancel` (#73, #74), which following and cancelling a run need.
-  # Replace with the newest release and the oldest supported one once a release has them.
-  RUNSPORE_REF: 814764512eab0da8de936c30ce698e40079474bb
-
 jobs:
   helper:
-    name: claude-spore (bun test)
+    name: claude-spore (bun test, spore ${{ matrix.spore }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The oldest supported spore, SPORE_MINIMUM in src/version.ts, and the newest release
+        # (docs/spec.md, Testing).
+        spore: ["0.4.0", latest]
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
-        with:
-          repository: Web-tree/runspore
-          ref: ${{ env.RUNSPORE_REF }}
-          path: runspore
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: runspore
-      # The first cargo call installs the toolchain runspore's rust-toolchain.toml pins.
-      - name: Build spore
-        working-directory: runspore
-        run: cargo build --release --locked -p runspore-cli
+      # runspore's installer checks the release key's signature on SHA256SUMS and the archive's
+      # checksum; an empty SPORE_VERSION picks the newest release.
+      - name: Install spore
+        run: curl -fsSL https://raw.githubusercontent.com/Web-tree/runspore/main/install.sh | sh
+        env:
+          SPORE_VERSION: ${{ matrix.spore != 'latest' && matrix.spore || '' }}
+          SPORE_INSTALL_DIR: ${{ runner.temp }}/spore
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
       - run: bun test plugins/ml-workflow/test
         env:
-          SPORE: ${{ github.workspace }}/runspore/target/release/spore
+          SPORE: ${{ runner.temp }}/spore/spore
           REQUIRE_SPORE: "1"
 
   old-bun:

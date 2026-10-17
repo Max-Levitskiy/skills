@@ -114,7 +114,7 @@ Every JSON or text value below goes on the command line in single quotes, on one
 | no answer, exit 130 | was not followed to the end: the follow was stopped | that the run stays where it was | `/ml-workflow:continue <runId>` |
 | anything else | — | the last lines spore printed | nothing |
 
-A usage error (exit 2) about `--wait` means this `spore` predates following, as the v0.2.0 release does: say that the run was started and waits where it is, that ml-workflow follows runs with `spore continue --wait`, which a `spore` built from runspore's main branch has until a release does, and give `cargo install --git https://github.com/Web-tree/runspore --locked --force runspore-cli`. Run it only on a yes.
+A usage error (exit 2) about `--wait` means this `spore` predates following, as releases before 0.4.0 do: say that the run was started and waits where it is, that ml-workflow follows runs with `spore continue --wait`, which every release from 0.4.0 has, and give `claude-spore install-spore`. Run it only on a yes.
 
 **A decision.** Say which node waits (`waiting.nodeId`), for which signal (`waiting.signal`), since when (`waiting.forMs`). Run `spore step show <runId> --json --db <db>`; when it names an `instructions` file, read it and give its gist in a line or two, since it says what each outcome means. Ask the person to choose one of `waiting.outcomes`, each its own option, and end the turn. When the chosen outcome has a schema in `waiting.outputSchemas`, also ask for its data, drafted from the conversation, and check it fits the schema. Then send, and follow again:
 

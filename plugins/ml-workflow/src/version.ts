@@ -6,11 +6,12 @@ export const CLAUDE_CODE_MINIMUM = "2.1.290";
 
 // The plugin's version for the mod, which cannot import `.claude-plugin/plugin.json`: a hooks
 // module loads only script files. test/claude-spore.spec.ts holds it equal to the manifest's.
-export const PLUGIN_VERSION = "0.11.2";
+export const PLUGIN_VERSION = "0.11.3";
 
 // The oldest supported spore, and the contracts of `spore capabilities` the plugin drives
-// (docs/spec.md, p.3). Below 1.0 a contract's range is its one minor version.
-export const SPORE_MINIMUM = "0.2.0";
+// (docs/spec.md, p.3). Below 1.0 a contract's range is its one minor version. 0.4.0 is the first
+// release with `continue --wait`, `cancel` and the checkpoint E and F fixes the skills rely on.
+export const SPORE_MINIMUM = "0.4.0";
 export const SPORE_CONTRACTS: Record<string, string> = { cli: "0.2", host: "0.2", kernel: "0.2", store: "0.2" };
 
 /** Whether a contract version `have` (`major.minor`) is in the range of the supported `need`. */
