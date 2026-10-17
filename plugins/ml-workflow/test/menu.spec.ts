@@ -148,6 +148,24 @@ test("a step for its actor to claim shows the step; a quarantine names its code 
   ]);
 });
 
+test("a cut-off try, a run waiting on the runs it started, and a need this plugin does not know continue", () => {
+  listed([
+    row("run_m", { startKey: "coding-loop-dffdb9f2", nodeId: "implement", needs: "driver", since: ago(2 * MIN) }),
+    row("run_n", { startKey: "build-0-2", nodeId: "tickets", needs: "child", since: ago(5 * MIN) }),
+    row("run_o", { startKey: "coding-loop-13131313", nodeId: "implement", needs: "elsewhere", since: ago(MIN) }),
+  ]);
+  status("run_m", { running: { attempt: "1", maxAttempts: "3", state: "cut-off", cutOff: { reason: "worker-gone", message: "worker w1 is gone", commands: ["spore continue run_m"] } } });
+  expect(menu().report.rows.slice(0, 3)).toEqual([
+    {
+      key: "run:run_m",
+      label: "coding-loop-dffdb9f2 at implement, attempt 1 of 3 was cut off 2 min ago; nothing is running it",
+      options: [opt("Continue", "continue", "run_m"), ...tail("run_m")],
+    },
+    { key: "run:run_n", label: "build-0-2 at tickets, waiting for the runs it started for 5 min", options: [opt("Continue", "continue", "run_n"), ...tail("run_n")] },
+    { key: "run:run_o", label: "coding-loop-13131313 at implement, elsewhere for 1 min", options: [opt("Continue", "continue", "run_o"), ...tail("run_o")] },
+  ]);
+});
+
 test("the project's workflows by graph id start; with one, a workflow can be changed", () => {
   listed([]);
   workflow("coding-loop", '// The reference loop.\ndigraph "coding-loop" {\n  start -> done\n}\n');
@@ -202,7 +220,7 @@ test("without --json each row and its options are printed with their commands", 
 });
 
 test("every command a row hands to is a sub-skill, and every act action one act takes", () => {
-  const needs = ["signal", "stuck", "held", "external-ready", "working", "quarantined", "capability-missing"];
+  const needs = ["signal", "stuck", "held", "external-ready", "working", "driver", "child", "quarantined", "capability-missing"];
   listed(needs.map((need, i) => row(`run_${i}`, { nodeId: "n", needs: need, since: ago(MIN) })));
   status(`run_${needs.indexOf("held")}`, { step: { holder: { herdrAgent: "sp-n-0a1b2c3d4e" } } });
   workflow("coding-loop", 'digraph "coding-loop" {}\n');

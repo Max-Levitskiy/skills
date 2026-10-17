@@ -103,7 +103,8 @@ function userInstall(): string | null {
 
 type Ended = { code: number | null; signal: string | null; json: any; stdout: string; stderr: string };
 type Process = { pid: number; done: Promise<Ended> };
-type Shown = { needs: string | null; options: string[]; line: RegExp; needsYou: boolean; here?: string };
+/** `needs` is what `list --unfinished` says, or any of several where spore's table allows each; `start` the run's session-start line. */
+type Shown = { needs: string | string[] | null; options: string[]; line: RegExp; needsYou: boolean; here?: string; start?: RegExp };
 
 function parse(text: string): any {
   try {
@@ -321,7 +322,8 @@ class Project {
   /** What the person sees of the run: the start line, the menu row, the run line and the live view. */
   shows(run: string, key: string, want: Shown) {
     const listed = this.spore("list", "--unfinished", "--json").json.runs.find((r: { runId: string }) => r.runId === run);
-    expect(listed?.needs ?? null).toBe(want.needs);
+    if (Array.isArray(want.needs)) expect(want.needs).toContain(listed?.needs);
+    else expect(listed?.needs ?? null).toBe(want.needs);
     const lines: string[] = this.helper("unfinished", "--json").json?.lines ?? [];
     const rows: { key: string; options: { label: string }[] }[] = this.helper("menu", "--json").json.rows;
     const row = rows.find((r) => r.key === `run:${run}`);
@@ -330,6 +332,7 @@ class Project {
       expect(row).toBeUndefined();
     } else {
       expect(lines.some((l) => l.startsWith(key))).toBe(true);
+      if (want.start) expect(lines.find((l) => l.startsWith(key))).toMatch(want.start);
       expect(row?.options.map((o) => o.label)).toEqual(want.options);
     }
     const line = this.helper("line", run, "--db", this.db, "--json").json;
@@ -395,7 +398,7 @@ for (const form of FORMS) {
       });
 
       if (background) {
-        test("implement, try 1 cut off mid-turn: working, and try 2 resumes the same conversation", async () => {
+        test("implement, try 1 cut off mid-turn: driver, and try 2 resumes the same conversation", async () => {
           const follower = p.follower(run);
           const session = await until("Claude's first turn", () => {
             const call = p.calls()[0];
@@ -403,7 +406,14 @@ for (const form of FORMS) {
           });
           await p.killSession(follower);
           expect(p.status(run)).toMatchObject({ status: "running", position: { nodeId: "implement" } });
-          p.shows(run, key, { needs: "working", options: WORKING, line: new RegExp(`^${key} at implement.*, try 1/3$`), needsYou: false, here: "implement" });
+          p.shows(run, key, {
+            needs: "driver",
+            options: WORKING,
+            line: new RegExp(`^${key} at implement.*, try 1/3$`),
+            needsYou: false,
+            here: "implement",
+            start: new RegExp(`^${key} at implement, attempt 1 of 3 was cut off \\d+ (s|min) ago; nothing is running it$`),
+          });
 
           // Coming back: the next try resumes once the lease has run out, and Claude finishes. The
           // failpoint is the session dying again after Claude answered, before spore recorded it.
@@ -416,7 +426,9 @@ for (const form of FORMS) {
           expect(second!.stdin).toStartWith("You were cut off before you finished this step.");
           expect(readFileSync(join(p.dir, "hello.txt"), "utf8").trim()).toBe("hello");
           expect(p.status(run)).toMatchObject({ status: "running", position: { nodeId: "implement" } });
-          p.shows(run, key, { needs: "working", options: WORKING, line: new RegExp(`^${key} at implement.*, try 2/3$`), needsYou: false, here: "implement" });
+          // The command returned, so its process record is cleared and only the lease tells the try is
+          // cut off: `working` until it runs out, `driver` after (runspore cli.md, Coming back after a kill).
+          p.shows(run, key, { needs: ["working", "driver"], options: WORKING, line: new RegExp(`^${key} at implement.*, try 2/3$`), needsYou: false, here: "implement" });
         });
 
         test("implement finished, its answer not recorded: try 3 resumes and answers again, then the run stops between steps", async () => {
@@ -463,7 +475,14 @@ for (const form of FORMS) {
         await p.killSession(follower);
         expect(p.calls()).toHaveLength(claudeCalls);
         expect(p.status(run)).toMatchObject({ status: "running", position: { nodeId: "test" } });
-        p.shows(run, key, { needs: "working", options: WORKING, line: new RegExp(`^${key} at test.*, try 1/3$`), needsYou: false, here: "test" });
+        p.shows(run, key, {
+          needs: "driver",
+          options: WORKING,
+          line: new RegExp(`^${key} at test.*, try 1/3$`),
+          needsYou: false,
+          here: "test",
+          start: new RegExp(`^${key} at test, attempt 1 of 3 was cut off \\d+ (s|min) ago; nothing is running it$`),
+        });
 
         // Red from here: three reds go back to implement in the same conversation, the fourth runs out.
         p.red(true);

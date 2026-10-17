@@ -141,6 +141,34 @@ test("a stuck step and a quarantine say why, in the kept error's code and its fi
   ]);
 });
 
+test("a try spore found cut off says so, that nothing runs it, and what picks it up", () => {
+  listed([row("run_x", { startKey: "coding-loop-dffdb9f2", nodeId: "implement", needs: "driver", since: ago(32_000) })]);
+  status("run_x", {
+    running: running({
+      attempt: "1",
+      maxAttempts: "3",
+      state: "cut-off",
+      claimed: true,
+      cutOff: { reason: "process-gone", message: "pid 31295 is gone", commands: ["spore continue run_x"] },
+    }),
+  });
+  expect(unfinished().report.lines).toEqual(["coding-loop-dffdb9f2 at implement, attempt 1 of 3 was cut off 32 s ago; nothing is running it", ONE]);
+});
+
+test("a run waiting on the runs it started, and a need this plugin does not know, each get their words", () => {
+  listed([
+    row("run_p", { startKey: "build-0-2", nodeId: "tickets", needs: "child", since: ago(5 * MIN) }),
+    row("run_u", { startKey: "coding-loop-13131313", nodeId: "implement", needs: "elsewhere", since: ago(MIN) }),
+    row("run_v", { startKey: "coding-loop-24242424", nodeId: "implement", needs: "driver", since: ago(2 * MIN) }),
+  ]);
+  expect(unfinished().report.lines).toEqual([
+    "build-0-2 at tickets, waiting for the runs it started for 5 min",
+    "coding-loop-13131313 at implement, elsewhere for 1 min",
+    "coding-loop-24242424 at implement, its try was cut off 2 min ago; nothing is running it",
+    SEVERAL,
+  ]);
+});
+
 test("runs that are all running by themselves get no hint", () => {
   listed([row("run_r", { startKey: "coding-loop-78787878", nodeId: "implement", needs: "working", since: ago(3 * MIN) })]);
   status("run_r", { running: running({ attempt: "1", maxAttempts: "3", state: "started", claimed: true }) });

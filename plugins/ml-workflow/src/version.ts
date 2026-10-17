@@ -6,7 +6,7 @@ export const CLAUDE_CODE_MINIMUM = "2.1.290";
 
 // The plugin's version for the mod, which cannot import `.claude-plugin/plugin.json`: a hooks
 // module loads only script files. test/claude-spore.spec.ts holds it equal to the manifest's.
-export const PLUGIN_VERSION = "0.11.3";
+export const PLUGIN_VERSION = "0.11.4";
 
 // The oldest supported spore, and the contracts of `spore capabilities` the plugin drives
 // (docs/spec.md, p.3). Below 1.0 a contract's range is its one minor version. 0.4.0 is the first

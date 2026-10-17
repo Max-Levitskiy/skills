@@ -76,7 +76,9 @@ export function describe(row: Row, status: Status | null, now: number): string {
   return what ? `${where}, ${what}` : where;
 }
 
-// What the run waits for, in the words of the status skill.
+// What the run waits for, in the words of the status skill. Every `needs` spore documents (cli.md,
+// What a run needs) has its words; one it adds later reads as itself, as kubectl prints a pod phase
+// it does not know.
 function state(row: Row, status: Status | null, age: string | null): string {
   const ago = age ? ` ${age} ago` : "";
   const lasting = age ? ` for ${age}` : "";
@@ -87,8 +89,13 @@ function state(row: Row, status: Status | null, age: string | null): string {
       const prefix = tries ? `${tries}, ` : "";
       return running?.state === "started" ? `${prefix}running${lasting}` : `${prefix}paused${ago}`;
     }
+    // A worker claimed the try and nothing works it any more: `spore continue` runs it again.
+    case "driver":
+      return `${attempts(status?.running) || "its try"} was cut off${ago}; nothing is running it`;
     case "signal":
       return `waiting for your decision${lasting}`;
+    case "child":
+      return `waiting for the runs it started${lasting}`;
     case "stuck": {
       const tries = attempts(status?.intervention);
       const error = status?.intervention?.error;

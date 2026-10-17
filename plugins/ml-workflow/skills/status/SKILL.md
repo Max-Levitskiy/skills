@@ -39,10 +39,14 @@ This step only reads. It sends no signal, resolution or run.
 - `signal`: waits for a decision;
 - `stuck`: its step is stuck;
 - `working`: a worker has something to do, or a step is working;
+- `driver`: its try was cut off, and nothing is running it; following it runs the step again;
+- `child`: it waits for the runs it started;
 - `held`: its step is held, by its pane or by its actor (`actor`);
 - `external-ready`: its step waits for its actor (`actor`) to claim it;
 - `quarantined`: it is quarantined;
 - `capability-missing`: this `spore` cannot run its step.
+
+Any other `needs`: say it as spore gives it.
 
 A run with no `nodeId` has not taken its first turn: say it is not started yet, and that following it starts it. With none, say there are no unfinished runs in that database.
 
@@ -54,6 +58,7 @@ A run with no `nodeId` has not taken its first turn: say it is not started yet, 
   - `intervention`: a stuck step, its `error.code` and `error.message`, after `attempt` of `maxAttempts` tries; when `intervention.reason` is `unknown`, that its last try may have done its work without reporting it;
   - `quarantine`: the reason, and that `spore release` lifts it;
   - `step`: an async step, waiting for its actor (`step.actor`) to claim it while `step.state` is `ready`, or held by its pane or actor while it is `held`;
+  - `running` with `state` `cut-off`: the try was cut off and nothing is running it, why from `cutOff.message`, and that `/ml-workflow:continue <runId>` runs it again;
   - `running` or status `running`: a step is working;
 - or, for an ended run, the end node (`end.nodeId`, from which node and outcome) and the `result`; for a cancelled run, `cancel.reason` and when (`cancel.at`).
 
