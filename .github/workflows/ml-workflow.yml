@@ -30,12 +30,25 @@ jobs:
         spore: ["0.4.0", latest]
     steps:
       - uses: actions/checkout@v4
+      # runspore publishes a release before its archives, minutes apart: the newest is the newest
+      # release that has this runner's archive and its signed checksums.
+      - name: Pick the newest release
+        if: matrix.spore == 'latest'
+        run: |
+          tag=$(gh api 'repos/Web-tree/runspore/releases?per_page=10' --jq '[.[]
+            | select((.draft or .prerelease) | not)
+            | select([.assets[].name] | contains(["spore-x86_64-unknown-linux-musl.tar.gz", "SHA256SUMS", "SHA256SUMS.sig"]))
+            ][0].tag_name // empty')
+          test -n "$tag"
+          echo "SPORE_VERSION=$tag" >> "$GITHUB_ENV"
+        env:
+          GH_TOKEN: ${{ github.token }}
       # runspore's installer checks the release key's signature on SHA256SUMS and the archive's
-      # checksum; an empty SPORE_VERSION picks the newest release.
+      # checksum.
       - name: Install spore
         run: curl -fsSL https://raw.githubusercontent.com/Web-tree/runspore/main/install.sh | sh
         env:
-          SPORE_VERSION: ${{ matrix.spore != 'latest' && matrix.spore || '' }}
+          SPORE_VERSION: ${{ matrix.spore != 'latest' && matrix.spore || env.SPORE_VERSION }}
           SPORE_INSTALL_DIR: ${{ runner.temp }}/spore
       - uses: oven-sh/setup-bun@v2
         with:

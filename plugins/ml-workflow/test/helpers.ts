@@ -50,6 +50,12 @@ export function scratch(): string {
   return mkdtempSync(join(tmpdir(), "claude-spore-"));
 }
 
+// A spore 0.5.0 or later keeps a project's runs in $SPORE_HOME, ~/.spore by default, and every
+// spec passes its environment on: their runs go to a scratch folder, not the developer's.
+const sporeHome = scratch();
+process.env.SPORE_HOME = sporeHome;
+process.on("exit", () => remove(sporeHome));
+
 /** Removes a scratch folder, including spore's step files, which it makes read-only. */
 export function remove(path: string) {
   const writable = (dir: string) => {
