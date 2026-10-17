@@ -161,7 +161,7 @@ bun test --bail ./plugins/ml-workflow/test/reference-loop.e2e.ts   # before a re
 
 The last is the end-to-end check, gated because it spends real Claude turns and opens herdr panes: `bun test` leaves it out. It kills the reference coding loop at every row of the C11 table, with `implement` in the background and in a pane. [docs/release-check.md](docs/release-check.md) says how to run it and what to check by hand in Claude Code.
 
-The helper's specs put a fake `claude` and a fake `herdr` (`test/fixtures/bin/`) first on PATH. The install specs need `ssh-keygen` and `tar`: they sign local release folders with a throwaway key pinned into a copy of the plugin. The ones that run a real `spore` use `$SPORE`, else `spore` on PATH, and are skipped when that is not 0.2, for the watched step when it does not run async commands, and for following a run when it has no `continue --wait` or `cancel`. CI runs both, against `spore` built from a pinned runspore commit, and runs the helper under Bun 1.1 to check that it refuses.
+The helper's specs put a fake `claude` and a fake `herdr` (`test/fixtures/bin/`) first on PATH. The install specs need `ssh-keygen` and `tar`: they sign local release folders with a throwaway key pinned into a copy of the plugin. The ones that run a real `spore` use `$SPORE`, else `spore` on PATH, and are skipped when that is older than 0.4.0, the oldest supported one, for the watched step when it does not run async commands, for following a run when it has no `continue --wait` or `cancel`, and for a cut-off try when it is older than 0.6.0. CI runs both, against `spore` 0.4.0, the newest release and runspore's main, and runs the helper under Bun 1.1 to check that it refuses.
 
 ## License
 

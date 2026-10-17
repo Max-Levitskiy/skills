@@ -58,6 +58,34 @@ jobs:
           SPORE: ${{ runner.temp }}/spore/spore
           REQUIRE_SPORE: "1"
 
+  # The same specs against runspore's main, so a `needs` or a field spore adds there fails here
+  # before a release has it (skills#125).
+  helper-main:
+    name: claude-spore (bun test, spore main)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: Web-tree/runspore
+          ref: main
+          path: runspore
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: runspore
+          key: main
+      # The first cargo call installs the toolchain runspore's rust-toolchain.toml pins.
+      - name: Build spore
+        working-directory: runspore
+        run: cargo build --release --locked -p runspore-cli
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun test plugins/ml-workflow/test
+        env:
+          SPORE: ${{ github.workspace }}/runspore/target/release/spore
+          REQUIRE_SPORE: "1"
+
   old-bun:
     name: claude-spore refuses Bun 1.1
     runs-on: ubuntu-latest

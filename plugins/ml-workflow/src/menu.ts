@@ -75,6 +75,8 @@ function runRow({ row, status }: Run, now: number): MenuRow {
     case "quarantined":
       options = [act("Release", "release")];
       break;
+    // `working`, `driver` (a cut-off try), `child` and `capability-missing`: following the run works
+    // it, its children included. A `needs` spore adds later gets the same.
     default:
       options = [go];
   }

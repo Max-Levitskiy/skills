@@ -5,13 +5,22 @@
 // `continue --wait` and `cancel` (Web-tree/runspore#73, #74); without one it is skipped, unless
 // REQUIRE_SPORE=1 (CI) makes that a failure.
 import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
+import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
+import { isOlder } from "../src/version.ts";
 import { FakeClaude, FakeHerdr, HELPER, PATH, remove, scratch, SPORE, SPORE_TIMEOUT_MS, sporeVersion } from "./helpers.ts";
 
 const version = sporeVersion("follow.spec.ts");
 setDefaultTimeout(SPORE_TIMEOUT_MS);
+
+/** Whether this spore tells a cut-off try from a running one: 0.6.0 is the first release with Web-tree/runspore#224. */
+function cutsOff(): boolean {
+  if (!version || !isOlder(version, "0.6.0")) return true;
+  console.warn(`skipping the cut-off try of follow.spec.ts: spore ${version} predates Web-tree/runspore#224`);
+  return false;
+}
 
 /** Whether this spore follows and cancels runs; the v0.2.0 release does neither. */
 function follows(): boolean {
@@ -73,6 +82,24 @@ const STUCK = {
     build: { kind: "command", argv: ["sh", "-c", "echo broken >&2; exit 1"], effect: "idempotent", outcomes: ["ok"], timeoutMs: "60000" },
   },
   nodes: { build: { action: "build" } },
+};
+
+// A command that runs long enough to be cut off.
+const SLOW_DOT = `digraph "slow" {
+  dialect = "runspore/0.2";
+  start = "work";
+  work;
+  done [kind="complete"];
+  work -> done;
+}
+`;
+
+const SLOW_STEP = {
+  format: "runspore.workflow/0.2",
+  actions: {
+    work: { kind: "command", argv: ["sleep", "30"], effect: "idempotent", outcomes: ["ok"], timeoutMs: "60000", retry: { maxAttempts: 3 } },
+  },
+  nodes: { work: { action: "work" } },
 };
 
 // A person's manual work.
@@ -179,7 +206,8 @@ describe.skipIf(!follows())(`following a run under a real spore ${version ?? ""}
     workflow("stuck", STUCK_DOT, STUCK);
     workflow("manual", MANUAL_DOT, MANUAL, { "review.md": "Review the change.\n" });
     workflow("watched", WATCHED_DOT, WATCHED, { "implement.md": "Implement the task.\n" });
-    for (const name of ["decide", "stuck", "manual", "watched"]) expect(spore("validate", name).exitCode).toBe(0);
+    workflow("slow", SLOW_DOT, SLOW_STEP);
+    for (const name of ["decide", "stuck", "manual", "watched", "slow"]) expect(spore("validate", name).exitCode).toBe(0);
     db = spore("list", "--json").json.db;
   }, SLOW);
 
@@ -349,9 +377,43 @@ describe.skipIf(!follows())(`following a run under a real spore ${version ?? ""}
     expect(labels(`run:${fresh}`)).toEqual(["Continue", "View", "Cancel"]);
     expect(labels(`run:${stuck}`)).toEqual(["Retry", "Mark done", "Fail", "View", "Cancel"]);
     expect(labels(`run:${decide}`)).toEqual(["Decide", "View", "Cancel"]);
-    expect(labels("start")).toEqual(["decide", "manual", "stuck", "watched"]);
+    expect(labels("start")).toEqual(["decide", "manual", "slow", "stuck", "watched"]);
     expect(labels("author")).toEqual(["Write a new workflow", "Change a workflow"]);
     for (const runId of [decide, stuck, fresh]) spore("cancel", runId);
+  }, SLOW);
+
+  test.skipIf(!cutsOff())("a try cut off when its session died: needs driver, the start line says so, and the menu continues it", async () => {
+    const { runId } = start("slow", "slow-00000016", {}).json;
+    // The follow of a session, which dies with it: its process group is killed outright.
+    const follower = spawn(SPORE, ["continue", runId, "--wait", "--json", "--db", db], { cwd: project, env: env(), detached: true, stdio: "ignore" });
+    const closed = new Promise((resolve) => follower.on("close", resolve));
+    let pid: number | null = null;
+    for (let waited = 0; !pid && waited < SLOW; waited += 100) {
+      await Bun.sleep(100);
+      const running = spore("status", runId, "--json").json?.running;
+      if (running?.state === "started" && running.pid) pid = Number(running.pid);
+    }
+    expect(pid).not.toBeNull();
+    process.kill(-follower.pid!, "SIGKILL");
+    await closed;
+
+    try {
+      expect(spore("status", runId, "--json").json.running).toMatchObject({ state: "cut-off", cutOff: { commands: [`spore continue ${runId}`] } });
+      expect(spore("list", "--unfinished", "--json").json.runs.find((row: { runId: string }) => row.runId === runId)).toMatchObject({ needs: "driver", nodeId: "work" });
+      const helper = (command: string) => {
+        const child = Bun.spawnSync([HELPER, command, "--json"], { cwd: project, env: { ...env(), PATH: `${dirname(SPORE)}:${PATH}` } });
+        expect({ exitCode: child.exitCode, stderr: child.stderr.toString() }).toEqual({ exitCode: 0, stderr: "" });
+        return JSON.parse(child.stdout.toString());
+      };
+      expect(helper("unfinished").lines).toEqual([expect.stringMatching(/^slow-00000016 at work, attempt 1 of 3 was cut off \d+ (s|min) ago; nothing is running it$/), "/ml-workflow:menu to pick it up"]);
+      const row = helper("menu").rows.find((r: { key: string }) => r.key === `run:${runId}`);
+      expect(row.options.map((option: { label: string }) => option.label)).toEqual(["Continue", "View", "Cancel"]);
+    } finally {
+      spore("cancel", runId);
+      try {
+        process.kill(-pid!, "SIGKILL");
+      } catch {}
+    }
   }, SLOW);
 
   test("a cancel: the follow returns status cancelled with the reason, and a second cancel changes nothing", () => {
