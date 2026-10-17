@@ -2,6 +2,11 @@
 
 What each ml-workflow version changed. Every change to the plugin raises the version and adds its section here with `bun scripts/plugin-version.ts bump` (AGENTS.md, Releasing a plugin). Versions up to 0.9.0 are in the git history of `.claude-plugin/plugin.json`.
 
+## 0.11.3
+
+- claude-spore doctor needs spore 0.4.0, the first release with continue --wait, cancel and the checkpoint E and F fixes, and offers the update for an older one instead of passing v0.2.0 and v0.3.0
+- CI runs the specs against spore 0.4.0 and the newest release instead of a pinned runspore commit
+
 ## 0.11.2
 
 - A watched step's message goes only once Claude is ready, and counts as sent once it lands: Claude turns working or its transcript gains a turn; one that does not land is typed again, 3 times in all, then the watch tells the person. A pane that stays quiet with no answer for a minute after its message needs the person (skills#118).

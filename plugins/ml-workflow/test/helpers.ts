@@ -5,6 +5,8 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSyn
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
+import { SPORE_MINIMUM, isOlder } from "../src/version.ts";
+
 export const HELPER = join(import.meta.dir, "..", "bin", "claude-spore");
 export const FAKE_BIN = join(import.meta.dir, "fixtures", "bin");
 export const PLUGIN_BIN = join(import.meta.dir, "..", "bin");
@@ -26,17 +28,18 @@ export const SPORE = process.env.SPORE ?? Bun.which("spore") ?? "spore";
 export const SPORE_TIMEOUT_MS = 30_000;
 
 /**
- * The real spore's version when it is a 0.2, else null: a spec that needs it is skipped, with the
- * reason printed, unless REQUIRE_SPORE=1 (CI) makes that a failure.
+ * The real spore's version when it is the oldest supported one or later, else null: a spec that
+ * needs it is skipped, with the reason printed, unless REQUIRE_SPORE=1 (CI) makes that a failure.
  */
 export function sporeVersion(spec: string): string | null {
   let version: string | null = null;
   try {
     const child = Bun.spawnSync([SPORE, "--version"]);
-    version = /^spore (0\.2\.\d+)/.exec(child.stdout.toString())?.[1] ?? null;
+    version = /^spore (\d+\.\d+\.\d+)/.exec(child.stdout.toString())?.[1] ?? null;
   } catch {}
+  if (version && isOlder(version, SPORE_MINIMUM)) version = null;
   if (!version) {
-    const reason = `no spore 0.2 at ${SPORE}; set SPORE to one`;
+    const reason = `no spore ${SPORE_MINIMUM} or later at ${SPORE}; set SPORE to one`;
     if (process.env.REQUIRE_SPORE === "1") throw new Error(reason);
     console.warn(`skipping ${spec}: ${reason}`);
   }
@@ -46,6 +49,12 @@ export function sporeVersion(spec: string): string | null {
 export function scratch(): string {
   return mkdtempSync(join(tmpdir(), "claude-spore-"));
 }
+
+// A spore 0.5.0 or later keeps a project's runs in $SPORE_HOME, ~/.spore by default, and every
+// spec passes its environment on: their runs go to a scratch folder, not the developer's.
+const sporeHome = scratch();
+process.env.SPORE_HOME = sporeHome;
+process.on("exit", () => remove(sporeHome));
 
 /** Removes a scratch folder, including spore's step files, which it makes read-only. */
 export function remove(path: string) {

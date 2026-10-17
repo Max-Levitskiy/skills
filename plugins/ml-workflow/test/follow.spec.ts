@@ -56,7 +56,8 @@ const DECIDE = {
   },
 };
 
-// A command that always fails, with no `failed` arrow: the run gets stuck.
+// A command that always fails, with no `failed` arrow: the run gets stuck after spore's default of
+// three tries.
 const STUCK_DOT = `digraph "stuck" {
   dialect = "runspore/0.2";
   start = "build";
@@ -250,7 +251,7 @@ describe.skipIf(!follows())(`following a run under a real spore ${version ?? ""}
     const stuck = follow(runId);
     expect(stuck.json).toMatchObject({
       needs: "stuck",
-      intervention: { nodeId: "build", reason: "stuck", attempt: 1, maxAttempts: 1, outcomes: ["ok"], error: { code: "command.exit" } },
+      intervention: { nodeId: "build", reason: "stuck", attempt: 3, maxAttempts: 3, outcomes: ["ok"], error: { code: "command.exit" } },
     });
     expect(stuck.json.intervention.commands).toEqual([
       `spore resolve ${runId} --retry`,
@@ -277,14 +278,14 @@ describe.skipIf(!follows())(`following a run under a real spore ${version ?? ""}
       runId,
       db,
       name: "stuck-00000016",
-      text: expect.stringMatching(/^stuck-00000016 at build for \d+ s, try 1\/1$/),
+      text: expect.stringMatching(/^stuck-00000016 at build for \d+ s, try 3\/3$/),
       shorter: [],
       needsYou: true,
       ended: false,
     });
 
     const view = JSON.parse(helper("view", runId, "--db", db, "--json").stdout);
-    expect(view.facts).toBe("needs-intervention, at build, visit 1, try 1/1");
+    expect(view.facts).toBe("needs-intervention, at build, visit 1, try 3/3");
     expect(view.dot.filter((l: { mark: string | null }) => l.mark).map((l: { text: string }) => l.text.trim())).toEqual(["build;"]);
     expect(view.settings.find((l: { mark: string | null }) => l.mark === "here").text.trim()).toBe('"build": {');
 
@@ -333,7 +334,7 @@ describe.skipIf(!follows())(`following a run under a real spore ${version ?? ""}
     const answer = JSON.parse(child.stdout.toString());
     expect(answer.db).toBe(db);
     expect(answer.lines).toEqual([
-      expect.stringMatching(/^stuck-00000014 at build, stuck after attempt 1 of 1 for \d+ (s|min): command\.exit(: .+)?$/),
+      expect.stringMatching(/^stuck-00000014 at build, stuck after attempt 3 of 3 for \d+ (s|min): command\.exit(: .+)?$/),
       expect.stringMatching(/^decide-00000013 at approve, waiting for your decision for \d+ (s|min)$/),
       expect.stringMatching(/^decide-00000015, not started yet, created \d+ (s|min) ago$/),
       "/ml-workflow:menu to pick them up",

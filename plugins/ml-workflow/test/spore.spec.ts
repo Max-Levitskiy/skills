@@ -1,6 +1,6 @@
 // A real `spore run` of a one-step workflow whose step is `claude-spore run`, with the fake `claude`
-// (docs/spec.md, Testing). The `spore` is $SPORE, else the one on PATH; without a 0.2 one the spec
-// is skipped, unless REQUIRE_SPORE=1 (CI) makes that a failure.
+// (docs/spec.md, Testing). The `spore` is $SPORE, else the one on PATH; without a supported one the
+// spec is skipped, unless REQUIRE_SPORE=1 (CI) makes that a failure.
 import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -98,7 +98,8 @@ describe.skipIf(!version)(`a real spore ${version ?? ""} run`, () => {
     expect(call!.stdin).toContain('"question": "why?"');
     expect(call!.args).toContain("--add-dir");
 
-    const work = join(project, ".spore", "runspore.db.files", "work", runId);
+    // The work folder is beside the run's database, which a spore 0.5.0 or later keeps outside the project.
+    const work = join(`${status.db}.files`, "work", runId);
     const [invocation] = readdirSync(work);
     const facts = JSON.parse(readFileSync(join(work, invocation!, "1.facts.json"), "utf8"));
     expect(facts).toMatchObject({ turns: 3, costMicroUsd: 250000, deniedTools: [] });
