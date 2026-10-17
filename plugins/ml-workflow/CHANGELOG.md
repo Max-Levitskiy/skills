@@ -2,6 +2,11 @@
 
 What each ml-workflow version changed. Every change to the plugin raises the version and adds its section here with `bun scripts/plugin-version.ts bump` (AGENTS.md, Releasing a plugin). Versions up to 0.9.0 are in the git history of `.claude-plugin/plugin.json`.
 
+## 0.11.5
+
+- claude-spore doctor needs spore 0.6.0, the first release that marks a try cut off by a kill (runspore#224), and offers the update for v0.4.0 and v0.5.0, on which the start line's "was cut off" and the menu's Continue never appeared (skills#133)
+- CI runs the specs against spore 0.6.0 and the newest release
+
 ## 0.11.4
 
 - The start line and the menu understand spore's `needs` `driver` (runspore#224, first released in spore 0.6.0): a try cut off after a kill reads "attempt 1 of 3 was cut off 32 s ago; nothing is running it" and the menu offers Continue. `child` has its words too, and a `needs` spore adds later reads as itself (skills#125).

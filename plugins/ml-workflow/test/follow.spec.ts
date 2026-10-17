@@ -9,18 +9,10 @@ import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
-import { isOlder } from "../src/version.ts";
 import { FakeClaude, FakeHerdr, HELPER, PATH, remove, scratch, SPORE, SPORE_TIMEOUT_MS, sporeVersion } from "./helpers.ts";
 
 const version = sporeVersion("follow.spec.ts");
 setDefaultTimeout(SPORE_TIMEOUT_MS);
-
-/** Whether this spore tells a cut-off try from a running one: 0.6.0 is the first release with Web-tree/runspore#224. */
-function cutsOff(): boolean {
-  if (!version || !isOlder(version, "0.6.0")) return true;
-  console.warn(`skipping the cut-off try of follow.spec.ts: spore ${version} predates Web-tree/runspore#224`);
-  return false;
-}
 
 /** Whether this spore follows and cancels runs; the v0.2.0 release does neither. */
 function follows(): boolean {
@@ -382,7 +374,7 @@ describe.skipIf(!follows())(`following a run under a real spore ${version ?? ""}
     for (const runId of [decide, stuck, fresh]) spore("cancel", runId);
   }, SLOW);
 
-  test.skipIf(!cutsOff())("a try cut off when its session died: needs driver, the start line says so, and the menu continues it", async () => {
+  test("a try cut off when its session died: needs driver, the start line says so, and the menu continues it", async () => {
     const { runId } = start("slow", "slow-00000016", {}).json;
     // The follow of a session, which dies with it: its process group is killed outright.
     const follower = spawn(SPORE, ["continue", runId, "--wait", "--json", "--db", db], { cwd: project, env: env(), detached: true, stdio: "ignore" });

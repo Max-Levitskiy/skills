@@ -11,7 +11,7 @@ const PLUGIN = join(import.meta.dir, "..");
 
 export const CAPABILITIES = {
   format: "runspore.cli/0.2",
-  version: "0.4.0",
+  version: "0.6.0",
   contracts: { artifact: "0.1", cli: "0.2", dot: "0.2", host: "0.2", kernel: "0.2", schema: "0.2", store: "0.2" },
   actionKinds: ["command", "external", "native"],
   asyncKinds: ["command", "external"],

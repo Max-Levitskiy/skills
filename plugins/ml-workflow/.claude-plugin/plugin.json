@@ -1,7 +1,7 @@
 {
   "name": "ml-workflow",
   "description": "Run Runspore workflows from inside Claude Code: start, follow, decide and resume durable runs that survive a closed session, with Claude steps that keep one conversation per run. Terminal Claude Code 2.1.290 or later, and Bun 1.2.0 or later. This release starts, follows, continues and cancels runs with spore's continue --wait and cancel, names each unfinished run when a session starts, offers what each run needs in a menu pane, shows a line above the prompt for each run it follows and a live view of a run drawn from its workflow, runs background and watched (herdr pane) Claude steps, writes or changes workflows by interview, and installs or updates spore from a signed release when you say yes.",
-  "version": "0.11.4",
+  "version": "0.11.5",
   "types": "./types/index.d.ts",
   "hooks": "./claude-code/hooks.json",
   "license": "MIT",
