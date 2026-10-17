@@ -54,7 +54,13 @@ needed files, depends on the configuration … not drop everything in the contex
 The skill supports both trackers. Jira goes through the existing `ml-workplace:atlassian` skill
 and its CLI; GitHub goes through `gh`. **If agent-config already has the Atlassian skill
 configured, Jira is the default tracker for ml-agile too.** Otherwise the tracker follows the
-repo (a GitHub remote means GitHub), or the user says. Each adapter is a short reference file
+repo (a GitHub remote means GitHub), or the user says.
+
+Refined after a dry run: "configured" means configured *for this repo* (a default project or
+scope). A global Jira site with no project for the repo was picking Jira for a GitHub repo. A
+story reference also wins (`#142` → GitHub, `NEO-123` → Jira), and a Jira credential that fails
+`config check` is reported, with GitHub offered. The config namespace is `agile`
+(`.agents/config/agile/`), not the generic `size`. Each adapter is a short reference file
 loaded only when that tracker is in use.
 
 Rejected:

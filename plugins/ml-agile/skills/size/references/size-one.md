@@ -5,8 +5,12 @@ tracker with its link reported.
 
 ## 1. Read the story
 
-Run the tracker's *Read one story*. If it already has a size, say so in one line and size it
-anyway: the user asked for a fresh estimate.
+Run the tracker's *Read one story*.
+
+- **It already has a size** → say so in one line and size it anyway: the user asked for a fresh
+  estimate.
+- **It looks done** (closed, a linked merged PR, or commits that name it) → say what you found
+  and ask whether to size it anyway. Sizing finished work only makes sense for calibration.
 
 ## 2. Poker
 
@@ -35,7 +39,7 @@ PROJ-42  Export invoices as CSV           size 8   (high confidence)
   missing <items, or none>
 ```
 
-When the round ended split, show each estimator's vote and WHY, and the proposed middle value.
+When the result is unresolved, show each estimator's vote and WHY, and the proposed middle value.
 When there is a split proposal, list each child with its title, scope and size.
 
 Then one question listing exactly what would be written:

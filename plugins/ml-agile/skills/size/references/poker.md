@@ -7,9 +7,12 @@ converge or go to the user. A round is done when it ends with a **result**:
 size: <scale value>   confidence: high | low
 votes: developer <v>, tester <v>, risk <v>      (round 2 votes, if there was one)
 why: <2-3 lines combining the estimators' reasons>
-missing: <what the story lacks, merged from the estimators, or none>
-split: true | false   (the user must pick; see Round 2)
+missing: <what the story lacks, or none>
+unresolved: true | false   (true: the votes never converged and the user picks; see Round 2)
 ```
+
+**missing** merges the MISSING items of the last round held: duplicates and rewordings
+become one item, and each item is kept in the estimators' own words.
 
 ## Round 1: blind votes
 
@@ -41,18 +44,21 @@ estimators listed MISSING items; then it is **low**.
 
 Any disagreement, adjacent values included, goes to round 2.
 
-1. The **outliers** are the highest and the lowest votes, ordered by position on the scale.
-2. Brief three fresh estimators, each with the round-1 brief plus their own round-1 vote and
-   the outliers' WHY lines, labelled by role:
+1. **Find the outliers.** Two votes agree and one differs → the one who differs is the
+   outlier, and the pair's shared reasoning is the other side. All three differ → the highest
+   and the lowest by position on the scale are the outliers.
+2. **Brief three fresh estimators.** Each gets the round-1 brief, its own round-1 vote, and the
+   WHY lines of every voter on the other side of the disagreement, labelled by role. Never
+   quote an estimator's own WHY back to it.
 
-   > In round 1 you voted `<v>`. The highest and lowest voters said: `<role> (<v>): <WHY>` …
+   > In round 1 you voted `<v>`. On the other side: `<role> (<v>): <WHY>` …
    > Weigh their reasons, then vote again in the same three-line format.
 
 **Round 2 agrees** → that is the size, and confidence is **low**.
 
-**Still split** → this is the user's call. Order the three votes by position on the scale and
-propose the **middle** one, which works the same for numbers and labels. Mark `split: true` so
-the job shows all three votes and WHYs. Confidence is **low**.
+**Still no agreement** → this is the user's call. Order the three votes by position on the scale and
+propose the **middle** one, which works the same for numbers and labels. Mark
+`unresolved: true` so the job shows all three votes and WHYs. Confidence is **low**.
 
 ## Cost
 

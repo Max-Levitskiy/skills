@@ -17,8 +17,9 @@ Split the list into batches of 10. Brief one subagent per batch, up to three at 
 > comments, and look at its linked change with the commands below. Reply with one line per
 > story, no other text:
 > `KEY | title | size on ticket or - | files changed, +added/-deleted lines or no linked change | days open | signals`
-> **Signals** are what the comments show about effort: rework, a reopened story, scope added
-> mid-way, waiting on others, surprises, or *clean* when nothing stands out. At most 12 words.
+> **Signals** are what the comments and the diff show about effort: rework, a reopened story, scope added
+> mid-way, waiting on others, surprises, a mostly mechanical diff (version bumps, renames,
+> generated files), or *clean* when nothing stands out. At most 12 words.
 > Stories: `<keys>`. Commands: `<the tracker's Read one story and linked-change commands>`.
 
 ## 3. Rank by effort
@@ -27,8 +28,12 @@ Order the summary lines from least to most effort. Weigh the evidence together:
 
 - **Spread beats size.** Ten files across three areas is more effort than 400 lines in one
   generated file.
+- **Mechanical changes count low:** version bumps, renames, lockfiles, generated code,
+  changelog lines. Judge a diff by what changed, not by its file count. The batch summary's
+  signals say when a change was mostly mechanical.
 - **Rework and scope signals add effort.**
 - **Days open is the weakest signal.** A story can sit in review for a week and still be small.
+  Ignore it entirely when nearly every story closes within a day, as with agent-driven work.
 - **Sizes already on tickets** show what the team meant by each value. Where a story's size
   matches its evidence, it is a strong candidate for that value. Where the size and the evidence
   disagree, leave it out.
@@ -43,9 +48,16 @@ best typifies it, preferring:
 3. recent ones;
 4. different areas of the codebase across the set.
 
+"Different areas" is a preference. When every story comes from one area, say so.
+
 Each step up the scale should look like clearly more work than the one below. When no story
 fits a value (big values often have none), mark it as a **gap**. Never stretch a story to fill a
 value.
+
+**A uniform sample** (similar stories that the evidence cannot tell apart into many levels):
+propose references for the few levels the evidence does separate, mark the rest as gaps, and
+say why. A calibration of more closed stories, or of a period with bigger work, fills them
+later.
 
 Show one table:
 
@@ -67,11 +79,16 @@ Build `referenceStories`:
 - plus `"calibratedAt": "<today, YYYY-MM-DD>"`;
 - gaps left out.
 
-Replace the old object whole, then merge it into the repo layer, with `$P` from SKILL.md, Writing config:
+Replace the old object whole, then merge it into the repo layer, with `$P` from SKILL.md, Writing
+config. Build the object with `jq -n` so quotes in titles are escaped:
 
 ```bash
+REFS=$(jq -n --arg today "$(date +%F)" '{
+  "1": {key: "#107", title: "…", why: "6 files, one area, clean"},
+  "3": {key: "#109", title: "…", why: "…"},
+  calibratedAt: $today }')
 { cat "$P" 2>/dev/null || echo '{}'; } | jq --argjson rs "$REFS" '.referenceStories = $rs' \
-  | "$AC" write size --layer repo --from <this-skill-dir>
+  | "$AC" write agile --layer repo --from <this-skill-dir>
 ```
 
 Tell the user which file to commit, and list any gaps. Until a gap is filled, estimators size

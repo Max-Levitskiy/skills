@@ -8,7 +8,8 @@ named `config.github.field`. A number field holds a numeric scale; a single-sele
 label scale (one option per scale value). Empty → a label `<config.labelPrefix><value>`, e.g.
 `size:5` or `size:M`.
 
-**Project access needs the `project` token scope.** Check once per run:
+**Project access needs the `project` token scope.** When `github.project` is set, check once per
+run:
 `gh auth status 2>&1 | grep -q "'project'"`. Without it, use labels for this run and tell the
 user in one line: `gh auth refresh -s project` enables the board.
 
@@ -44,11 +45,20 @@ gh project item-list <number> --owner <owner> --format json --limit 500
 ## Find recently closed stories
 
 ```bash
-gh issue list --state closed --search "reason:completed" --limit <calibration.sample> \
-  --json number,title,createdAt,closedAt,labels,closedByPullRequestsReferences
+gh issue list --state closed --search "reason:completed sort:updated-desc" --limit <2 × sample> \
+  --json number,title,createdAt,closedAt,labels,closedByPullRequestsReferences \
+  --jq 'sort_by(.closedAt) | reverse | .[:<sample>] | map({number, title, createdAt, closedAt,
+        labels: [.labels[].name], prs: [.closedByPullRequestsReferences[].number]})'
 ```
 
-`reason:completed` leaves out issues closed as not planned. For each linked PR:
+- `reason:completed` leaves out issues closed as not planned.
+- GitHub cannot sort by close date. Fetching twice the sample by last update, then sorting on
+  `closedAt`, gets the most recently closed.
+- Drop issues that track other issues rather than being stories: epics, wayfinder maps, release
+  trackers. They show up as labels such as `epic` or `wayfinder:map`, or as titles that name a
+  plan.
+
+For each linked PR:
 
 ```bash
 gh pr view <P> --json additions,deletions,changedFiles,commits,reviews,files
@@ -65,10 +75,11 @@ change* rather than guessing its effort. Add comments with `gh issue view <N> --
 1. Create the label once if it is missing:
    `gh label create "<prefix><value>" --color C5DEF5 --description "Story size"`. A failure
    because it already exists is fine.
-2. Swap any old size label in one call:
+2. Add the label, removing the old size label in the same call when the issue has one:
 
    ```bash
-   gh issue edit <N> --add-label "size:5" --remove-label "size:3"
+   gh issue edit <N> --add-label "size:5"                         # no size yet
+   gh issue edit <N> --add-label "size:5" --remove-label "size:3" # resized
    ```
 
 **Project:**

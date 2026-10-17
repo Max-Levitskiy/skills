@@ -8,7 +8,7 @@
       "expected_output": "A proposed size for the issue with three estimator votes and their reasoning, written to the tracker only after the user confirms.",
       "files": [],
       "assertions": [
-        "Runs `agent-config start size` before anything else",
+        "Runs `agent-config start agile` before anything else",
         "Reads references/size-one.md, references/poker.md and exactly one tracker file; does not read sweep.md or calibrate.md unless reference stories are missing",
         "Launches three estimator subagents (developer, tester, risk) in parallel, none of whose briefs contain another estimator's vote",
         "The proposed size is a value on config.scale",
@@ -37,7 +37,7 @@
         "Reads references/calibrate.md and the tracker file only",
         "Summarises closed stories through batch subagents rather than reading every story into the main session",
         "Reports scale values with no fitting story as gaps instead of stretching a story to fill them",
-        "Writes referenceStories with calibratedAt through `agent-config write size --layer repo`, merged into the existing layer, after confirmation",
+        "Writes referenceStories with calibratedAt through `agent-config write agile --layer repo`, merged into the existing layer, after confirmation",
         "Tells the user which file to commit"
       ]
     },

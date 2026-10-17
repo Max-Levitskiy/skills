@@ -57,7 +57,7 @@ Set `tracker` to pin one.
 
 ### Configuration
 
-Settings live in [agent-config](../ml-agent-config) under the name `size`. They are written to
+Settings live in [agent-config](../ml-agent-config) under the name `agile`. They are written to
 the repo layer and committed, so the whole team sizes against the same scale and reference
 stories. Override any of them in your user-repo or local layer.
 

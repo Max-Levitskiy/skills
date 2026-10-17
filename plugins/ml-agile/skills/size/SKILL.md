@@ -15,7 +15,7 @@ confirms.
 ```bash
 AC=$(command -v agent-config || ls -d "$HOME"/.claude/plugins/cache/*/ml-agent-config/*/bin/agent-config \
      "${CODEX_HOME:-$HOME/.codex}"/plugins/cache/*/ml-agent-config/*/bin/agent-config 2>/dev/null | tail -1)
-"$AC" start size --from <this-skill-dir>
+"$AC" start agile --from <this-skill-dir>
 ```
 
 `ready: true` → `config` holds every setting. `ready: false` → read the file at `guide`, work
@@ -25,15 +25,26 @@ https://github.com/Max-Levitskiy/skills/tree/main/plugins/ml-agent-config.
 
 ## Pick the tracker
 
-`config.tracker` is `jira` or `github`, or `auto`:
+`config.tracker` is `jira` or `github`, or `auto`. For `auto`, the first rule that applies wins:
 
-1. `"$AC" start atlassian` prints `ready: true` → **jira**.
-2. `git remote get-url origin` points at github.com → **github**.
-3. Otherwise, ask the user in one line.
+1. **The story reference says.** `#142` or a github.com URL → **github**. `NEO-123` or an
+   atlassian.net or Jira URL → **jira**.
+2. **The Atlassian skill is set up for this repo.** `"$AC" start atlassian` prints `ready: true`,
+   and `atlassian config show --json` has a non-empty `config.jira.defaultProject` or
+   `config.defaultScope` → **jira**. A global Jira site with no project for this repo is someone
+   else's work and does not count.
+3. `git remote get-url origin` points at github.com → **github**.
+4. Otherwise, ask the user in one line.
 
-Read `references/tracker-jira.md` or `references/tracker-github.md`, only the one in use. Each
-defines the same five operations: *Read one story*, *Find open unsized stories*, *Find recently
-closed stories*, *Write a size*, *Create child stories*. The job files call them by those names.
+**Jira chosen** → run `atlassian config check` once. A `FAILED` line means the credential does
+not resolve: relay that line, and offer GitHub when the repo has a GitHub remote. **Chosen by
+asking, or the rules disagreed with the user** → offer to pin `tracker` in the repo layer (see
+Writing config).
+
+The tracker file is `references/tracker-jira.md` or `references/tracker-github.md`; read only the
+one in use. Each defines the same five operations: *Read one story*, *Find open unsized
+stories*, *Find recently closed stories*, *Write a size*, *Create child stories*. The job files
+call them by those names.
 
 ## Pick the job
 
@@ -47,10 +58,13 @@ closed stories*, *Write a size*, *Create child stories*. The job files call them
 Single sizing and sweeps also read `references/poker.md`. When the request fits no row, ask one
 line: which story, or which slice of the backlog.
 
+**Order of reading:** the tracker file first, then the job's file, then poker.md when the first
+story goes to the estimators.
+
 **Before any sizing**, check `config.referenceStories`:
 
-- **Empty, or its values are not on the current scale** → say so in one line and run
-  calibration first.
+- **Empty, or its values are not on the current scale** → say so in one line, run calibration
+  to the end (including its write), then go back to the sizing job.
 - **`calibratedAt` older than `config.calibration.staleDays`** → one line suggesting
   `/ml-agile:size recalibrate`, then go on sizing.
 
@@ -73,9 +87,9 @@ Change settings through `agent-config write`, never with a file tool. `write` ch
 against the declaration, and it **replaces the whole layer**, so merge into what is there:
 
 ```bash
-P=$("$AC" path size --layer repo --from <this-skill-dir> | jq -r '.layers[0].path')
+P=$("$AC" path agile --layer repo --from <this-skill-dir> | jq -r '.layers[0].path')
 { cat "$P" 2>/dev/null || echo '{}'; } | jq '. + {scale: ["XS","S","M","L","XL"]}' \
-  | "$AC" write size --layer repo --from <this-skill-dir>
+  | "$AC" write agile --layer repo --from <this-skill-dir>
 ```
 
 The repo layer is committed and shared by the team. After writing it, tell the user the file to

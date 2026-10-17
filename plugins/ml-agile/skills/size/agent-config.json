@@ -1,7 +1,7 @@
 {
   "$schema": "../../../ml-agent-config/agent-config.schema.json",
   "version": 2,
-  "name": "size",
+  "name": "agile",
   "schema": {
     "version": 1,
     "keys": {

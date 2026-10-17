@@ -36,7 +36,7 @@ One table, in tracker order:
 - **Needs refinement** lists the merged MISSING items. A low-confidence row is still sized,
   because a best guess is useful for planning, and the row says what would firm it up.
 - **Split rows** are listed below the table: each child's title, scope and size.
-- **Split votes** (the round ended with the estimators disagreeing) are listed below the table:
+- **Unresolved votes** (the estimators never agreed) are listed below the table:
   the three votes, their WHY lines, and the proposed middle value.
 
 End with the totals: stories sized, points by confidence, and how many need refinement.
