@@ -21,7 +21,7 @@ claude plugin install ml-workflow@max-skills --scope project
 |---|---|---|
 | Claude Code, in a terminal | **2.1.290** | every sub-skill, before anything else; the mod at session start. Older: `claude update` |
 | Bun | **1.2.0** | `claude-spore`, before anything else; it exits 2 naming the version. Older: `bun upgrade` |
-| [`spore`](https://github.com/Web-tree/runspore) | **0.4.0**, answering `spore capabilities` with the `cli`, `host`, `kernel` and `store` contracts at 0.2. Older releases lack `continue --wait` (0.2.0) or the fixes following a run relies on (0.3.0) | `claude-spore doctor`: the mod at session start, silent when it fits, and `start`, `status`, `continue` and `author` after the Claude Code check. Missing or older: one line naming the version needed, the one found and the install or update command, run only when you say yes |
+| [`spore`](https://github.com/Web-tree/runspore) | **0.6.0**, answering `spore capabilities` with the `cli`, `host`, `kernel` and `store` contracts at 0.2. Older releases lack `continue --wait` (0.2.0), the fixes following a run relies on (0.3.0), or the mark on a try cut off by a kill, so the start line and the menu's Continue never see one (0.4.0, 0.5.0) | `claude-spore doctor`: the mod at session start, silent when it fits, and `start`, `status`, `continue` and `author` after the Claude Code check. Missing or older: one line naming the version needed, the one found and the install or update command, run only when you say yes |
 
 claude.ai and Cowork refuse a plugin with a top-level `bin/`, so this plugin is for terminal Claude Code only.
 
@@ -161,7 +161,7 @@ bun test --bail ./plugins/ml-workflow/test/reference-loop.e2e.ts   # before a re
 
 The last is the end-to-end check, gated because it spends real Claude turns and opens herdr panes: `bun test` leaves it out. It kills the reference coding loop at every row of the C11 table, with `implement` in the background and in a pane. [docs/release-check.md](docs/release-check.md) says how to run it and what to check by hand in Claude Code.
 
-The helper's specs put a fake `claude` and a fake `herdr` (`test/fixtures/bin/`) first on PATH. The install specs need `ssh-keygen` and `tar`: they sign local release folders with a throwaway key pinned into a copy of the plugin. The ones that run a real `spore` use `$SPORE`, else `spore` on PATH, and are skipped when that is older than 0.4.0, the oldest supported one, for the watched step when it does not run async commands, for following a run when it has no `continue --wait` or `cancel`, and for a cut-off try when it is older than 0.6.0. CI runs both, against `spore` 0.4.0, the newest release and runspore's main, and runs the helper under Bun 1.1 to check that it refuses.
+The helper's specs put a fake `claude` and a fake `herdr` (`test/fixtures/bin/`) first on PATH. The install specs need `ssh-keygen` and `tar`: they sign local release folders with a throwaway key pinned into a copy of the plugin. The ones that run a real `spore` use `$SPORE`, else `spore` on PATH, and are skipped when that is older than 0.6.0, the oldest supported one, for the watched step when it does not run async commands, for following a run when it has no `continue --wait` or `cancel`. CI runs both, against `spore` 0.6.0, the newest release and runspore's main, and runs the helper under Bun 1.1 to check that it refuses.
 
 ## License
 

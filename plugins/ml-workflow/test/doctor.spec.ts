@@ -38,13 +38,13 @@ test("a spore that fits prints nothing and exits 0", () => {
   expect(doctor()).toEqual({ exitCode: 0, stdout: "", stderr: "" });
   const { exitCode, report } = json();
   expect(exitCode).toBe(0);
-  expect(report).toEqual({ ok: true, spore: { path: join(bin, "spore"), version: "0.4.0" }, problems: [], launcher: "offer" });
+  expect(report).toEqual({ ok: true, spore: { path: join(bin, "spore"), version: "0.6.0" }, problems: [], launcher: "offer" });
 });
 
 test("no spore on PATH shows the install line", () => {
   const { exitCode, stdout } = doctor();
   expect(exitCode).toBe(1);
-  expect(stdout).toBe("ml-workflow needs spore 0.4.0 or later, and none is on PATH. Install it with: claude-spore install-spore\n");
+  expect(stdout).toBe("ml-workflow needs spore 0.6.0 or later, and none is on PATH. Install it with: claude-spore install-spore\n");
   expect(json().report.problems).toEqual([
     { code: "spore.missing", message: stdout.trim(), fix: "claude-spore install-spore" },
   ]);
@@ -59,7 +59,7 @@ test("a spore from before the handshake shows the update line", () => {
   expect(report.problems).toEqual([
     {
       code: "spore.old",
-      message: `ml-workflow needs spore 0.4.0 or later; ${join(bin, "spore")} does not answer \`spore capabilities\`. ${UPDATE}`,
+      message: `ml-workflow needs spore 0.6.0 or later; ${join(bin, "spore")} does not answer \`spore capabilities\`. ${UPDATE}`,
       fix: "claude-spore install-spore",
     },
   ]);
@@ -74,14 +74,15 @@ test("a missing version field shows the update line", () => {
   expect(report.problems[0].message).toContain("names no version");
 });
 
-// v0.2.0 has no `continue --wait`, and v0.3.0 lacks the checkpoint E and F fixes, though both
-// answer `capabilities` with the contracts the plugin drives.
-for (const version of ["0.1.9", "0.2.0", "0.3.0"]) {
-  test(`a release before 0.4.0, ${version}, shows the update line`, () => {
+// v0.2.0 has no `continue --wait`, v0.3.0 lacks the checkpoint E and F fixes, and v0.4.0 and
+// v0.5.0 report a try cut off by a kill as running, though all answer `capabilities` with the
+// contracts the plugin drives.
+for (const version of ["0.1.9", "0.2.0", "0.3.0", "0.4.0", "0.5.0"]) {
+  test(`a release before 0.6.0, ${version}, shows the update line`, () => {
     fakeSpore(join(bin, "spore"), { ...CAPABILITIES, version });
     const { exitCode, stdout } = doctor();
     expect(exitCode).toBe(1);
-    expect(stdout).toBe(`ml-workflow needs spore 0.4.0 or later; ${join(bin, "spore")} is ${version}. ${UPDATE}\n`);
+    expect(stdout).toBe(`ml-workflow needs spore 0.6.0 or later; ${join(bin, "spore")} is ${version}. ${UPDATE}\n`);
   });
 }
 
@@ -93,7 +94,7 @@ test("a missing contract shows the update line naming it", () => {
   expect(report.problems).toEqual([
     {
       code: "spore.contract",
-      message: `ml-workflow needs spore 0.4.0 or later; ${join(bin, "spore")} (0.4.0) has no store contract. ${UPDATE}`,
+      message: `ml-workflow needs spore 0.6.0 or later; ${join(bin, "spore")} (0.6.0) has no store contract. ${UPDATE}`,
       fix: "claude-spore install-spore",
     },
   ]);
@@ -119,7 +120,7 @@ test("contracts the plugin does not drive are not checked", () => {
 });
 
 test("a newer spore with the same contracts fits", () => {
-  fakeSpore(join(bin, "spore"), { ...CAPABILITIES, version: "0.5.3" });
+  fakeSpore(join(bin, "spore"), { ...CAPABILITIES, version: "0.7.3" });
   expect(doctor().exitCode).toBe(0);
 });
 
@@ -133,7 +134,7 @@ test("a non-writable PATH copy names the path and runspore's installer as root",
   expect(report.problems).toEqual([
     {
       code: "spore.version",
-      message: `ml-workflow needs spore 0.4.0 or later; ${join(bin, "spore")} is 0.1.0. ${join(bin, "spore")} is not writable here; update it with: ${fix}`,
+      message: `ml-workflow needs spore 0.6.0 or later; ${join(bin, "spore")} is 0.1.0. ${join(bin, "spore")} is not writable here; update it with: ${fix}`,
       fix,
     },
   ]);

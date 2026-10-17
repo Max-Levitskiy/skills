@@ -27,7 +27,7 @@ jobs:
       matrix:
         # The oldest supported spore, SPORE_MINIMUM in src/version.ts, and the newest release
         # (docs/spec.md, Testing).
-        spore: ["0.4.0", latest]
+        spore: ["0.6.0", latest]
     steps:
       - uses: actions/checkout@v4
       # runspore publishes a release before its archives, minutes apart: the newest is the newest
