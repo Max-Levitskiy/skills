@@ -31,14 +31,16 @@ depends on the scale, so switching scales never reuses a field of the wrong type
 **A label scale with no select field:** use Jira labels `<config.labelPrefix><value>` instead
 (e.g. `size:M`), and tell the user once.
 
-Below, `<alias>` is `points` or `size`.
+Below, `<alias>` is `points` or `size`, and `<alias field id>` is the `customfield_NNNNN` it
+names. The CLI returns custom fields only when asked, so every read that needs the current size
+lists it in `--fields`. With labels as the size store, `labels` alone carries the size.
 
 `cf[NNNNN]` below is the number from the alias (`customfield_10016` → `cf[10016]`).
 
 ## Read one story
 
 ```bash
-atlassian jira get <KEY> --comments --json
+atlassian jira get <KEY> --comments --json --fields summary,description,status,issuetype,labels,<alias field id>
 ```
 
 Pass the description and the comments to the estimators as written. The field behind `<alias>`
@@ -62,7 +64,7 @@ store**, replace the field clause with `(labels is EMPTY OR labels not in ("size
 
 ```bash
 atlassian jira search 'statusCategory = Done AND resolution not in ("Won'\''t Do", Duplicate) AND issuetype not in subTaskIssueTypes() ORDER BY resolved DESC' \
-  --limit <calibration.sample> --fields summary,created,resolutiondate,labels,issuetype --json
+  --limit <calibration.sample> --fields summary,created,resolutiondate,labels,issuetype,<alias field id> --json
 ```
 
 Comments come from `atlassian jira get <KEY> --comments`. **Linked change** comes from
@@ -92,6 +94,7 @@ Check what the project accepts first: `atlassian jira meta <PROJECT> --type Stor
 ```bash
 atlassian jira create --project <PROJECT> --type Story --summary "<title>" \
   --description-file <file> --field <alias>=<value as in Write a size>
+# label store: --labels size:M instead of --field
 atlassian jira link <NEW> "Relates" <PARENT>
 ```
 

@@ -64,6 +64,16 @@ gh issue list --state closed --search "reason:completed sort:updated-desc" --lim
   trackers. They show up as labels such as `epic` or `wayfinder:map`, or as titles that name a
   plan.
 
+**Sizes on a board:** when `github.project` is set, the sizes live in the Project field, not in
+labels. Join them in by issue number:
+
+```bash
+gh project item-list <number> --owner <owner> --format json --limit 500 --query 'is:issue is:closed'
+```
+
+Each item carries its fields by name, so take `<config.github.field>` from the item whose
+`content.number` matches the issue.
+
 For each linked PR:
 
 ```bash
