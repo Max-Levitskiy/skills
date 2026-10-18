@@ -115,6 +115,11 @@ Claude Code runs all matching `Stop` hooks at once, and any of them, including t
    `PreToolUse`, a `UserPromptSubmit`, or herdr reporting the pane `working`), so a later stop
    whose hook fails cannot commit an earlier, stale answer. A candidate belongs to one stop.
 
+This needs spore operations that spore 0.4.0 lacks. One checks an answer and stores it as the
+attempt's candidate without completing the attempt. Others commit that candidate or discard it.
+`spore step` has only `claim`, `renew`, `complete`, `fail`, `abandon` and `show`, so these are
+part of the runspore work in decision 9.
+
 Rejected:
 - **A "report" tool from the step plugin** (the original recommendation). It keeps the token out of
   the prompt and returns errors as tool errors, but needs a tool server per step. The hook gets the
@@ -138,6 +143,11 @@ its own output schema. Spore checks `output` against the schema of the outcome n
 outcome picks the edge the run takes. The route is never guessed by matching the output against
 each schema, since two outcomes' schemas can both fit the same output.
 
+A `format: "text"` step keeps working. It has one outcome and no schema, so the hook wraps Claude's
+final message as that outcome's output, as `claude-spore run` does today
+(`plugins/ml-workflow/src/run.ts`). There is nothing to refuse, and the two-step hand-in of
+decision 4 still applies.
+
 Rejected (the options as asked, about a stop that is a question rather than an answer):
 - **In a pane, let it stop and mark "needs you"; without a window, push back** (the original
   recommendation). Two behaviours; superseded by one rule plus decision 6.
@@ -158,6 +168,12 @@ node, so Claude has no step attempt to work under. While the step waits for a re
 `UserPromptSubmit` hook sends your text to spore as the reply and refuses the prompt
 (`decision: "block"`). When the run comes back to the Claude node and its new attempt starts, the
 runner delivers the reply to Claude as the next prompt, in the same conversation.
+
+This interception has to fail closed: a reply hook that times out or crashes would otherwise let
+the prompt through while the run has no attempt. The hook is set to block on failure if Claude Code
+offers that; this was not confirmed in 2.1.302 and is on the list to check. The runner also backs
+it up: if herdr reports the pane `working` while the run is at the reply node, the runner
+interrupts Claude (Escape, through herdr), and you can send the reply again.
 
 Accepted cost: a workflow node for the reply and a resumed conversation.
 
@@ -268,8 +284,8 @@ decision reopens.
   `SessionStart`, so a live process on another conversation is not taken for the step.
 - **The step token stays out of Claude's environment:** hooks and the tools Claude runs inherit
   `claude`'s environment, and decision 7 loads the user's own hooks too. The runner writes the
-  token to a file only the user can read, in the step's work folder, and only the step plugin's
-  hooks read it. That keeps the token out of environment dumps and logs. The file's path stays the
+  token to a file only the user can read, in the step's work folder, and only the runner's hook
+  plugin reads it. That keeps the token out of environment dumps and logs. The file's path stays the
   same for the whole conversation, and the hooks read it on every call. When a new attempt starts
   on a live Claude, for example after you reply to a question, the runner writes the new attempt's
   token into the file before it delivers the next prompt, so the process needs no restart. It is not a hard
@@ -323,9 +339,9 @@ decision reopens.
   herdr, grants, sealing, recovery tests), and everything in this design waits on it.
 - **Switching off a plugin for one session** should work through a per-session settings override
   (`--settings` with `enabledPlugins`), but it has not been tried.
-- **Managed hook policies:** where an organisation sets `allowManagedHooksOnly`, the step plugin's
+- **Managed hook policies:** where an organisation sets `allowManagedHooksOnly`, the runner's hook plugin's
   hooks are blocked and Claude steps cannot hand in answers at all. The `SessionStart` check turns
-  that into a clear failure; making it work needs the step plugin installed through managed policy.
+  that into a clear failure; making it work needs the runner's hook plugin installed through managed policy.
 - **Hooks reaching the run:** not yet tested whether a hook from `--plugin-dir` sees the
   `RUNSPORE_DB`, the run ID and the token file's path that the runner put in `claude`'s
   environment, and whether
