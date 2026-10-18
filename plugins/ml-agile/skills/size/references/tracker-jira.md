@@ -58,7 +58,9 @@ Drop the leading `AND` when there is none. Leave out sub-tasks and epics
 (`issuetype not in subTaskIssueTypes() AND issuetype != Epic`) unless the user asks for them.
 Fetching one more than `sweep.max` tells you whether more remain. **With labels as the size
 store**, replace the field clause with `(labels is EMPTY OR labels not in ("size:XS","size:S",…))`.
-`not in` alone skips issues with no labels at all, which is most unsized stories.
+`not in` alone skips issues with no labels at all, which is most unsized stories. Then drop,
+from the results, any issue with a label starting with `config.labelPrefix`. JQL cannot match a
+prefix, and labels from an earlier scale still count as sizes.
 
 ## Find recently closed stories
 

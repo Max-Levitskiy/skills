@@ -24,17 +24,16 @@ issue are its current size.
 
 ## Find open unsized stories
 
-**Labels:** exclude every size label on the scale.
+**Labels:** drop every issue carrying any label that starts with `config.labelPrefix`. This
+includes values from an earlier scale, because a size already on a ticket stays.
 
 ```bash
-# scale [1,2,3,5,8,13] with prefix size:  →  -label:"size:1" -label:"size:2" …
-gh issue list --state open --limit <sweep.max + 1> \
-  --search '<user filter> -label:"size:1" -label:"size:2" -label:"size:3" -label:"size:5" -label:"size:8" -label:"size:13"' \
-  --json number,title,labels,url
+gh issue list --state open --limit 500 --search '<user filter>' --json number,title,labels,url \
+  --jq 'map(select([.labels[].name | startswith("size:")] | any | not)) | .[:<sweep.max + 1>]'
 ```
 
-The user's filter goes in the same `--search`: `label:checkout`, `milestone:"Sprint 12"`,
-`assignee:@me`. Fetching one more than `sweep.max` tells you whether more remain.
+The user's filter goes in `--search`: `label:checkout`, `milestone:"Sprint 12"`, `assignee:@me`.
+Keeping one more than `sweep.max` tells you whether more remain.
 
 **Project:** list the board's items with the user's filter in `--query` (Projects filter
 syntax: `label:checkout`, `milestone:"Sprint 12"`, `assignee:@me`). Then keep the items whose
@@ -42,8 +41,11 @@ size field is empty:
 
 ```bash
 gh project item-list <number> --owner <owner> --format json --limit 500 \
-  --query '<user filter> is:issue is:open'
+  --query '<user filter> repo:O/R is:issue is:open'
 ```
+
+`repo:O/R` keeps a board shared by several repositories to this one. The later reads and writes
+resolve issue numbers in this repo.
 
 When the host rejects `--query`, list without it and apply the filter to the items' labels,
 milestone and assignees yourself. Unrelated stories never reach the estimators.
@@ -65,14 +67,14 @@ gh issue list --state closed --search "reason:completed sort:updated-desc" --lim
   plan.
 
 **Sizes on a board:** when `github.project` is set, the sizes live in the Project field, not in
-labels. Join them in by issue number:
+labels. Join them in by repository and issue number:
 
 ```bash
-gh project item-list <number> --owner <owner> --format json --limit 500 --query 'is:issue is:closed'
+gh project item-list <number> --owner <owner> --format json --limit 500 --query 'repo:O/R is:issue is:closed'
 ```
 
 Each item carries its fields by name, so take `<config.github.field>` from the item whose
-`content.number` matches the issue.
+`content.repository` is `O/R` and whose `content.number` matches the issue.
 
 For each linked PR:
 
