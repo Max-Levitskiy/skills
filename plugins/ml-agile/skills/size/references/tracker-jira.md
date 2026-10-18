@@ -31,6 +31,11 @@ depends on the scale, so switching scales never reuses a field of the wrong type
 **A label scale with no select field:** use Jira labels `<config.labelPrefix><value>` instead
 (e.g. `size:M`), and tell the user once.
 
+**Every search names a project.** The CLI applies a named scope, but not
+`jira.defaultProject` on its own; without one it searches every project you can see. When
+neither the user's filter nor the active scope names a project, add `project = <jira.defaultProject>`
+to both the sweep and the calibration JQL. With no default project either, ask which project.
+
 Below, `<alias>` is `points` or `size`, and `<alias field id>` is the `customfield_NNNNN` it
 names. The CLI returns custom fields only when asked, so every read that needs the current size
 lists it in `--fields`. With labels as the size store, `labels` alone carries the size.
@@ -40,7 +45,7 @@ lists it in `--fields`. With labels as the size store, `labels` alone carries th
 ## Read one story
 
 ```bash
-atlassian jira get <KEY> --comments --json --fields summary,description,status,issuetype,labels,<alias field id>
+atlassian jira get <KEY> --comments --json --fields summary,description,status,issuetype,labels,parent,<alias field id>
 ```
 
 Pass the description and the comments to the estimators as written. The field behind `<alias>`
@@ -50,7 +55,7 @@ holds the current size.
 
 ```bash
 atlassian jira search '<user filter> AND cf[10016] is EMPTY AND statusCategory != Done ORDER BY rank' \
-  --limit <sweep.max + 1> --fields summary,status,issuetype,labels
+  --limit <sweep.max + 1> --fields summary,status,issuetype,labels --json
 ```
 
 The user's filter is JQL (`sprint in openSprints()`, `labels = checkout`, `project = NEO`).

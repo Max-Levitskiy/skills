@@ -76,7 +76,8 @@ mixes numbers and labels is invalid: stop and ask the user which kind they want,
 
 - **Compare sizes by position on the scale, never by arithmetic.** "At or above the split
   threshold" and "the middle vote" then work for labels too.
-- `config.split.threshold` empty means the largest value.
+- `config.split.threshold` empty means the largest value. A threshold that is not on the scale
+  counts as empty: say so once, and offer to write the fix.
 
 **Changing the scale:** write the new list to the repo layer (see Writing config), then
 calibrate. The old reference stories map to values that may no longer exist. Sizes already on

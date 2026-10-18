@@ -132,7 +132,7 @@ change* rather than guessing its effort. Add comments with `gh issue view <N> --
 
 ```bash
 PID=$(gh project view <number> --owner <owner> --format json --jq .id)
-F=$(gh project field-list <number> --owner <owner> --format json --jq '.fields[] | select(.name=="<field>")')
+F=$(gh project field-list <number> --owner <owner> --limit 200 --format json --jq '.fields[] | select(.name=="<field>")')
 ITEM=$(gh project item-add <number> --owner <owner> --url <issue url> --format json --jq .id)
 gh project item-edit --project-id "$PID" --id "$ITEM" --field-id <F.id> --number 5
 # single-select field: --single-select-option-id <id of the option named M>
