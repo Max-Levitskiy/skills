@@ -67,7 +67,9 @@ gh project item-list <number> --owner <owner> --format json --limit 500 \
 resolve issue numbers in this repo.
 
 When the host rejects `--query`, list without it and apply the filter to the items' labels,
-milestone and assignees yourself. Unrelated stories never reach the estimators.
+milestone and assignees yourself. Unrelated stories never reach the estimators. When all 500
+items come back and fewer than `sweep.max + 1` survive, list again with `--limit 3000`. Still
+full → ask for a narrower filter rather than reporting no work.
 
 ## Find recently closed stories
 
@@ -115,9 +117,11 @@ change* rather than guessing its effort. Add comments with `gh issue view <N> --
 2. Add the label, removing the old size label in the same call when the issue has one:
 
    ```bash
-   gh issue edit <N> --add-label "size:5"                         # no size yet
-   gh issue edit <N> --add-label "size:5" --remove-label "size:3" # resized
+   gh issue edit <N> --add-label "<prefix>5"                             # no size yet
+   gh issue edit <N> --add-label "<prefix>5" --remove-label "<prefix>3"  # resized
    ```
+
+   `<prefix>` is `config.labelPrefix` throughout.
 
 **Project:**
 
@@ -127,6 +131,7 @@ F=$(gh project field-list <number> --owner <owner> --format json --jq '.fields[]
 ITEM=$(gh project item-add <number> --owner <owner> --url <issue url> --format json --jq .id)
 gh project item-edit --project-id "$PID" --id "$ITEM" --field-id <F.id> --number 5
 # single-select field: --single-select-option-id <id of the option named M>
+gh issue edit <N> --remove-label "<prefix><old value>"   # only when a fallback label is on it
 ```
 
 `item-add` returns the existing item when the issue is already on the board. If the field is

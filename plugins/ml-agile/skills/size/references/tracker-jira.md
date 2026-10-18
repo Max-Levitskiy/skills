@@ -54,10 +54,12 @@ atlassian jira search '<user filter> AND cf[10016] is EMPTY AND statusCategory !
 ```
 
 The user's filter is JQL (`sprint in openSprints()`, `labels = checkout`, `project = NEO`).
-Drop the leading `AND` when there is none. Leave out sub-tasks and epics
+Wrap it in parentheses, and drop the leading `AND` when there is none. If it ends in its own
+`ORDER BY`, move that clause to the end in place of `ORDER BY rank`. Leave out sub-tasks and epics
 (`issuetype not in subTaskIssueTypes() AND issuetype != Epic`) unless the user asks for them.
 Fetching one more than `sweep.max` tells you whether more remain. **With labels as the size
-store**, replace the field clause with `(labels is EMPTY OR labels not in ("size:XS","size:S",…))`.
+store**, replace the field clause with `(labels is EMPTY OR labels not in ("<prefix>XS","<prefix>S",…))`,
+where `<prefix>` is `config.labelPrefix`.
 `not in` alone skips issues with no labels at all, which is most unsized stories. JQL cannot
 match a prefix, and labels from an earlier scale still count as sizes, so search with
 `--limit 200`. Drop every issue with a label starting with `config.labelPrefix`, then keep the
@@ -66,13 +68,12 @@ first `sweep.max + 1`. When all 200 come back and fewer survive, search again wi
 ## Find recently closed stories
 
 ```bash
-atlassian jira search 'statusCategory = Done AND (resolution is EMPTY OR resolution not in ("Won'\''t Do", Duplicate)) AND issuetype not in subTaskIssueTypes() ORDER BY resolved DESC' \
+atlassian jira search 'statusCategory = Done AND (resolution is EMPTY OR resolution not in ("Won'\''t Do", Duplicate)) AND issuetype not in subTaskIssueTypes() ORDER BY statusCategoryChangedDate DESC' \
   --limit <calibration.sample> --fields summary,created,resolutiondate,labels,issuetype,<alias field id> --json
 ```
 
-A workflow that moves stories to Done without setting a resolution leaves `resolved` empty, so
-those stories sort last. When most results come back without a `resolutiondate`, order by
-`updated DESC` instead.
+Ordering by when the story reached Done keeps stories closed without a resolution in the sample.
+Data Center has no `statusCategoryChangedDate`; there, order by `updated DESC`.
 
 Comments come from `atlassian jira get <KEY> --comments`. **Linked change** comes from
 whichever of these answers first:
@@ -89,7 +90,7 @@ count, but it ranks below stories with evidence.
 ```bash
 atlassian jira update <KEY> --field points=5
 atlassian jira update <KEY> --field size='{"value":"M"}'     # select field
-atlassian jira update <KEY> --add-label size:M --remove-label size:S   # label store
+atlassian jira update <KEY> --add-label <prefix>M --remove-label <prefix>S   # label store; drop --remove-label when unsized
 ```
 
 `safety.readOnly` in the Atlassian config refuses every write. Report that line and stop.
@@ -101,7 +102,7 @@ Check what the project accepts first: `atlassian jira meta <PROJECT> --type Stor
 ```bash
 atlassian jira create --project <PROJECT> --type Story --summary "<title>" \
   --description-file <file> --field <alias>=<value as in Write a size>
-# label store: --labels size:M instead of --field
+# label store: --labels <prefix>M instead of --field
 atlassian jira link <NEW> "Relates" <PARENT>
 ```
 
