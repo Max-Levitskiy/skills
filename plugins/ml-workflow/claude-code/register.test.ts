@@ -583,6 +583,7 @@ test('a dot drawing wider than the pane gives way to a narrower one, and to the 
   const across = await $.ui.mount({ ...VIEW_PANE, props: paneProps('coding-loop-0238a2a3', 160), surface: 'terminal' })
   expect(await across.find({ type: 'Text', text: /^w+$/ })).toBeDefined()
   expect(await across.find({ type: 'Text', text: 'Run the tests' })).toBeUndefined()
+  expect((await across.find({ key: 'body' }))?.props.flexDirection).toBe('column')
   await across.unmount()
   const tree = await $.ui.mount({ ...VIEW_PANE, surface: 'terminal' })
   expect(await tree.find({ type: 'Text', text: /^w+$/ })).toBeUndefined()
@@ -591,6 +592,12 @@ test('a dot drawing wider than the pane gives way to a narrower one, and to the 
   expect(await tree.find({ type: 'Text', text: /^Implement \(Claude\)$/ })).toMatchObject({ props: { backgroundColor: '#ffd43b' } })
   expect(await tree.find({ type: 'Text', text: '  2    implement [label="Implement (Claude)"];' })).toMatchObject({ props: { wrap: 'wrap' } })
   await tree.unmount()
+  // Picked, the tree stays beside the files: the drawing it hides does not stack the pane.
+  const picked = await $.ui.mount({ ...VIEW_PANE, props: paneProps('coding-loop-0238a2a3', 160), surface: 'terminal' })
+  await picked.press({ key: 'drawn' })
+  expect(await picked.find({ type: 'Text', text: 'Run the tests' })).toBeDefined()
+  expect((await picked.find({ key: 'body' }))?.props.flexDirection).toBe('row')
+  await picked.unmount()
 })
 
 test('the drawn button switches the view between the graph and the compact tree as text, and back', async ($, on) => {

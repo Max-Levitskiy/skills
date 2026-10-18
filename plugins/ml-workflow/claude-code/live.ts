@@ -306,12 +306,14 @@ export function registerLive(on: On) {
       const drawings = [view.dots ?? [], ...(view.narrower ?? [])].filter(rows => rows.length)
       const fitting = (room: number) => drawings.find(rows => widthOf(rows) <= room)
       // Picked, the graph is drawn even where none fits, as the narrowest cut at the pane's edge.
-      let dots = isWide ? fitting(Math.floor(columns / 2) - 2) : undefined
-      if (!dots) {
+      // Picked, the tree keeps the pane's layout: no unshown drawing moves it above the files.
+      const isText = pick === 'text' && Boolean(view.tree?.length)
+      let dots = isWide && !isText ? fitting(Math.floor(columns / 2) - 2) : undefined
+      if (!dots && !isText) {
         dots = fitting(columns - 2) ?? (pick === 'graph' ? drawings.at(-1) : undefined)
         if (dots) isWide = false
       }
-      const isTree = (pick === 'text' || !dots) && Boolean(view.tree?.length)
+      const isTree = (isText || !dots) && Boolean(view.tree?.length)
       isGraph = !isTree
       const rows = isTree ? view.tree! : (dots ?? drawings.at(-1) ?? [])
       // The row `reveal` scrolls to: the middle one of the current node's, its label's in a box.
@@ -366,7 +368,7 @@ export function registerLive(on: On) {
           ]
         : []
     const facts = h(ui.Box, { flexDirection: 'row', gap: 2 }, h(ui.Box, { flexShrink: 1 }, factsText), h(ui.Box, { flexShrink: 0, gap: 1 }, toggle, ...folding))
-    const body = isWide ? h(ui.Box, { flexDirection: 'row', gap: 3 }, drawing, files) : h(ui.Box, { flexDirection: 'column' }, drawing, files)
+    const body = isWide ? h(ui.Box, { key: 'body', flexDirection: 'row', gap: 3 }, drawing, files) : h(ui.Box, { key: 'body', flexDirection: 'column' }, drawing, files)
     return h(ui.Box, { flexDirection: 'column' }, facts, h(ui.Box, { marginTop: 1 }, body)) as RenderElement
   })
 }
