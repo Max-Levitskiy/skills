@@ -29,7 +29,7 @@ includes values from an earlier scale, because a size already on a ticket stays.
 
 ```bash
 gh issue list --state open --limit 500 --search '<user filter>' --json number,title,labels,url \
-  --jq 'map(select([.labels[].name | startswith("size:")] | any | not)) | .[:<sweep.max + 1>]'
+  --jq 'map(select([.labels[].name | startswith("<config.labelPrefix>")] | any | not)) | .[:<sweep.max + 1>]'
 ```
 
 The user's filter goes in `--search`: `label:checkout`, `milestone:"Sprint 12"`, `assignee:@me`.
