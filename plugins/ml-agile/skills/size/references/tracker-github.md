@@ -10,7 +10,8 @@ label scale (one option per scale value). Empty → a label `<config.labelPrefix
 
 **Project access needs the `project` token scope.** When `github.project` is set, check once per
 run:
-`gh auth status 2>&1 | grep -q "'project'"`. Without it, use labels for this run and tell the
+`gh auth status --active 2>&1 | grep -q "'project'"`. `--active` reads only the account `gh`
+uses, not every stored login. Without it, use labels for this run and tell the
 user in one line: `gh auth refresh -s project` enables the board.
 
 **A size label counts as a size in every mode.** Fallback runs leave labels behind on a
@@ -28,14 +29,17 @@ Pass the body and the comments to the estimators as written. The current size is
 label or, with `github.project` set, the board field:
 
 ```bash
-gh api graphql -f query='query { repository(owner:"<O>", name:"<R>") { issue(number:<N>) {
-  projectItems(first:20) { nodes { project { number owner { ... on Organization { login } ... on User { login } } }
-    fieldValueByName(name:"<config.github.field>") {
-      ... on ProjectV2ItemFieldNumberValue { number }
-      ... on ProjectV2ItemFieldSingleSelectValue { name } } } } } } }'
+gh api graphql --paginate -f query='query($endCursor: String) { repository(owner:"<O>", name:"<R>") {
+  issue(number:<N>) { projectItems(first:100, after:$endCursor) {
+    nodes { project { number owner { ... on Organization { login } ... on User { login } } }
+      fieldValueByName(name:"<config.github.field>") {
+        ... on ProjectV2ItemFieldNumberValue { number }
+        ... on ProjectV2ItemFieldSingleSelectValue { name } } }
+    pageInfo { hasNextPage endCursor } } } } }'
 ```
 
-Take the node whose project matches `github.project`.
+Take the node whose project matches `github.project`. `--paginate` follows `endCursor`, so an
+issue on more than 100 boards still finds it.
 
 ## Find open unsized stories
 
@@ -78,7 +82,7 @@ full → ask for a narrower filter rather than reporting no work.
 ```bash
 gh issue list --state closed --search "reason:completed sort:updated-desc" --limit <2 × sample> \
   --json number,title,createdAt,closedAt,labels,closedByPullRequestsReferences \
-  --jq 'sort_by(.closedAt) | reverse | .[:<sample>] | map({number, title, createdAt, closedAt,
+  --jq 'sort_by(.closedAt) | reverse | map({number, title, createdAt, closedAt,
         labels: [.labels[].name], prs: [.closedByPullRequestsReferences[].number]})'
 ```
 
@@ -88,6 +92,7 @@ gh issue list --state closed --search "reason:completed sort:updated-desc" --lim
 - Drop issues that track other issues rather than being stories: epics, wayfinder maps, release
   trackers. They show up as labels such as `epic` or `wayfinder:map`, or as titles that name a
   plan.
+- Then keep the first `<sample>`. Dropping before trimming keeps the sample full.
 
 **Sizes on a board:** when `github.project` is set, the sizes live in the Project field, not in
 labels. Join them in by repository and issue number:

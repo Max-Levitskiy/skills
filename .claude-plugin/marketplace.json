@@ -236,7 +236,7 @@
       "name": "ml-agile",
       "source": "./plugins/ml-agile",
       "description": "Agile practice for AI agents. size gives stories story points the way a Scrum team does: it calibrates reference stories from recently closed work, sizes one story or sweeps the backlog by agent planning poker (developer, tester and risk estimators voting blind), flags stories that need refinement, proposes splits for oversized ones, and writes sizes to Jira (through the Atlassian skill) or GitHub issues only after you confirm. The scale is Fibonacci by default, or custom numbers or T-shirt sizes, set in agent-config and shared by the team.",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "license": "MIT",
       "author": {
         "name": "Max Levitskiy"
