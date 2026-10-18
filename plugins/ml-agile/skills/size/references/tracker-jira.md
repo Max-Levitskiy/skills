@@ -5,15 +5,22 @@ plugin is installed. Its scopes apply, so a configured `defaultScope` narrows se
 it narrows any other Jira command, and the output names the scope it used. Read the Atlassian
 skill's own instructions only if a command fails.
 
-**Where a size lives.** It goes in a field saved as the Atlassian skill's field alias `points`,
-so every command can write `--field points=5`:
+**Where a size lives.** It goes in a field saved as an Atlassian skill field alias. The alias
+depends on the scale, so switching scales never reuses a field of the wrong type:
 
-1. Read the alias: `atlassian config show --json | jq .config.fields.points`.
-2. **If it is missing:** find the field with `atlassian jira fields --search point`. Company-managed
-   projects use *Story Points*; team-managed ones use *Story point estimate*. For a label scale,
-   search `size` instead and pick a select field.
-3. Confirm the field with the user in one line, then save the alias in the Atlassian skill's
-   repo layer by merging into it:
+| Scale | Alias | Field type (`schema.type` in `atlassian jira fields`) |
+| --- | --- | --- |
+| numbers | `points` | `number`: *Story Points* (company-managed) or *Story point estimate* (team-managed) |
+| labels | `size` | `option`: a single-select field such as *T-Shirt Size*, one option per scale value |
+
+1. **Read the alias** for the current scale:
+   `atlassian config show --json | jq .config.fields.points` (or `.size`).
+2. **Check its type** against the table: `atlassian jira fields --search <field id>`. Do this on
+   every run that writes, so it catches an alias that predates a scale change. A wrong type
+   counts as missing.
+3. **If it is missing**, find a field of the right type with `atlassian jira fields --search
+   point` (or `size`). Confirm it with the user in one line, then save the alias in the
+   Atlassian skill's repo layer by merging into it:
 
    ```bash
    P=$("$AC" path atlassian --layer repo | jq -r '.layers[0].path')
@@ -21,9 +28,10 @@ so every command can write `--field points=5`:
      | "$AC" write atlassian --layer repo
    ```
 
-**A label scale with no select field:** Story Points fields are numeric, so they can't hold a
-label. Use Jira labels `<config.labelPrefix><value>` instead (e.g. `size:M`), and tell the user
-once.
+**A label scale with no select field:** use Jira labels `<config.labelPrefix><value>` instead
+(e.g. `size:M`), and tell the user once.
+
+Below, `<alias>` is `points` or `size`.
 
 `cf[NNNNN]` below is the number from the alias (`customfield_10016` → `cf[10016]`).
 
@@ -33,7 +41,7 @@ once.
 atlassian jira get <KEY> --comments --json
 ```
 
-Pass the description and the comments to the estimators as written. The field behind `points`
+Pass the description and the comments to the estimators as written. The field behind `<alias>`
 holds the current size.
 
 ## Find open unsized stories
@@ -47,7 +55,8 @@ The user's filter is JQL (`sprint in openSprints()`, `labels = checkout`, `proje
 Drop the leading `AND` when there is none. Leave out sub-tasks and epics
 (`issuetype not in subTaskIssueTypes() AND issuetype != Epic`) unless the user asks for them.
 Fetching one more than `sweep.max` tells you whether more remain. **With labels as the size
-store**, replace the field clause with `labels not in ("size:XS","size:S",…)`.
+store**, replace the field clause with `(labels is EMPTY OR labels not in ("size:XS","size:S",…))`.
+`not in` alone skips issues with no labels at all, which is most unsized stories.
 
 ## Find recently closed stories
 
@@ -70,7 +79,7 @@ count, but it ranks below stories with evidence.
 
 ```bash
 atlassian jira update <KEY> --field points=5
-atlassian jira update <KEY> --field points='{"value":"M"}'   # select field
+atlassian jira update <KEY> --field size='{"value":"M"}'     # select field
 atlassian jira update <KEY> --add-label size:M --remove-label size:S   # label store
 ```
 
@@ -82,7 +91,7 @@ Check what the project accepts first: `atlassian jira meta <PROJECT> --type Stor
 
 ```bash
 atlassian jira create --project <PROJECT> --type Story --summary "<title>" \
-  --description-file <file> --field points=3
+  --description-file <file> --field <alias>=<value as in Write a size>
 atlassian jira link <NEW> "Relates" <PARENT>
 ```
 

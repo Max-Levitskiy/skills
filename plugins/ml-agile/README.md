@@ -49,7 +49,7 @@ batch after one confirmation.
 
 | Tracker | Through | Where the size goes |
 | --- | --- | --- |
-| Jira | [`ml-workplace:atlassian`](../ml-workplace) | the Story Points field, found once and saved as the Atlassian skill's `fields.points` |
+| Jira | [`ml-workplace:atlassian`](../ml-workplace) | the Story Points field (or a select field for a label scale), found once and saved as the Atlassian skill's `fields.points` (or `fields.size`) |
 | GitHub issues | `gh` | a number field on the Project board in `github.project`, or a `size:5` / `size:M` label |
 
 Jira is chosen when the Atlassian skill is configured, GitHub when the repo has a GitHub remote.

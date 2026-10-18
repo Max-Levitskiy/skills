@@ -36,11 +36,17 @@ gh issue list --state open --limit <sweep.max + 1> \
 The user's filter goes in the same `--search`: `label:checkout`, `milestone:"Sprint 12"`,
 `assignee:@me`. Fetching one more than `sweep.max` tells you whether more remain.
 
-**Project:** list the board's items and keep open issues whose field is empty:
+**Project:** list the board's items with the user's filter in `--query` (Projects filter
+syntax: `label:checkout`, `milestone:"Sprint 12"`, `assignee:@me`). Then keep the items whose
+size field is empty:
 
 ```bash
-gh project item-list <number> --owner <owner> --format json --limit 500
+gh project item-list <number> --owner <owner> --format json --limit 500 \
+  --query '<user filter> is:issue is:open'
 ```
+
+When the host rejects `--query`, list without it and apply the filter to the items' labels,
+milestone and assignees yourself. Unrelated stories never reach the estimators.
 
 ## Find recently closed stories
 
