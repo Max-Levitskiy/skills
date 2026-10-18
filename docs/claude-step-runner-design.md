@@ -221,8 +221,10 @@ decision reopens.
   wait.
 - **Heartbeat:** the host renews the step's lease on a timer while two things hold: the runner's
   liveness check says Claude is alive, and a turn is in progress. A turn starts when a prompt
-  reaches Claude (the runner delivers it, or `UserPromptSubmit` lets it through). It ends at `Stop`
-  or `StopFailure`, which Claude Code fires instead of `Stop` when the turn ends on an API error.
+  reaches Claude (the runner delivers it, or `UserPromptSubmit` lets it through). It ends only when
+  Claude actually stops: at a `Stop` the hook lets through, or at `StopFailure`, which Claude Code
+  fires instead of `Stop` when the turn ends on an API error. A `Stop` the hook refuses (decision
+  5's fix loop) keeps the turn in progress while Claude repairs its answer.
   Hooks do not carry the heartbeat itself: `PostToolUse` fires only after a tool succeeds, so a
   long model response, one long tool or an answer with no tools would let the lease run out while
   Claude is still working.
