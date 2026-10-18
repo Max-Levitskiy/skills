@@ -9,10 +9,11 @@ label scale (one option per scale value). Empty → a label `<config.labelPrefix
 `size:5` or `size:M`.
 
 **Project access needs the `project` token scope.** When `github.project` is set, check once per
-run:
-`gh auth status --active 2>&1 | grep -q "'project'"`. `--active` reads only the account `gh`
-uses, not every stored login. Without it, use labels for this run and tell the
-user in one line: `gh auth refresh -s project` enables the board.
+run by reading the board: `gh project view <number> --owner <owner> --format json >/dev/null`.
+It runs as the account `gh` is using, on any `gh` version that has `gh project`. When it fails,
+use labels for this run and relay gh's error line in one line; it names the missing scope.
+`gh auth refresh -s project` enables the board. Writing the field needs `project`, not just
+`read:project`: a write refused for scope falls back to a label the same way.
 
 **A size label counts as a size in every mode.** Fallback runs leave labels behind on a
 board-backed repo, so every read and sweep treats a prefixed label as a size, whether or not the
