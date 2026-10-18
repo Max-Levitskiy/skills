@@ -79,8 +79,18 @@ Rejected:
 A workflow folder is committed code in the project, trusted like a script in it. The list lives in
 that folder and spore enforces it, so a run started overnight never stalls on a prompt.
 
+The right to start programs names the programs, not "any program": the list gives each executable
+(for example `claude` and `herdr`, resolved to a path when the run starts) and, where it matters,
+the arguments it may take. A runner that tries to start anything else fails the step with a code
+naming the missing grant.
+
+The boundary is the runner, not what it starts. A program the runner starts runs with the worker
+user's own rights, as any `command` action does today; spore does not sandbox it. Claude's own
+limits come from Claude Code's permission system and from where the step runs (a disposable
+worktree, as runspore `docs/11-security.md` advises for agent workers).
+
 Accepted cost: the list protects against a buggy runner, not against a workflow copied without
-reading it.
+reading it, and not against what an allowed program does once started.
 
 Rejected:
 - **Spore asks the first time a workflow wants a right, and remembers the yes.** Catches a
@@ -121,8 +131,14 @@ Rejected (the options as asked, about a stop that is a question rather than an a
 When Claude genuinely needs to ask something mid-step, the step's schema allows a "question"
 answer. The run then waits for your reply in the workflow, and afterwards goes back into the same
 Claude conversation (one conversation per node, as today). Settled with it: you can reply in the
-pane (a hook passes your text on) or from the plugin's menu, whichever comes first; a watched step's
-pane stays open while it waits.
+pane or from the plugin's menu, whichever comes first; a watched step's pane stays open while it
+waits.
+
+A reply typed in the pane must not reach Claude directly: at that moment the run is at the reply
+node, so Claude has no step attempt to work under. While the step waits for a reply, a
+`UserPromptSubmit` hook sends your text to spore as the reply and refuses the prompt
+(`decision: "block"`). When the run comes back to the Claude node and its new attempt starts, the
+runner delivers the reply to Claude as the next prompt, in the same conversation.
 
 Accepted cost: a workflow node for the reply and a resumed conversation.
 
@@ -153,8 +169,12 @@ When Claude in a watched pane waits on the person (a permission prompt, idle wit
 hook (Claude Code's `Notification` hook) tells spore, and spore records it on the step. `spore
 status`, `spore continue` and the Claude Code menu all show it, and it survives a closed Claude
 session. It needs a small runspore feature: today a signal goes to the run, not to the step it is
-in. The mark clears by itself once Claude works again (you typed into the pane or approved a
-prompt).
+in.
+
+Claude Code sends no "working again" notification, so the mark is cleared explicitly. A
+`UserPromptSubmit` hook (you typed into the pane) or a `PostToolUse` hook (a tool you approved has
+run) clears it, and it also clears when the step completes, fails or is abandoned. Clearing a mark
+that is not set does nothing, so these hooks can clear on every call.
 
 Rejected:
 - **Only the Claude Code menu and run line show it.** No runspore change, but invisible from a
@@ -184,16 +204,37 @@ decision reopens.
   it once herdr is back. The node's `settings.json` can change the tries and waits. The plugin's
   default: the step fails as retryable with a message naming herdr, 3 tries, starting at a 30-second
   wait.
-- **Heartbeat:** a `PostToolUse` hook renews the step's lease (`spore step renew`), at most once
-  every N seconds, so the database is not hit on every tool call.
-- **Session closed without an answer** (`/exit`, closed pane): a `SessionEnd` hook fails the step
-  (`spore step fail`), so it retries at once instead of waiting for the lease to run out.
+- **Heartbeat:** the host renews the step's lease on a timer for as long as the runner's liveness
+  check says Claude is alive. Hooks do not carry it: `PostToolUse` fires only after a tool
+  succeeds, so a long model response, one long tool or an answer with no tools would let the lease
+  run out while Claude is still working.
+- **The step's hooks must load:** the step plugin's `SessionStart` hook tells spore the Claude
+  session ID. If that does not arrive within a short time, the runner stops Claude and fails the
+  step, not retryable, with a message saying the step's hooks did not load. A managed policy with
+  `allowManagedHooksOnly` causes this: it blocks hooks from a `--plugin-dir` plugin unless managed
+  policy force-enables it. Without this check, a background step would finish without handing in
+  an answer and could only retry or expire.
+- **Session closed without an answer:** a `SessionEnd` hook acts on the end reason.
+  `prompt_input_exit`, `logout` and `other` mean Claude exited: the hook fails the step
+  (`spore step fail`), so it retries at once instead of waiting for the lease to run out. `clear`
+  and `resume` leave the same process running on a different conversation: the runner closes it and
+  fails the step, so the next try resumes the step's own conversation in a new pane.
 - **Safety net:** hooks are the fast path, not a guarantee. A SIGKILL, a dead machine or a failed
-  hook call fires nothing, so the step's lease and a liveness check (pid, process start time and
-  boot ID, as `probe` does today) stay.
+  hook call fires nothing, so the step's lease and a liveness check stay. The check covers the pid,
+  process start time and boot ID, as `probe` does today, plus the Claude session ID recorded at
+  `SessionStart`, so a live process on another conversation is not taken for the step.
+- **The step token stays out of Claude's environment:** hooks and the tools Claude runs inherit
+  `claude`'s environment, and decision 7 loads the user's own hooks too. The runner writes the
+  token to a file only the user can read, in the attempt's work folder, and only the step plugin's
+  hooks read it. That keeps the token out of environment dumps and logs. It is not a hard
+  boundary: in the local profile, any program running as the same user can read that file, which
+  runspore `docs/11-security.md` accepts ("same-user native code and installed mods are trusted").
 - **Hooks stay short:** they block Claude while they run, so each spore call has a tight timeout.
-- **Repeated signals are harmless:** a hook that sends a signal uses `--id <session_id:event>`, and
-  spore ignores a repeated message ID.
+- **Repeated signals are harmless:** spore ignores a repeated message ID, so each signal's ID names
+  the one moment it answers. A reply uses the reply node's activation ID (`position.activationId`,
+  for example `reply/2`), as the shipped `approve` and `tests_stuck` steps already do. A session
+  that asks twice reaches two activations, so the second reply is not dropped as a repeat of the
+  first.
 - **No bare mode:** steps never run `claude --bare`, which skips OAuth and the keychain, so steps
   keep the user's Claude subscription sign-in.
 - **The rest of claude-spore** (`menu`, `line`, `view`, `draw`, `check`, `example`, `doctor`,
@@ -236,8 +277,12 @@ decision reopens.
   herdr, grants, sealing, recovery tests), and everything in this design waits on it.
 - **Switching off a plugin for one session** should work through a per-session settings override
   (`--settings` with `enabledPlugins`), but it has not been tried.
+- **Managed hook policies:** where an organisation sets `allowManagedHooksOnly`, the step plugin's
+  hooks are blocked and Claude steps cannot hand in answers at all. The `SessionStart` check turns
+  that into a clear failure; making it work needs the step plugin installed through managed policy.
 - **Hooks reaching the run:** not yet tested whether a hook from `--plugin-dir` sees the
-  `RUNSPORE_DB`, run ID and step token that the runner put in `claude`'s environment, and whether
+  `RUNSPORE_DB`, the run ID and the token file's path that the runner put in `claude`'s
+  environment, and whether
   `spore step complete` from inside the pane is accepted for the attempt the runner claimed.
 - **Runs depend on the user's setup** (decision 7): a plugin or hook the user installs can change
   how a workflow behaves, or slow it.
