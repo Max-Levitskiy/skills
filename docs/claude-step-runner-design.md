@@ -178,10 +178,18 @@ status`, `spore continue` and the Claude Code menu all show it, and it survives 
 session. It needs a small runspore feature: today a signal goes to the run, not to the step it is
 in.
 
-Claude Code sends no "working again" notification, so the mark is cleared explicitly. A
-`UserPromptSubmit` hook (you typed into the pane) or a `PostToolUse` hook (a tool you approved has
-run) clears it, and it also clears when the step completes, fails or is abandoned. Clearing a mark
-that is not set does nothing, so these hooks can clear on every call.
+Claude Code sends no "working again" notification, so the mark is cleared explicitly, by every
+hook that shows Claude is past the wait, not only by the happy path:
+- `UserPromptSubmit`: you typed into the pane;
+- `PreToolUse`: Claude is about to call its next tool, which also covers a denied permission
+  prompt after which Claude carries on (a manual denial emits no event of its own);
+- `PostToolUse` and `PostToolUseFailure`: a tool you approved has run, whether it succeeded or
+  failed;
+- `Stop`: Claude ended its turn. If it then sits idle, the later `idle_prompt` notification sets
+  the mark again.
+
+The mark also clears when the step completes, fails or is abandoned. Clearing a mark that is not
+set does nothing, so these hooks can clear on every call.
 
 Rejected:
 - **Only the Claude Code menu and run line show it.** No runspore change, but invisible from a
