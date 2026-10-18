@@ -219,10 +219,18 @@ decision reopens.
   it once herdr is back. The node's `settings.json` can change the tries and waits. The plugin's
   default: the step fails as retryable with a message naming herdr, 3 tries, starting at a 30-second
   wait.
-- **Heartbeat:** the host renews the step's lease on a timer for as long as the runner's liveness
-  check says Claude is alive. Hooks do not carry it: `PostToolUse` fires only after a tool
-  succeeds, so a long model response, one long tool or an answer with no tools would let the lease
-  run out while Claude is still working.
+- **Heartbeat:** the host renews the step's lease on a timer while two things hold: the runner's
+  liveness check says Claude is alive, and a turn is in progress. A turn starts when a prompt
+  reaches Claude (the runner delivers it, or `UserPromptSubmit` lets it through). It ends at `Stop`
+  or `StopFailure`, which Claude Code fires instead of `Stop` when the turn ends on an API error.
+  Hooks do not carry the heartbeat itself: `PostToolUse` fires only after a tool succeeds, so a
+  long model response, one long tool or an answer with no tools would let the lease run out while
+  Claude is still working.
+- **A turn that ends without an accepted answer** stops the renewal. In a pane, Claude idling at
+  its prompt is then not taken for work in progress. `StopFailure` fails the attempt as
+  retryable. A `Stop` hook that timed out or crashed hands in nothing and is not refused either,
+  so the turn simply ends: renewal stops, the step shows "needs you" once Claude is idle, and if
+  nobody acts the lease runs out and spore retries as usual.
 - **The step's hooks must load:** the step plugin's `SessionStart` hook tells spore the Claude
   session ID. If that does not arrive within a short time, the runner stops Claude and fails the
   step, not retryable, with a message saying the step's hooks did not load. A managed policy with
@@ -240,8 +248,11 @@ decision reopens.
   `SessionStart`, so a live process on another conversation is not taken for the step.
 - **The step token stays out of Claude's environment:** hooks and the tools Claude runs inherit
   `claude`'s environment, and decision 7 loads the user's own hooks too. The runner writes the
-  token to a file only the user can read, in the attempt's work folder, and only the step plugin's
-  hooks read it. That keeps the token out of environment dumps and logs. It is not a hard
+  token to a file only the user can read, in the step's work folder, and only the step plugin's
+  hooks read it. That keeps the token out of environment dumps and logs. The file's path stays the
+  same for the whole conversation, and the hooks read it on every call. When a new attempt starts
+  on a live Claude, for example after you reply to a question, the runner writes the new attempt's
+  token into the file before it delivers the next prompt, so the process needs no restart. It is not a hard
   boundary: in the local profile, any program running as the same user can read that file, which
   runspore `docs/11-security.md` accepts ("same-user native code and installed mods are trusted").
 - **Hooks stay short:** they block Claude while they run, so each spore call has a tight timeout.
