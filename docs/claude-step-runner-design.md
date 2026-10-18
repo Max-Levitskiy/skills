@@ -111,7 +111,9 @@ Claude Code runs all matching `Stop` hooks at once, and any of them, including t
 2. **Commit:** the runner completes the attempt with the candidate only once it sees Claude has
    really stopped. It watches for this on its own, not through our hooks: a background `claude`
    process exits; in a pane, herdr reports the agent `idle` or `done` (`herdr agent wait`). If
-   Claude goes on working instead, its next `Stop` replaces the candidate.
+   Claude goes on working instead, the candidate is discarded at the first sign of it (a
+   `PreToolUse`, a `UserPromptSubmit`, or herdr reporting the pane `working`), so a later stop
+   whose hook fails cannot commit an earlier, stale answer. A candidate belongs to one stop.
 
 Rejected:
 - **A "report" tool from the step plugin** (the original recommendation). It keeps the token out of
