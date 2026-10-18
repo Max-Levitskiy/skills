@@ -5,8 +5,8 @@ Reflects:
   q2  answer handed in through a Claude Code hook (Stop), same path in a herdr pane
   q3  spore records "step needs you"; status, continue and the menu show it
   q4  runner is a WASM module sealed into the workflow; a run keeps the runner it started with
-  q5  Claude starts in the project folder with the normal setup, plus an optional step plugin
-      that adds and switches off plugins, tool servers, tools
+  q5  Claude starts in the project folder with the normal setup, plus the runner's hook plugin
+      (always) and an optional step plugin that adds and switches off plugins, tool servers, tools
   q6  herdr unreachable = ordinary retryable failure, back-off, then pause for a person
   q7  spore checks the final message against the step's output schema; refused -> fix, up to the limit
   q8  the workflow lists the runner's rights; spore enforces exactly that list
@@ -297,7 +297,7 @@ Proposed default, not a question: 3 tries from a 30 s wait (q6 thread).
 
   <rect class="b" x="900" y="646" width="324" height="120" rx="6"/>
   <text x="914" y="668" class="t">step plugin</text>
-  <text x="1010" y="668" class="m">optional, per node</text>
+  <text x="1010" y="668" class="m">optional, per node; the runner's hook plugin always loads</text>
   <text x="914" y="688">adds plugins, tool servers, tools</text>
   <text x="914" y="707">switches off chosen ones</text>
   <rect class="warn" x="914" y="720" width="296" height="34" rx="5"/>

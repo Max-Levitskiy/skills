@@ -103,6 +103,16 @@ Rejected:
 When Claude ends its turn, a hook (Claude Code's `Stop` hook) reads its final message and hands it
 to spore. This works in both run modes, because a herdr pane runs ordinary Claude Code.
 
+Handing in takes two steps, because one `Stop` hook cannot know whether Claude will really stop.
+Claude Code runs all matching `Stop` hooks at once, and any of them, including the user's own
+(decision 7), can keep Claude working.
+1. **Check:** the step's `Stop` hook has spore check the message (decision 5) and records it as
+   the attempt's candidate answer. If the check fails, the hook refuses the stop.
+2. **Commit:** the runner completes the attempt with the candidate only once it sees Claude has
+   really stopped. It watches for this on its own, not through our hooks: a background `claude`
+   process exits; in a pane, herdr reports the agent `idle` or `done` (`herdr agent wait`). If
+   Claude goes on working instead, its next `Stop` replaces the candidate.
+
 Rejected:
 - **A "report" tool from the step plugin** (the original recommendation). It keeps the token out of
   the prompt and returns errors as tool errors, but needs a tool server per step. The hook gets the
@@ -163,6 +173,11 @@ plugins and settings, the project's CLAUDE.md, skills and permissions. Herdr's o
 the user's settings) comes along with it. On top of that, a node can add things for its step (its
 step plugin, extra tool servers) and switch things off (a plugin, a tool server, a tool).
 
+Two different plugins come with a step. The **runner's hook plugin** carries the `SessionStart`,
+`Stop`, `StopFailure`, `UserPromptSubmit`, `Notification`, tool and `SessionEnd` hooks this design
+depends on. The runner always loads it, and a node cannot leave it out or switch it off. The node's
+**step plugin** is optional and holds only what that node adds.
+
 Accepted cost: a run depends on what the person who started it has installed.
 
 Rejected:
@@ -221,19 +236,20 @@ decision reopens.
   wait.
 - **Heartbeat:** the host renews the step's lease on a timer while two things hold: the runner's
   liveness check says Claude is alive, and a turn is in progress. A turn starts when a prompt
-  reaches Claude (the runner delivers it, or `UserPromptSubmit` lets it through). It ends only when
-  Claude actually stops: at a `Stop` the hook lets through, or at `StopFailure`, which Claude Code
-  fires instead of `Stop` when the turn ends on an API error. A `Stop` the hook refuses (decision
-  5's fix loop) keeps the turn in progress while Claude repairs its answer.
-  Hooks do not carry the heartbeat itself: `PostToolUse` fires only after a tool succeeds, so a
-  long model response, one long tool or an answer with no tools would let the lease run out while
-  Claude is still working.
-- **A turn that ends without an accepted answer** stops the renewal. In a pane, Claude idling at
-  its prompt is then not taken for work in progress. `StopFailure` fails the attempt as
-  retryable. A `Stop` hook that timed out or crashed hands in nothing and is not refused either,
-  so the turn simply ends: renewal stops, the step shows "needs you" once Claude is idle, and if
-  nobody acts the lease runs out and spore retries as usual.
-- **The step's hooks must load:** the step plugin's `SessionStart` hook tells spore the Claude
+  reaches Claude (the runner delivers it, or `UserPromptSubmit` lets it through). It ends when the
+  runner sees Claude has really stopped, as in decision 4's commit step: the background process
+  exits, or herdr reports the pane `idle` or `done`. Hooks do not decide it, so a refused `Stop`
+  (decision 5's fix loop) keeps the turn in progress, and a `Stop` hook that crashed, timed out or
+  was cancelled cannot leave a turn running forever. Hooks do not carry the heartbeat either:
+  `PostToolUse` fires only after a tool succeeds, so a long model response, one long tool or an
+  answer with no tools would let the lease run out while Claude is still working.
+- **A turn that ends without a candidate answer** stops the renewal. In a pane, Claude idling at
+  its prompt is then not taken for work in progress. `StopFailure`, which Claude Code fires
+  instead of `Stop` when a turn ends on an API error, fails the attempt as retryable. If the
+  `Stop` hook crashed, timed out or was cancelled, no candidate was recorded: renewal stops, the
+  step shows "needs you" once Claude is idle, and if nobody acts the lease runs out and spore
+  retries as usual.
+- **The step's hooks must load:** the runner's hook plugin's `SessionStart` hook tells spore the Claude
   session ID. If that does not arrive within a short time, the runner stops Claude and fails the
   step, not retryable, with a message saying the step's hooks did not load. A managed policy with
   `allowManagedHooksOnly` causes this: it blocks hooks from a `--plugin-dir` plugin unless managed
