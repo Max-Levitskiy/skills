@@ -61,7 +61,7 @@ store**, replace the field clause with `(labels is EMPTY OR labels not in ("size
 `not in` alone skips issues with no labels at all, which is most unsized stories. JQL cannot
 match a prefix, and labels from an earlier scale still count as sizes, so search with
 `--limit 200`. Drop every issue with a label starting with `config.labelPrefix`, then keep the
-first `sweep.max + 1`.
+first `sweep.max + 1`. When all 200 come back and fewer survive, search again with `--all`.
 
 ## Find recently closed stories
 

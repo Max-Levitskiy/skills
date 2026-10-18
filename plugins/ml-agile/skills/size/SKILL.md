@@ -79,7 +79,8 @@ list) or labels (`["XS","S","M","L","XL"]`). A size is always one of its values.
 
 **Changing the scale:** write the new list to the repo layer (see Writing config), then
 calibrate. The old reference stories map to values that may no longer exist. Sizes already on
-tickets stay as they are.
+tickets stay as they are. In the same write, set `split.threshold` back to empty when its value
+is not on the new scale, and tell the user it now means the new largest value.
 
 ## Writing config
 

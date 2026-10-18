@@ -13,14 +13,29 @@ run:
 `gh auth status 2>&1 | grep -q "'project'"`. Without it, use labels for this run and tell the
 user in one line: `gh auth refresh -s project` enables the board.
 
+**A size label counts as a size in every mode.** Fallback runs leave labels behind on a
+board-backed repo, so every read and sweep treats a prefixed label as a size, whether or not the
+board field is set. When a later write sets the board field, it removes that label in the same
+step.
+
 ## Read one story
 
 ```bash
 gh issue view <N> --json number,title,body,labels,state,createdAt,closedAt,comments,url
 ```
 
-Pass the body and the comments to the estimators as written. Size label values found on the
-issue are its current size.
+Pass the body and the comments to the estimators as written. The current size is a prefixed
+label or, with `github.project` set, the board field:
+
+```bash
+gh api graphql -f query='query { repository(owner:"<O>", name:"<R>") { issue(number:<N>) {
+  projectItems(first:20) { nodes { project { number owner { ... on Organization { login } ... on User { login } } }
+    fieldValueByName(name:"<config.github.field>") {
+      ... on ProjectV2ItemFieldNumberValue { number }
+      ... on ProjectV2ItemFieldSingleSelectValue { name } } } } } } }'
+```
+
+Take the node whose project matches `github.project`.
 
 ## Find open unsized stories
 
@@ -35,9 +50,13 @@ gh issue list --state open --limit 500 --search '<user filter>' --json number,ti
 The user's filter goes in `--search`: `label:checkout`, `milestone:"Sprint 12"`, `assignee:@me`.
 Keeping one more than `sweep.max` tells you whether more remain.
 
+`--limit` caps what is fetched before the filter runs. When all 500 come back and fewer than
+`sweep.max + 1` survive, run it again with `--limit 3000`. Still full → say the backlog is larger
+than one sweep scans, and ask for a narrower filter rather than reporting no work.
+
 **Project:** list the board's items with the user's filter in `--query` (Projects filter
 syntax: `label:checkout`, `milestone:"Sprint 12"`, `assignee:@me`). Then keep the items whose
-size field is empty:
+size field is empty and that carry no prefixed label:
 
 ```bash
 gh project item-list <number> --owner <owner> --format json --limit 500 \
