@@ -68,7 +68,7 @@ first `sweep.max + 1`. When all 200 come back and fewer survive, search again wi
 ## Find recently closed stories
 
 ```bash
-atlassian jira search 'statusCategory = Done AND (resolution is EMPTY OR resolution not in ("Won'\''t Do", Duplicate)) AND issuetype not in subTaskIssueTypes() ORDER BY statusCategoryChangedDate DESC' \
+atlassian jira search 'statusCategory = Done AND (resolution is EMPTY OR resolution not in ("Won'\''t Do", Duplicate)) AND issuetype not in subTaskIssueTypes() AND issuetype != Epic ORDER BY statusCategoryChangedDate DESC' \
   --limit <calibration.sample> --fields summary,created,resolutiondate,labels,issuetype,<alias field id> --json
 ```
 

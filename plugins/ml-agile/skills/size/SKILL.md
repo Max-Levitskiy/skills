@@ -71,7 +71,8 @@ story goes to the estimators.
 ## The scale
 
 `config.scale` is ordered smallest first: numbers (Fibonacci `[1,2,3,5,8,13]` by default, or any
-list) or labels (`["XS","S","M","L","XL"]`). A size is always one of its values.
+list) or labels (`["XS","S","M","L","XL"]`). A size is always one of its values. A list that
+mixes numbers and labels is invalid: stop and ask the user which kind they want, then write it.
 
 - **Compare sizes by position on the scale, never by arithmetic.** "At or above the split
   threshold" and "the middle vote" then work for labels too.

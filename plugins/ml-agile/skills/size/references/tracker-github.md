@@ -66,8 +66,10 @@ gh project item-list <number> --owner <owner> --format json --limit 500 \
 `repo:O/R` keeps a board shared by several repositories to this one. The later reads and writes
 resolve issue numbers in this repo.
 
-When the host rejects `--query`, list without it and apply the filter to the items' labels,
-milestone and assignees yourself. Unrelated stories never reach the estimators. When all 500
+When the host rejects `--query`, list without it and apply everything yourself: keep items
+whose `content.type` is `Issue`, whose `content.repository` is `O/R` and which are open, then
+apply the user's filter to their labels, milestone and assignees. Unrelated stories never reach
+the estimators. When all 500
 items come back and fewer than `sweep.max + 1` survive, list again with `--limit 3000`. Still
 full → ask for a narrower filter rather than reporting no work.
 
@@ -93,6 +95,9 @@ labels. Join them in by repository and issue number:
 ```bash
 gh project item-list <number> --owner <owner> --format json --limit 500 --query 'repo:O/R is:issue is:closed'
 ```
+
+When some sampled issues are missing from a full page of 500, list again with `--limit 3000`.
+Issues still missing are off the board and have no board size.
 
 Each item carries its fields by name, so take `<config.github.field>` from the item whose
 `content.repository` is `O/R` and whose `content.number` matches the issue.
@@ -134,8 +139,13 @@ gh project item-edit --project-id "$PID" --id "$ITEM" --field-id <F.id> --number
 gh issue edit <N> --remove-label "<prefix><old value>"   # only when a fallback label is on it
 ```
 
-`item-add` returns the existing item when the issue is already on the board. If the field is
-missing, or has no option for a scale value, stop and tell the user. Never create board fields
+`item-add` returns the existing item when the issue is already on the board.
+
+**Check the field before writing.** A label scale needs a single-select field (`F.type` is
+`ProjectV2SingleSelectField`) with an option for every scale value. A numeric scale needs a
+number field: `F.type` is `ProjectV2Field`, which text and date fields share, so a first
+`--number` write that fails on type means the field is the wrong kind. If the field is missing or
+of the wrong kind, say so and offer labels for this run. Never create or change board fields
 yourself.
 
 ## Create child stories

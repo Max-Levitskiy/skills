@@ -19,7 +19,10 @@
         "type": "array",
         "minItems": 2,
         "uniqueItems": true,
-        "items": { "type": ["number", "string"] }
+        "anyOf": [
+          { "items": { "type": "number" } },
+          { "items": { "type": "string" } }
+        ]
       },
       "referenceStories": {
         "description": "The team's reference stories, one finished story per scale value, written by calibration once you confirm them. calibratedAt is when, as an ISO date",
