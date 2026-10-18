@@ -120,6 +120,12 @@ does not is refused: the hook refuses the stop (`{"decision":"block","reason":â€
 spore's error back to Claude to fix, up to the fix limit (today's limit, twice, carries over). The
 same in both run modes.
 
+The answer names its outcome. As json Claude steps already do (`plugins/ml-workflow/src/schema.ts`),
+the final message is `{"answer": {"outcome": "<outcome>", "output": {â€¦}}}`, and each outcome has
+its own output schema. Spore checks `output` against the schema of the outcome named, and the
+outcome picks the edge the run takes. The route is never guessed by matching the output against
+each schema, since two outcomes' schemas can both fit the same output.
+
 Rejected (the options as asked, about a stop that is a question rather than an answer):
 - **In a pane, let it stop and mark "needs you"; without a window, push back** (the original
   recommendation). Two behaviours; superseded by one rule plus decision 6.
@@ -128,8 +134,9 @@ Rejected (the options as asked, about a stop that is a question rather than an a
 
 ### 6. Asking you is one of the step's allowed answers (Q10)
 
-When Claude genuinely needs to ask something mid-step, the step's schema allows a "question"
-answer. The run then waits for your reply in the workflow, and afterwards goes back into the same
+When Claude genuinely needs to ask something mid-step, it answers with the step's `question`
+outcome, whose output carries the question, and that outcome's edge leads to the reply node. The
+run then waits for your reply in the workflow, and afterwards goes back into the same
 Claude conversation (one conversation per node, as today). Settled with it: you can reply in the
 pane or from the plugin's menu, whichever comes first; a watched step's pane stays open while it
 waits.
