@@ -1,6 +1,7 @@
 // `claude-spore line`, `view` and `draw`: the run line and the live view (docs/spec.md, p.24).
 // Everything the mod shows of a followed run is worked out here from `spore status --no-probe` and
 // the files the run's artifact pins; the mod polls these and draws what they print.
+import { createHash } from "node:crypto";
 import { copyFileSync, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -380,7 +381,7 @@ class Files {
    * when folded, for every moment at that node and depth.
    */
   async layout(source: string, cells: Cells, here: string | null = null, fold: Fold | null = null): Promise<string> {
-    const name = `cells-${cells.wrap}-${cells.nodesep}${fold ? `~${here}~${fold.depth}` : ""}`.replace(/[^A-Za-z0-9_.~-]/g, "_");
+    const name = fileName(`cells-${cells.wrap}-${cells.nodesep}${fold ? `~${here}~${fold.depth}` : ""}`);
     const kept = this.folder && join(this.folder, `${name}.plain`);
     if (kept && existsSync(kept)) return readFileSync(kept, "utf8");
     const plain = await layout((await display(source, null, null, cells, fold)).dot);
@@ -390,7 +391,7 @@ class Files {
 
   /** The moment's picture, drawn once and kept; null with no font. */
   async picture(graph: Graph, here: string | null, taken: Arrow | null, fold: Fold | null = null): Promise<{ file: string; width: number; height: number } | null> {
-    const name = `${here ?? "_"}${taken ? `@${taken.from}.${taken.outcome}` : ""}${fold ? `~${fold.depth}` : ""}`.replace(/[^A-Za-z0-9_.@~-]/g, "_");
+    const name = fileName(`${here ?? "_"}${taken ? `@${taken.from}.${taken.outcome}` : ""}${fold ? `~${fold.depth}` : ""}`);
     const file = join(this.folder ?? join(dataDir(), "artifacts", "unpinned", this.status.runId), `${name}.png`);
     if (!existsSync(file)) {
       const png = await picture(graph.dot);
@@ -428,6 +429,16 @@ async function decided(status: Status): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/**
+ * A cache file's name for a key of node IDs: the key where every character is safe in a file name,
+ * else the key made safe and its hash after a `+`, which a safe key never holds, so no two keys share
+ * a file.
+ */
+export function fileName(key: string): string {
+  const safe = key.replace(/[^A-Za-z0-9_.@~-]/g, "_");
+  return safe === key ? key : `${safe}+${createHash("sha1").update(key).digest("hex").slice(0, 12)}`;
 }
 
 function failed(failure: Failure, json: boolean): number {

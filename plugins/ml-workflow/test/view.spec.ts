@@ -4,6 +4,7 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { fileName } from "../src/view.ts";
 import { HELPER, remove, scratch } from "./helpers.ts";
 import { pathOf, run } from "./release-fixtures.ts";
 
@@ -361,4 +362,14 @@ test("usage errors exit 2", () => {
   expect(helper(["draw", "--run", "run_a", "--plain", "--png", "x.png"]).exitCode).toBe(2);
   expect(helper(["draw", "--run", "run_a", "--from", "test", "--plain"]).exitCode).toBe(2);
   expect(calls()).toEqual([]);
+});
+
+test("cache names keep a safe key as it is and give node IDs that make the same safe name files of their own", () => {
+  expect(fileName("cells-24-0.25~implement~2")).toBe("cells-24-0.25~implement~2");
+  expect(fileName("implement@review.changes")).toBe("implement@review.changes");
+  const slash = fileName("cells-24-0.25~review/a~2");
+  const question = fileName("cells-24-0.25~review?a~2");
+  expect(slash).toMatch(/^cells-24-0\.25~review_a~2\+[0-9a-f]{12}$/);
+  expect(question).not.toBe(slash);
+  expect(fileName("cells-24-0.25~review_a~2")).toBe("cells-24-0.25~review_a~2");
 });
