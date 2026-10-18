@@ -1,6 +1,6 @@
 {
   "name": "max-skills",
-  "description": "Max Levitskiy's Claude Code plugins: AI-slop scoring, PR shipping gates, subagent orchestration, workplace tools, layered agent config with secret-free credentials, and Runspore workflows (ml-workflow needs Claude Code 2.1.290+ and Bun 1.2.0+).",
+  "description": "Max Levitskiy's Claude Code plugins: AI-slop scoring, PR shipping gates, subagent orchestration, workplace tools, Agile story sizing, layered agent config with secret-free credentials, and Runspore workflows (ml-workflow needs Claude Code 2.1.290+ and Bun 1.2.0+).",
   "owner": {
     "name": "Max Levitskiy",
     "email": "max.dstu@gmail.com"
@@ -229,6 +229,30 @@
         "spore",
         "durable-execution",
         "human-in-the-loop",
+        "claude-skill"
+      ]
+    },
+    {
+      "name": "ml-agile",
+      "source": "./plugins/ml-agile",
+      "description": "Agile practice for AI agents. size gives stories story points the way a Scrum team does: it calibrates reference stories from recently closed work, sizes one story or sweeps the backlog by agent planning poker (developer, tester and risk estimators voting blind), flags stories that need refinement, proposes splits for oversized ones, and writes sizes to Jira (through the Atlassian skill) or GitHub issues only after you confirm. The scale is Fibonacci by default, or custom numbers or T-shirt sizes, set in agent-config and shared by the team.",
+      "version": "0.1.0",
+      "license": "MIT",
+      "author": {
+        "name": "Max Levitskiy"
+      },
+      "category": "productivity",
+      "keywords": [
+        "agile",
+        "scrum",
+        "story-points",
+        "estimation",
+        "planning-poker",
+        "backlog",
+        "refinement",
+        "grooming",
+        "jira",
+        "github-issues",
         "claude-skill"
       ]
     }
