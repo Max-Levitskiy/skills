@@ -364,12 +364,13 @@ test("usage errors exit 2", () => {
   expect(calls()).toEqual([]);
 });
 
-test("cache names keep a safe key as it is and give node IDs that make the same safe name files of their own", () => {
-  expect(fileName("cells-24-0.25~implement~2")).toBe("cells-24-0.25~implement~2");
-  expect(fileName("implement@review.changes")).toBe("implement@review.changes");
-  const slash = fileName("cells-24-0.25~review/a~2");
-  const question = fileName("cells-24-0.25~review?a~2");
+test("cache names keep plain node IDs readable, and give any other ID a file of its own", () => {
+  expect(fileName("cells-24-0.25~implement~2", { wrap: 24, nodesep: 0.25, here: "implement", depth: 2 })).toBe("cells-24-0.25~implement~2");
+  expect(fileName("implement@test.red", { here: "implement", from: "test", outcome: "red" })).toBe("implement@test.red");
+  const slash = fileName("cells-24-0.25~review/a~2", { wrap: 24, nodesep: 0.25, here: "review/a", depth: 2 });
   expect(slash).toMatch(/^cells-24-0\.25~review_a~2\+[0-9a-f]{12}$/);
-  expect(question).not.toBe(slash);
-  expect(fileName("cells-24-0.25~review_a~2")).toBe("cells-24-0.25~review_a~2");
+  expect(fileName("cells-24-0.25~review?a~2", { wrap: 24, nodesep: 0.25, here: "review?a", depth: 2 })).not.toBe(slash);
+  // A separator inside an ID cannot pass for another key's: `foo` at depth 2 is not the node `foo~2`.
+  expect(fileName("foo~2", { here: "foo~2" })).not.toBe(fileName("foo~2", { here: "foo", depth: 2 }));
+  expect(fileName("_", { here: null })).not.toBe(fileName("_", { here: "_" }));
 });

@@ -13,7 +13,7 @@ const USAGE = `usage: claude-spore --version
        claude-spore unfinished [--json]
        claude-spore menu [--json]
        claude-spore line <runId> [--db <db>] [--json]
-       claude-spore view <runId> [--db <db>] [--json]
+       claude-spore view <runId> [--db <db>] [--depth <n>] [--json]
        claude-spore draw --run <runId> [--db <db>] [--at <node>] [--from <node>:<outcome>] (--png <file> | --plain)
        claude-spore run
        claude-spore start | probe | watch | stop

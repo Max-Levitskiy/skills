@@ -381,7 +381,7 @@ class Files {
    * when folded, for every moment at that node and depth.
    */
   async layout(source: string, cells: Cells, here: string | null = null, fold: Fold | null = null): Promise<string> {
-    const name = fileName(`cells-${cells.wrap}-${cells.nodesep}${fold ? `~${here}~${fold.depth}` : ""}`);
+    const name = fileName(`cells-${cells.wrap}-${cells.nodesep}${fold ? `~${here}~${fold.depth}` : ""}`, { wrap: cells.wrap, nodesep: cells.nodesep, ...(fold ? { here, depth: fold.depth } : {}) });
     const kept = this.folder && join(this.folder, `${name}.plain`);
     if (kept && existsSync(kept)) return readFileSync(kept, "utf8");
     const plain = await layout((await display(source, null, null, cells, fold)).dot);
@@ -391,7 +391,7 @@ class Files {
 
   /** The moment's picture, drawn once and kept; null with no font. */
   async picture(graph: Graph, here: string | null, taken: Arrow | null, fold: Fold | null = null): Promise<{ file: string; width: number; height: number } | null> {
-    const name = fileName(`${here ?? "_"}${taken ? `@${taken.from}.${taken.outcome}` : ""}${fold ? `~${fold.depth}` : ""}`);
+    const name = fileName(`${here ?? "_"}${taken ? `@${taken.from}.${taken.outcome}` : ""}${fold ? `~${fold.depth}` : ""}`, { here, ...(taken ? { from: taken.from, outcome: taken.outcome } : {}), ...(fold ? { depth: fold.depth } : {}) });
     const file = join(this.folder ?? join(dataDir(), "artifacts", "unpinned", this.status.runId), `${name}.png`);
     if (!existsSync(file)) {
       const png = await picture(graph.dot);
@@ -432,13 +432,15 @@ async function decided(status: Status): Promise<boolean> {
 }
 
 /**
- * A cache file's name for a key of node IDs: the key where every character is safe in a file name,
- * else the key made safe and its hash after a `+`, which a safe key never holds, so no two keys share
- * a file.
+ * A cache file's name for its parts: `readable`, the parts joined by separators, where every part
+ * is a number or a name of letters, digits, `_` and `-`, which no separator can be read into; else
+ * `readable` made safe and the hash of the parts after a `+`, which a readable name never holds, so
+ * no two keys share a file.
  */
-export function fileName(key: string): string {
-  const safe = key.replace(/[^A-Za-z0-9_.@~-]/g, "_");
-  return safe === key ? key : `${safe}+${createHash("sha1").update(key).digest("hex").slice(0, 12)}`;
+export function fileName(readable: string, parts: Record<string, string | number | null>): string {
+  const isPlain = Object.values(parts).every(part => typeof part === "number" || (typeof part === "string" && /^[A-Za-z0-9_-]+$/.test(part)));
+  if (isPlain) return readable;
+  return `${readable.replace(/[^A-Za-z0-9_.@~-]/g, "_")}+${createHash("sha1").update(JSON.stringify(parts)).digest("hex").slice(0, 12)}`;
 }
 
 function failed(failure: Failure, json: boolean): number {
