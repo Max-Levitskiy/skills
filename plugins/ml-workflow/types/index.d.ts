@@ -30,8 +30,16 @@ export type LiveView = {
   line?: RunLine
   facts?: string
   picture?: { file: string; width: number; height: number } | null
+  /** The dot drawing, its roomiest layout. */
   dots?: Span[][]
-  /** The compact tree, drawn when the dot drawing does not fit the pane. */
+  /** The same drawing laid out ever narrower, for a pane too narrow for `dots`. */
+  narrower?: Span[][][]
+  /**
+   * Asked for a depth: the depth drawn, the least that shows every node, and how many nodes are
+   * folded; `depth` equals `whole` when nothing is.
+   */
+  fold?: { depth: number; whole: number; folded: number } | null
+  /** The compact tree, drawn when no dot drawing fits the pane's width. */
   tree?: Span[][]
   dot?: FileLine[]
   settings?: FileLine[]
@@ -49,6 +57,10 @@ declare module 'claude-code' {
       pictures: boolean | null
       /** The runs whose view shows the whole instructions. */
       full: string[]
+      /** What each run's view draws, the person's pick: the graph, or the compact tree as text. */
+      drawn: Record<string, 'graph' | 'text'>
+      /** How many arrows around the current node each run's graph shows, the person's pick. */
+      depths: Record<string, number>
       /** Whether the once-a-second poll runs: a run line or a view shows. */
       polling: boolean
     }

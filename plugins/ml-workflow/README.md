@@ -13,7 +13,7 @@ To try it in one project without changing your own plugin set, install it there 
 claude plugin install ml-workflow@max-skills --scope project
 ```
 
-**This release starts, follows, continues and cancels runs, names each unfinished run when a session starts, offers what each run needs in a menu, shows where a followed run is in a line above the prompt and in a live view, does background and watched Claude steps, writes workflows by interview, and installs or updates `spore` when you say yes.** [docs/spec.md](docs/spec.md) is the whole design and says what is built.
+**This release starts, follows, continues and cancels runs, names each unfinished run when a session starts, offers what each run needs in a menu, shows where a followed run is in a line above the prompt and in a live view that draws the workflow's graph, folded around the current node, or a text tree, does background and watched Claude steps, writes workflows by interview, and installs or updates `spore` when you say yes.** [docs/spec.md](docs/spec.md) is the whole design and says what is built.
 
 ## Requirements
 

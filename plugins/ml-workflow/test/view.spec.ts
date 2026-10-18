@@ -4,6 +4,7 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { fileName } from "../src/view.ts";
 import { HELPER, remove, scratch } from "./helpers.ts";
 import { pathOf, run } from "./release-fixtures.ts";
 
@@ -219,8 +220,13 @@ test("the view marks the current node and the arrow just taken in the files, and
   expect(rows.some((row) => row.includes("│ Implement (Claude) │"))).toBe(true);
   expect(report.dots.flat().filter((span: any) => span.style === "here").map((span: any) => span.text).join("")).toContain("Implement (Claude)");
   expect(report.dots.flat().filter((span: any) => span.style === "taken-label").map((span: any) => span.text).join("").trim()).toBe("red ×3");
-  // Four rows of nodes, six rows apart: the drawing fits a short pane.
-  expect(report.dots.length).toBeLessThanOrEqual(24);
+  // Four rows of nodes, laid out in cells: the drawing fits a short pane.
+  expect(report.dots.length).toBeLessThanOrEqual(26);
+  // Each narrower layout is no wider than the one before, and the same moment.
+  const widths = [report.dots, ...report.narrower].map((drawing: any[][]) => Math.max(...drawing.map((row) => row.map((span) => span.text).join("").length)));
+  expect(report.narrower).toHaveLength(3);
+  for (let i = 1; i < widths.length; i++) expect(widths[i]).toBeLessThanOrEqual(widths[i - 1]);
+  for (const drawing of report.narrower) expect(drawing.flat().filter((span: any) => span.style === "taken-label").map((span: any) => span.text).join("").trim()).toBe("red ×3");
   expect(report.tree.map((row: any[]) => row.map((span) => span.text).join(""))).toEqual([
     "Implement (Claude)",
     "└─▶ Run the tests",
@@ -235,6 +241,27 @@ test("the view marks the current node and the arrow just taken in the files, and
   const styled = (style: string) => report.tree.flat().filter((span: any) => span.style === style).map((span: any) => span.text);
   expect(styled("here")).toEqual(["Implement (Claude)"]);
   expect(styled("taken-label")).toEqual(["red ×3"]);
+});
+
+test("view --depth folds the graph to that many arrows around the current node", () => {
+  status("run_a", { position: at("approve", 1, ["test", "ok"]) });
+  const text = (drawing: any[][]) => drawing.map((row) => row.map((span) => span.text).join("")).join("\n");
+  const { report } = helper(["view", "run_a", "--depth", "1", "--json"], { CLAUDE_SPORE_FONTS: "" });
+  // approve's neighbours are test, implement and done; past them, tests_stuck and stopped.
+  expect(report.fold).toEqual({ depth: 1, whole: 3, folded: 1 });
+  const drawn = text(report.dots);
+  for (const label of ["Approve (you)", "Run the tests", "Implement (Claude)", "done"]) expect(drawn).toContain(label);
+  expect(drawn).toContain("┆ Tests keep failing");
+  expect(drawn).toContain("+1 more");
+  expect(drawn).not.toContain("stopped");
+  expect(report.dots.flat().filter((span: any) => span.style === "here").map((span: any) => span.text).join("")).toContain("Approve (you)");
+  // The tree is the whole workflow at any depth.
+  expect(report.tree).toHaveLength(9);
+  const whole = helper(["view", "run_a", "--depth", "5", "--json"], { CLAUDE_SPORE_FONTS: "" }).report;
+  expect(whole.fold).toEqual({ depth: 3, whole: 3, folded: 0 });
+  expect(text(whole.dots)).toContain("stopped");
+  expect(text(whole.dots)).not.toContain("┆");
+  expect(helper(["view", "run_a", "--depth", "0"]).exitCode).toBe(2);
 });
 
 test("a narrow workflow's dot drawing is not drawn taller for being narrow", () => {
@@ -335,4 +362,15 @@ test("usage errors exit 2", () => {
   expect(helper(["draw", "--run", "run_a", "--plain", "--png", "x.png"]).exitCode).toBe(2);
   expect(helper(["draw", "--run", "run_a", "--from", "test", "--plain"]).exitCode).toBe(2);
   expect(calls()).toEqual([]);
+});
+
+test("cache names keep plain node IDs readable, and give any other ID a file of its own", () => {
+  expect(fileName("cells-24-0.25~implement~2", { wrap: 24, nodesep: 0.25, here: "implement", depth: 2 })).toBe("cells-24-0.25~implement~2");
+  expect(fileName("implement@test.red", { here: "implement", from: "test", outcome: "red" })).toBe("implement@test.red");
+  const slash = fileName("cells-24-0.25~review/a~2", { wrap: 24, nodesep: 0.25, here: "review/a", depth: 2 });
+  expect(slash).toMatch(/^cells-24-0\.25~review_a~2\+[0-9a-f]{12}$/);
+  expect(fileName("cells-24-0.25~review?a~2", { wrap: 24, nodesep: 0.25, here: "review?a", depth: 2 })).not.toBe(slash);
+  // A separator inside an ID cannot pass for another key's: `foo` at depth 2 is not the node `foo~2`.
+  expect(fileName("foo~2", { here: "foo~2" })).not.toBe(fileName("foo~2", { here: "foo", depth: 2 }));
+  expect(fileName("_", { here: null })).not.toBe(fileName("_", { here: "_" }));
 });

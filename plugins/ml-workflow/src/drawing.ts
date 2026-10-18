@@ -25,6 +25,79 @@ const RENDER = new Set(
   ),
 );
 
+/**
+ * The part of the graph the live view shows: the nodes `shown` within its depth of the current
+ * node, and the nodes just past them, `folded`, each with how many nodes it hides beyond it.
+ */
+export type Fold = { depth: number; shown: Set<string>; folded: Map<string, number> };
+
+/**
+ * The fold of a graph at `depth` arrows around `here`, arrows followed either way, so the view shows
+ * where the run came from as well as where it can go; null when that depth shows every node.
+ * `whole` is the least depth that does.
+ */
+export function around(graph: Graph, here: string | null, depth: number): { fold: Fold | null; whole: number } {
+  if (!here || !graph.nodes.includes(here)) return { fold: null, whole: 0 };
+  const near = new Map<string, Set<string>>(graph.nodes.map((node) => [node, new Set<string>()]));
+  for (const edge of graph.edges) {
+    near.get(edge.from)?.add(edge.to);
+    near.get(edge.to)?.add(edge.from);
+  }
+  const distance = new Map([[here, 0]]);
+  for (let queue = [here]; queue.length; ) {
+    const next: string[] = [];
+    for (const node of queue) {
+      for (const other of near.get(node) ?? []) {
+        if (distance.has(other)) continue;
+        distance.set(other, distance.get(node)! + 1);
+        next.push(other);
+      }
+    }
+    queue = next;
+  }
+  // Nodes the current one does not reach at all show only with the whole graph, one past the farthest.
+  const farthest = Math.max(...distance.values());
+  const whole = distance.size === graph.nodes.length ? farthest : farthest + 1;
+  if (depth >= whole) return { fold: null, whole };
+  const shown = new Set(graph.nodes.filter((node) => (distance.get(node) ?? Infinity) <= depth));
+  const folded = new Map<string, number>();
+  for (const node of graph.nodes) {
+    if (distance.get(node) !== depth + 1) continue;
+    // What lies past it: the nodes beyond the fold it reaches without coming back into view.
+    const seen = new Set([node]);
+    for (let queue = [node]; queue.length; ) {
+      const next: string[] = [];
+      for (const at of queue) {
+        for (const other of near.get(at) ?? []) {
+          if (seen.has(other) || shown.has(other) || distance.get(other) === depth + 1) continue;
+          seen.add(other);
+          next.push(other);
+        }
+      }
+      queue = next;
+    }
+    folded.set(node, seen.size - 1);
+  }
+  return { fold: { depth, shown, folded }, whole };
+}
+
+/** How tight a dot drawing is laid out: labels wrapped to `wrap` columns, boxes `nodesep` inches apart. */
+export type Cells = { wrap: number; nodesep: number };
+
+/**
+ * The dot drawing's layouts, roomiest first: the live view draws the first whose width fits its
+ * pane. Each step makes a 20-node workflow 10 to 20 columns narrower and a few rows taller.
+ */
+export const CELLS: Cells[] = [
+  { wrap: 24, nodesep: 0.25 },
+  { wrap: 18, nodesep: 0.15 },
+  { wrap: 14, nodesep: 0.1 },
+  { wrap: 10, nodesep: 0.05 },
+];
+
+// What would size a box or a label off the dot drawing's character cells.
+const CELL_SIZED = ["fontname", "fontsize", "width", "height", "fixedsize", "peripheries", "penwidth"];
+
 type Attrs = Record<string, unknown>;
 type GvNode = Attrs & { _gvid: number; name: string };
 type GvEdge = Attrs & { _gvid: number; tail: number; head: number };
@@ -52,25 +125,39 @@ async function gv(): Promise<any> {
  * with a double outline; the current node and the arrow just taken highlighted when given.
  * Throws when Graphviz cannot read the file.
  */
-export async function display(source: string, here: string | null = null, taken: Arrow | null = null, forDots = false): Promise<Graph> {
+export async function display(source: string, here: string | null = null, taken: Arrow | null = null, cells: Cells | null = null, fold: Fold | null = null): Promise<Graph> {
   const read: GvGraph = JSON.parse((await gv()).layout(source, "dot_json", "dot"));
   const byId = new Map<number, GvNode>();
   for (const node of read.objects ?? []) byId.set(node._gvid, node);
-  // Character cells are coarse: the dot drawing's layout spreads the nodes so labels fit between.
-  const spacing = forDots ? { nodesep: "0.9", ranksep: "1.0" } : {};
+  // The dot drawing's layout is in character cells: 12-point Courier is 0.1 inch a column and 0.2
+  // a row, and a box's margin is two columns and one row. A pane is narrow and scrolls down, so it
+  // always runs top to bottom, whatever the workflow's own `rankdir`.
+  const graphAttrs = pick(read);
+  if (cells) for (const name of ["rankdir", "nodesep", "ranksep"]) delete graphAttrs[name];
   const lines = [
     "digraph display {",
-    `  graph [${attrs({ bgcolor: "white", pad: "0.15", ...spacing, ...pick(read) })}];`,
-    '  node [shape=box, style=rounded, fontname="Helvetica", fontsize=12];',
-    '  edge [fontname="Helvetica", fontsize=10];',
+    `  graph [${attrs({ bgcolor: "white", pad: "0.15", ...graphAttrs, ...(cells ? { nodesep: String(cells.nodesep), ranksep: "0.6" } : {}) })}];`,
+    cells ? '  node [shape=box, style=rounded, fontname="Courier", fontsize=12, margin="0.2,0.2", width=0, height=0];' : '  node [shape=box, style=rounded, fontname="Helvetica", fontsize=12];',
+    cells ? '  edge [fontname="Courier", fontsize=12];' : '  edge [fontname="Helvetica", fontsize=10];',
   ];
   const nodes: string[] = [];
   const labels: Record<string, string> = {};
   for (const node of read.objects ?? []) {
+    if (fold && !fold.shown.has(node.name) && !fold.folded.has(node.name)) continue;
     nodes.push(node.name);
     const own = pick(node);
+    // A folded node stands for itself and what lies past it: dashed, with how many more it hides.
+    const hidden = fold?.folded.get(node.name);
+    if (hidden !== undefined) {
+      own.label = `${own.label ?? node.name}${hidden ? `\\n+${hidden} more` : ""}`;
+      own.style = "rounded,dashed";
+    }
+    if (cells) {
+      for (const name of CELL_SIZED) delete own[name];
+      own.label = wrapLabel(own.label ?? node.name, cells.wrap);
+    }
     labels[node.name] = own.label ? own.label.replace(/\\[nlr]/g, " ").replace(/\s+/g, " ").trim() || node.name : node.name;
-    if (node.kind === "complete" || node.kind === "fail") own.peripheries = "2";
+    if (!cells && (node.kind === "complete" || node.kind === "fail")) own.peripheries = "2";
     if (node.name === here) {
       own.style = own.style ? `${own.style},filled,bold` : "rounded,filled,bold";
       own.fillcolor = HERE;
@@ -83,8 +170,11 @@ export async function display(source: string, here: string | null = null, taken:
     const from = byId.get(edge.tail)?.name;
     const to = byId.get(edge.head)?.name;
     if (from === undefined || to === undefined) continue;
+    // Folded, an arrow shows when it has a shown end and its other end is drawn too.
+    if (fold && (!(fold.shown.has(from) || fold.shown.has(to)) || !nodes.includes(from) || !nodes.includes(to))) continue;
     const on = typeof edge.on === "string" ? edge.on : "ok";
     const own = pick(edge);
+    if (cells) for (const name of CELL_SIZED) delete own[name];
     const label = typeof own.label === "string" && own.label ? own.label : typeof edge.on === "string" ? edge.on : "";
     own.label = label;
     if (taken && taken.from === from && to === here && taken.outcome === on) Object.assign(own, { color: TAKEN, fontcolor: TAKEN, penwidth: "3" });
@@ -94,6 +184,23 @@ export async function display(source: string, here: string | null = null, taken:
   lines.push("}");
   const start = typeof read.start === "string" && nodes.includes(read.start) ? read.start : null;
   return { nodes, edges, dot: lines.join("\n") + "\n", labels, start };
+}
+
+// The dot drawing's label, each line broken at its spaces to `wrap` columns, so a long label makes
+// a taller box rather than a wider drawing.
+function wrapLabel(label: string, wrap: number): string {
+  const out: string[] = [];
+  for (const line of label.split(/\\[nlr]/)) {
+    let current = "";
+    for (const word of line.trim().split(/\s+/)) {
+      if (current && current.length + 1 + word.length > wrap) {
+        out.push(current);
+        current = word;
+      } else current = current ? `${current} ${word}` : word;
+    }
+    if (current) out.push(current);
+  }
+  return out.join("\\n");
 }
 
 function pick(from: Attrs): Record<string, string> {
@@ -175,14 +282,15 @@ export function writeWhole(file: string, data: string | Uint8Array) {
 
 // ---------- the dot drawing ----------
 
-type PlainNode = { id: string; x: number; y: number; label: string };
+type PlainNode = { id: string; x: number; y: number; lines: string[]; isFolded: boolean };
 type PlainEdge = { from: string; to: string; points: [number, number][]; label?: string; lx?: number; ly?: number };
 
 function tokens(line: string): string[] {
   const out: string[] = [];
   const re = /"((?:[^"\\]|\\.)*)"|(\S+)/g;
   let match;
-  while ((match = re.exec(line))) out.push(match[1] !== undefined ? match[1].replace(/\\(.)/g, "$1") : match[2]!);
+  // A label's line breaks (`\n`, `\l`, `\r`) stay as newlines.
+  while ((match = re.exec(line))) out.push(match[1] !== undefined ? match[1].replace(/\\(.)/g, (_, c) => ("nlr".includes(c) ? "\n" : c)) : match[2]!);
   return out;
 }
 
@@ -197,7 +305,8 @@ function parsePlain(plain: string) {
       width = Number(t[2]);
       height = Number(t[3]);
     } else if (t[0] === "node") {
-      nodes.push({ id: t[1]!, x: Number(t[2]), y: Number(t[3]), label: t[6]!.replace(/\\[nlr]/g, " ").trim() });
+      const lines = t[6]!.split("\n").map((l) => l.trim()).filter(Boolean);
+      nodes.push({ id: t[1]!, x: Number(t[2]), y: Number(t[3]), lines: lines.length ? lines : [t[1]!], isFolded: /\bdashed\b/.test(t[7] ?? "") });
     } else if (t[0] === "edge") {
       const n = Number(t[3]);
       const points: [number, number][] = [];
@@ -205,7 +314,7 @@ function parsePlain(plain: string) {
       const rest = t.slice(4 + 2 * n);
       const edge: PlainEdge = { from: t[1]!, to: t[2]!, points };
       // With a label: label, x, y, style, colour; without: style, colour.
-      if (rest.length >= 5) Object.assign(edge, { label: rest[0], lx: Number(rest[1]), ly: Number(rest[2]) });
+      if (rest.length >= 5) Object.assign(edge, { label: rest[0]!.replace(/\s+/g, " ").trim(), lx: Number(rest[1]), ly: Number(rest[2]) });
       edges.push(edge);
     }
   }
@@ -220,8 +329,6 @@ function bezier(p: [number, number][], t: number): [number, number] {
   ];
 }
 
-const RANK_ROWS = 6;
-
 // The bit of each of a Braille cell's 2×4 dots, by column and row.
 const DOT_BIT = [
   [0x01, 0x02, 0x04, 0x40],
@@ -235,22 +342,10 @@ const DOT_BIT = [
  */
 export function dots(plain: string, graph: Graph, here: string | null, taken: Arrow | null): Span[][] {
   const { width, height, nodes, edges } = parsePlain(plain);
-  // About 60 columns, the reference loop's fit (C17), and wider when two boxes of one rank would overlap.
-  let sx = 56 / Math.max(width, 0.1);
-  for (const a of nodes) {
-    for (const b of nodes) {
-      if (a === b || Math.abs(a.y - b.y) > 0.05 || b.x <= a.x) continue;
-      sx = Math.max(sx, ((a.label.length + 4) / 2 + (b.label.length + 4) / 2 + 2) / (b.x - a.x));
-    }
-  }
-  for (const node of nodes) sx = Math.max(sx, (node.label.length + 4) / Math.max(width, 0.1));
+  // The layout is in cells already (display, cells): ten columns and five rows an inch.
+  const sx = 10;
+  const sy = 5;
   const cols = Math.ceil(width * sx) + 4;
-  // Rows are scaled on their own, so a narrow graph is not drawn as tall as a wide one is wide:
-  // the nearest two rows of nodes come RANK_ROWS rows apart, a box's three and three for the arrow.
-  const levels = [...new Set(nodes.map((node) => Math.round(node.y * 100)))].sort((a, b) => a - b);
-  let gap = Infinity;
-  for (let i = 1; i < levels.length; i++) gap = Math.min(gap, (levels[i]! - levels[i - 1]!) / 100);
-  const sy = Number.isFinite(gap) ? RANK_ROWS / gap : sx / 2.5;
   const rows = Math.ceil(height * sy) + 3;
   const bits = Array.from({ length: rows }, () => new Array<number>(cols).fill(0));
   const hot = Array.from({ length: rows }, () => new Array<boolean>(cols).fill(false));
@@ -303,14 +398,15 @@ export function dots(plain: string, graph: Graph, here: string | null, taken: Ar
     });
   }
   for (const node of nodes) {
-    const r = Math.floor(py(node.y) / 4);
-    const w = node.label.length + 4;
+    const w = Math.max(...node.lines.map((l) => [...l].length)) + 4;
+    const top = Math.floor(py(node.y) / 4) - Math.floor((node.lines.length + 2) / 2);
     const c0 = Math.max(0, Math.min(cols - w, Math.round(px(node.x) / 2 - w / 2)));
-    const style: Style = node.id === here ? "here" : "node";
-    const box = [`╭${"─".repeat(w - 2)}╮`, `│ ${node.label} │`, `╰${"─".repeat(w - 2)}╯`];
+    const style: Style = node.id === here ? "here" : node.isFolded ? "label" : "node";
+    const [line, side] = node.isFolded ? ["┄", "┆"] : ["─", "│"];
+    const box = [`╭${line.repeat(w - 2)}╮`, ...node.lines.map((l) => `${side} ${l.padEnd(w - 4)} ${side}`), `╰${line.repeat(w - 2)}╯`];
     box.forEach((line, k) => {
       [...line].forEach((ch, i) => {
-        if (grid[r - 1 + k]?.[c0 + i]) grid[r - 1 + k]![c0 + i] = { text: ch, style };
+        if (grid[top + k]?.[c0 + i]) grid[top + k]![c0 + i] = { text: ch, style };
       });
     });
   }

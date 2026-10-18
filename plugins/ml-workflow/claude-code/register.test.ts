@@ -521,7 +521,7 @@ test("the view button opens the pane run-<runId> drawing the helper's view", asy
   await band.press({ key: 'view:run_a' })
   expect(w.opens).toEqual(['run-run_a'])
   expect(w.order.slice(0, 2)).toEqual(['open run-run_a', 'run view'])
-  expect(w.runs.filter(argv => argv[1] === 'view').map(argv => argv.slice(1))).toEqual([['view', 'run_a', '--db', DB, '--json']])
+  expect(w.runs.filter(argv => argv[1] === 'view').map(argv => argv.slice(1))).toEqual([['view', 'run_a', '--db', DB, '--depth', '2', '--json']])
   const pane = await $.ui.mount({ ...VIEW_PANE, surface: 'terminal' })
   expect(await pane.find({ type: 'Text', text: LIVE.facts })).toBeDefined()
   expect((await pane.find({ key: 'picture' }))?.props.source).toEqual({ file: LIVE.picture.file, format: 'png' })
@@ -552,23 +552,103 @@ test('a picture check the terminal denies switches the session to the dot drawin
   await pane.unmount()
 })
 
-test('a dot drawing taller than the pane gives way to the compact tree; the current node is keyed and file lines wrap', async ($, on) => {
+test('a dot drawing taller than the pane is drawn, to scroll, with the current node keyed', async ($, on) => {
   mock.clock(on)
   const w = world(on, NEW)
   const dots = Array.from({ length: 30 }, (_, i) => [{ text: `row ${i}`, style: i === 20 ? 'here' : 'edge' }])
   w.view.run_a = { exitCode: 0, stdout: JSON.stringify({ ...LIVE, picture: null, dots }), stderr: '' }
   await $.tool.call({ tool: 'mcp__ml-workflow__open_view', runId: 'run_a', db: DB })
   const short = await $.ui.mount({ ...VIEW_PANE, props: { ...VIEW_PANE.props, scroll: { offset: 0, bodyRows: 20 } }, surface: 'terminal' })
-  expect(await short.find({ type: 'Text', text: 'row 0' })).toBeUndefined()
-  expect(await short.find({ type: 'Text', text: 'Run the tests' })).toBeDefined()
-  expect(await short.find({ key: 'here' })).toBeDefined()
-  expect(await short.find({ type: 'Text', text: /^Implement \(Claude\)$/ })).toMatchObject({ props: { backgroundColor: '#ffd43b' } })
-  expect(await short.find({ type: 'Text', text: '  2    implement [label="Implement (Claude)"];' })).toMatchObject({ props: { wrap: 'wrap' } })
+  expect(await short.find({ type: 'Text', text: 'row 0' })).toBeDefined()
+  expect(await short.find({ type: 'Text', text: 'Run the tests' })).toBeUndefined()
+  expect(await short.find({ key: 'here' })).toMatchObject({ text: 'row 20' })
   await short.unmount()
-  const tall = await $.ui.mount({ ...VIEW_PANE, surface: 'terminal' })
-  expect(await tall.find({ type: 'Text', text: 'row 0' })).toBeDefined()
-  expect(await tall.find({ type: 'Text', text: 'Run the tests' })).toBeUndefined()
-  await tall.unmount()
+})
+
+test('a dot drawing wider than the pane gives way to a narrower one, and to the compact tree when none fits; file lines wrap', async ($, on) => {
+  mock.clock(on)
+  const w = world(on, NEW)
+  const wide = [[{ text: 'w'.repeat(120), style: 'edge' }]]
+  const narrow = [[{ text: 'narrow', style: 'here' }]]
+  w.view.run_a = { exitCode: 0, stdout: JSON.stringify({ ...LIVE, picture: null, dots: wide, narrower: [wide, narrow] }), stderr: '' }
+  await $.tool.call({ tool: 'mcp__ml-workflow__open_view', runId: 'run_a', db: DB })
+  const pane = await $.ui.mount({ ...VIEW_PANE, surface: 'terminal' })
+  expect(await pane.find({ type: 'Text', text: /^w+$/ })).toBeUndefined()
+  expect(await pane.find({ key: 'here' })).toMatchObject({ text: 'narrow' })
+  expect(await pane.find({ type: 'Text', text: 'Run the tests' })).toBeUndefined()
+  await pane.unmount()
+  w.view.run_a = { exitCode: 0, stdout: JSON.stringify({ ...LIVE, picture: null, dots: wide, narrower: [] }), stderr: '' }
+  await $.tool.call({ tool: 'mcp__ml-workflow__open_view', runId: 'run_a', db: DB })
+  // A pane that fits the drawing across it, though not beside the files, draws it above them.
+  const across = await $.ui.mount({ ...VIEW_PANE, props: paneProps('coding-loop-0238a2a3', 160), surface: 'terminal' })
+  expect(await across.find({ type: 'Text', text: /^w+$/ })).toBeDefined()
+  expect(await across.find({ type: 'Text', text: 'Run the tests' })).toBeUndefined()
+  expect((await across.find({ key: 'body' }))?.props.flexDirection).toBe('column')
+  await across.unmount()
+  const tree = await $.ui.mount({ ...VIEW_PANE, surface: 'terminal' })
+  expect(await tree.find({ type: 'Text', text: /^w+$/ })).toBeUndefined()
+  expect(await tree.find({ type: 'Text', text: 'Run the tests' })).toBeDefined()
+  expect(await tree.find({ key: 'here' })).toBeDefined()
+  expect(await tree.find({ type: 'Text', text: /^Implement \(Claude\)$/ })).toMatchObject({ props: { backgroundColor: '#ffd43b' } })
+  expect(await tree.find({ type: 'Text', text: '  2    implement [label="Implement (Claude)"];' })).toMatchObject({ props: { wrap: 'wrap' } })
+  await tree.unmount()
+  // Picked, the tree stays beside the files: the drawing it hides does not stack the pane.
+  const picked = await $.ui.mount({ ...VIEW_PANE, props: paneProps('coding-loop-0238a2a3', 160), surface: 'terminal' })
+  await picked.press({ key: 'drawn' })
+  expect(await picked.find({ type: 'Text', text: 'Run the tests' })).toBeDefined()
+  expect((await picked.find({ key: 'body' }))?.props.flexDirection).toBe('row')
+  await picked.unmount()
+})
+
+test('the drawn button switches the view between the graph and the compact tree as text, and back', async ($, on) => {
+  mock.clock(on)
+  const w = world(on, NEW)
+  const wide = [[{ text: 'w'.repeat(120), style: 'edge' }]]
+  w.view.run_a = { exitCode: 0, stdout: JSON.stringify({ ...LIVE, picture: null, dots: [[{ text: 'graph row', style: 'here' }]], narrower: [] }), stderr: '' }
+  await $.tool.call({ tool: 'mcp__ml-workflow__open_view', runId: 'run_a', db: DB })
+  const pane = await $.ui.mount({ ...VIEW_PANE, surface: 'terminal' })
+  expect((await pane.find({ key: 'drawn' }))?.props).toMatchObject({ label: 'text', hotkey: 't' })
+  expect(await pane.find({ type: 'Text', text: 'graph row' })).toBeDefined()
+  await pane.press({ key: 'drawn' })
+  expect(await pane.find({ type: 'Text', text: 'graph row' })).toBeUndefined()
+  expect(await pane.find({ type: 'Text', text: 'Run the tests' })).toBeDefined()
+  expect((await pane.find({ key: 'drawn' }))?.props.label).toBe('graph')
+  await pane.press({ key: 'drawn' })
+  expect(await pane.find({ type: 'Text', text: 'graph row' })).toBeDefined()
+  await pane.unmount()
+  // Where no graph fits, the view draws the tree; picking the graph draws it anyway, cut at the edge.
+  w.view.run_a = { exitCode: 0, stdout: JSON.stringify({ ...LIVE, picture: null, dots: wide, narrower: [] }), stderr: '' }
+  await $.tool.call({ tool: 'mcp__ml-workflow__open_view', runId: 'run_a', db: DB })
+  const narrow = await $.ui.mount({ ...VIEW_PANE, surface: 'terminal' })
+  expect(await narrow.find({ type: 'Text', text: /^w+$/ })).toBeDefined()
+  await narrow.unmount()
+})
+
+test('fold and unfold redraw the graph one arrow nearer or farther around the current node, and leave with the text', async ($, on) => {
+  mock.clock(on)
+  const w = world(on, NEW)
+  const at = (depth: number) => ({ exitCode: 0, stdout: JSON.stringify({ ...LIVE, picture: null, dots: [[{ text: `depth ${depth} drawing`, style: 'here' }]], narrower: [], fold: { depth, whole: 3, folded: 3 - depth } }), stderr: '' })
+  w.view.run_a = at(2)
+  await $.tool.call({ tool: 'mcp__ml-workflow__open_view', runId: 'run_a', db: DB })
+  const pane = await $.ui.mount({ ...VIEW_PANE, surface: 'terminal' })
+  expect(await pane.find({ type: 'Text', text: 'depth 2 of 3' })).toBeDefined()
+  expect((await pane.find({ key: 'fold' }))?.props.hotkey).toBe('f')
+  w.view.run_a = at(3)
+  await pane.press({ key: 'unfold' })
+  expect(w.runs.filter(argv => argv[1] === 'view').at(-1)).toContain('3')
+  expect(await pane.find({ type: 'Text', text: 'depth 3 drawing' })).toBeDefined()
+  expect(await pane.find({ type: 'Text', text: 'whole graph' })).toBeDefined()
+  expect(await pane.find({ key: 'unfold' })).toBeUndefined()
+  w.view.run_a = at(2)
+  await pane.press({ key: 'fold' })
+  expect(w.runs.filter(argv => argv[1] === 'view').at(-1)).toContain('2')
+  w.view.run_a = at(1)
+  await pane.press({ key: 'fold' })
+  expect(await pane.find({ type: 'Text', text: 'depth 1 of 3' })).toBeDefined()
+  expect(await pane.find({ key: 'fold' })).toBeUndefined()
+  await pane.press({ key: 'drawn' })
+  expect(await pane.find({ key: 'unfold' })).toBeUndefined()
+  await pane.unmount()
 })
 
 test('a picture taller than the pane is drawn narrower, to fit its rows', async ($, on) => {
@@ -644,7 +724,7 @@ test('typed with a run ID, the view command opens the pane before it reads the r
   w.view.run_a = VIEWED
   expect((await $.command.run({ command: 'ml-workflow:view', args: 'run_a' })).text).toBe('The live view of run_a is open.')
   expect(w.order.slice(0, 2)).toEqual(['open run-run_a', 'run view'])
-  expect(w.runs.filter(argv => argv[1] === 'view').map(argv => argv.slice(1))).toEqual([['view', 'run_a', '--json']])
+  expect(w.runs.filter(argv => argv[1] === 'view').map(argv => argv.slice(1))).toEqual([['view', 'run_a', '--depth', '2', '--json']])
   expect(w.commands).toEqual([])
 })
 

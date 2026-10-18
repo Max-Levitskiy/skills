@@ -1,11 +1,12 @@
 // `claude-spore line`, `view` and `draw`: the run line and the live view (docs/spec.md, p.24).
 // Everything the mod shows of a followed run is worked out here from `spore status --no-probe` and
 // the files the run's artifact pins; the mod polls these and draws what they print.
+import { createHash } from "node:crypto";
 import { copyFileSync, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { dataDir } from "./doctor.ts";
-import { display, dots, layout, picture, plainText, pngSize, tree, writeWhole, type Arrow, type Graph } from "./drawing.ts";
+import { around, CELLS, display, dots, layout, picture, plainText, pngSize, tree, writeWhole, type Arrow, type Cells, type Fold, type Graph } from "./drawing.ts";
 import { duration } from "./unfinished.ts";
 
 // Each spore call is cut off here: the mod polls once a second.
@@ -13,7 +14,7 @@ const LIMIT_MS = 4000;
 
 const USAGE = {
   line: "usage: claude-spore line <runId> [--db <db>] [--json]",
-  view: "usage: claude-spore view <runId> [--db <db>] [--json]",
+  view: "usage: claude-spore view <runId> [--db <db>] [--depth <n>] [--json]",
   draw: "usage: claude-spore draw --run <runId> [--db <db>] [--at <node>] [--from <node>:<outcome>] (--png <file> | --plain)",
 };
 
@@ -55,8 +56,10 @@ export async function line(argv: string[]): Promise<number> {
 }
 
 export async function view(argv: string[]): Promise<number> {
-  const args = parse(argv, ["--db"], ["--json"]);
-  if (!args || args.rest.length !== 1) return usage("view");
+  const args = parse(argv, ["--db", "--depth"], ["--json"]);
+  const depthFlag = args?.values["--depth"];
+  const depth = depthFlag === undefined ? null : Number(depthFlag);
+  if (!args || args.rest.length !== 1 || (depth !== null && !(Number.isInteger(depth) && depth >= 1))) return usage("view");
   const status = await readStatus(args.rest[0]!, args.values["--db"]);
   if ("error" in status) return failed(status, args.flags.has("--json"));
   const json = args.flags.has("--json");
@@ -72,8 +75,12 @@ export async function view(argv: string[]): Promise<number> {
   } catch (error) {
     return failed({ runId: status.runId, db: null, error: { code: "draw.unreadable", message: String(error) } }, json);
   }
-  const drawing = dots(await files.layout(source), graph, here, taken);
-  const pictured = await files.picture(graph, here, taken);
+  // Asked for a depth, the drawings and the picture show only that much around the current node.
+  const { fold, whole } = depth === null ? { fold: null, whole: 0 } : around(graph, here, depth);
+  const drawings: ReturnType<typeof dots>[] = [];
+  for (const cells of CELLS) drawings.push(dots(await files.layout(source, cells, here, fold), graph, here, taken));
+  const drawing = drawings[0]!;
+  const pictured = await files.picture(fold ? await display(source, here, taken, null, fold) : graph, here, taken, fold);
   const instructionsPath = here ? instructionsOf(settings, here) : null;
   const text = instructionsPath ? await files.read(instructionsPath) : null;
   const result = {
@@ -83,6 +90,8 @@ export async function view(argv: string[]): Promise<number> {
     facts: factsOf(status),
     picture: pictured,
     dots: drawing,
+    narrower: drawings.slice(1),
+    fold: depth === null ? null : { depth: fold ? depth : whole, whole, folded: fold?.folded.size ?? 0 },
     tree: tree(graph, here, taken),
     dot: dotLines(source, here, taken),
     settings: here ? settingsLines(settings, here) : [],
@@ -129,7 +138,7 @@ export async function draw(argv: string[]): Promise<number> {
     return 1;
   }
   if (png === undefined) {
-    console.log(plainText(dots(await files.layout(source), graph, here, taken)));
+    console.log(plainText(dots(await files.layout(source, CELLS[0]!), graph, here, taken)));
     return 0;
   }
   const pictured = await files.picture(graph, here, taken);
@@ -367,18 +376,22 @@ class Files {
     return { runId: this.status.runId, db: null, error: { code: "artifact.unreadable", message: this.missing ?? `the run's ${what} could not be read` } };
   }
 
-  /** Graphviz's layout of the display DOT, the same for every moment of the artifact. */
-  async layout(source: string): Promise<string> {
-    const kept = this.folder && join(this.folder, "layout.plain");
+  /**
+   * Graphviz's layout of the display DOT in cells, the same for every moment of the artifact, or
+   * when folded, for every moment at that node and depth.
+   */
+  async layout(source: string, cells: Cells, here: string | null = null, fold: Fold | null = null): Promise<string> {
+    const name = fileName(`cells-${cells.wrap}-${cells.nodesep}${fold ? `~${here}~${fold.depth}` : ""}`, { wrap: cells.wrap, nodesep: cells.nodesep, ...(fold ? { here, depth: fold.depth } : {}) });
+    const kept = this.folder && join(this.folder, `${name}.plain`);
     if (kept && existsSync(kept)) return readFileSync(kept, "utf8");
-    const plain = await layout((await display(source, null, null, true)).dot);
+    const plain = await layout((await display(source, null, null, cells, fold)).dot);
     if (kept) writeWhole(kept, plain);
     return plain;
   }
 
   /** The moment's picture, drawn once and kept; null with no font. */
-  async picture(graph: Graph, here: string | null, taken: Arrow | null): Promise<{ file: string; width: number; height: number } | null> {
-    const name = `${here ?? "_"}${taken ? `@${taken.from}.${taken.outcome}` : ""}`.replace(/[^A-Za-z0-9_.@-]/g, "_");
+  async picture(graph: Graph, here: string | null, taken: Arrow | null, fold: Fold | null = null): Promise<{ file: string; width: number; height: number } | null> {
+    const name = fileName(`${here ?? "_"}${taken ? `@${taken.from}.${taken.outcome}` : ""}${fold ? `~${fold.depth}` : ""}`, { here, ...(taken ? { from: taken.from, outcome: taken.outcome } : {}), ...(fold ? { depth: fold.depth } : {}) });
     const file = join(this.folder ?? join(dataDir(), "artifacts", "unpinned", this.status.runId), `${name}.png`);
     if (!existsSync(file)) {
       const png = await picture(graph.dot);
@@ -416,6 +429,18 @@ async function decided(status: Status): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/**
+ * A cache file's name for its parts: `readable`, the parts joined by separators, where every part
+ * is a number or a name of letters, digits, `_` and `-`, which no separator can be read into; else
+ * `readable` made safe and the hash of the parts after a `+`, which a readable name never holds, so
+ * no two keys share a file.
+ */
+export function fileName(readable: string, parts: Record<string, string | number | null>): string {
+  const isPlain = Object.values(parts).every(part => typeof part === "number" || (typeof part === "string" && /^[A-Za-z0-9_-]+$/.test(part)));
+  if (isPlain) return readable;
+  return `${readable.replace(/[^A-Za-z0-9_.@~-]/g, "_")}+${createHash("sha1").update(JSON.stringify(parts)).digest("hex").slice(0, 12)}`;
 }
 
 function failed(failure: Failure, json: boolean): number {

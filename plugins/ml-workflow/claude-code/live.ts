@@ -10,6 +10,8 @@ import type { FileLine, Followed, LiveView, RunLine, Span } from '../types'
 const HERE = '#ffd43b'
 const TAKEN = '#e8590c'
 const POLL_MS = 1000
+// How many arrows around the current node the graph shows until the person unfolds it.
+const DEPTH = 2
 // The run line's fixed parts: `needs you` with the two spaces after it, and ` [ view ]`.
 const NEEDS_YOU = 'needs you'
 const BUTTON_COLUMNS = 9
@@ -19,6 +21,8 @@ const followed = atom({ plugin: 'ml-workflow', key: 'followed' } as const, [] as
 const views = atom({ plugin: 'ml-workflow', key: 'views' } as const, {} as Record<string, LiveView>)
 const pictures = atom({ plugin: 'ml-workflow', key: 'pictures' } as const, null as boolean | null)
 const full = atom({ plugin: 'ml-workflow', key: 'full' } as const, [] as string[])
+const drawn = atom({ plugin: 'ml-workflow', key: 'drawn' } as const, {} as Record<string, 'graph' | 'text'>)
+const depths = atom({ plugin: 'ml-workflow', key: 'depths' } as const, {} as Record<string, number>)
 const polling = atom({ plugin: 'ml-workflow', key: 'polling' } as const, false)
 
 // The open views, by run, with the database each was opened with, and the ended runs whose open
@@ -67,6 +71,21 @@ async function helperJson($: EngineInterface, args: string[]): Promise<any> {
 
 const dbArgs = (db: string | null) => (db ? ['--db', db] : [])
 
+async function readView($: EngineInterface, runId: string, db: string | null): Promise<any> {
+  const depth = (await read($, depths))[runId] ?? DEPTH
+  return helperJson($, ['view', runId, ...dbArgs(db), '--depth', String(depth)])
+}
+
+// A fold or an unfold: the new depth, then the view drawn at it.
+async function refold($: EngineInterface, runId: string, depth: number) {
+  await update($, depths, all => ({ ...all, [runId]: depth }))
+  const view = await readView($, runId, open.get(runId) ?? null)
+  if (view && !view.error) {
+    await update($, views, all => ({ ...all, [runId]: view }))
+    reveal($, runId)
+  }
+}
+
 async function follow($: EngineInterface, runId: string, db: string | null) {
   await update($, followed, list => {
     const known = list.find(run => run.runId === runId)
@@ -90,7 +109,7 @@ export async function openView($: EngineInterface, runId: string, db: string | n
     open.delete(runId)
     throw error
   }
-  const view: LiveView = (await helperJson($, ['view', runId, ...dbArgs(db)])) ?? { runId, db, error: { code: 'helper', message: 'claude-spore view gave no answer' } }
+  const view: LiveView = (await readView($, runId, db)) ?? { runId, db, error: { code: 'helper', message: 'claude-spore view gave no answer' } }
   await update($, views, all => ({ ...all, [runId]: view }))
   reveal($, runId)
   await poll($)
@@ -152,7 +171,7 @@ async function refresh($: EngineInterface, runId: string, db: string | null) {
   if (!open.has(runId) || gone) return
   const shownLine = (await read($, views))[runId]?.line
   if (JSON.stringify(shownLine ?? null) !== JSON.stringify(line)) {
-    const view = await helperJson($, ['view', runId, ...dbArgs(db)])
+    const view = await readView($, runId, db)
     if (view && !view.error) {
       await update($, views, all => ({ ...all, [runId]: view }))
       reveal($, runId)
@@ -259,12 +278,15 @@ export function registerLive(on: On) {
     if (!view) return h(ui.Text, { dimColor: true }, 'Reading the run…') as RenderElement
     if (view.error) return h(ui.Text, { dimColor: true }, `The run could not be read: ${view.error.code}: ${view.error.message}`) as RenderElement
     const columns = e.props.bodyColumns
-    const isWide = columns >= 150
-    const facts = h(ui.Text, {}, h(ui.Text, { bold: true }, view.facts ?? ''), ...(view.line?.needsYou ? [h(ui.Text, { bold: true, color: TAKEN }, ', needs you')] : []))
+    let isWide = columns >= 150
+    const factsText = h(ui.Text, {}, h(ui.Text, { bold: true }, view.facts ?? ''), ...(view.line?.needsYou ? [h(ui.Text, { bold: true, color: TAKEN }, ', needs you')] : []))
+    // The person's pick of graph or text; unpicked, the graph where one fits and the tree elsewhere.
+    const pick = (await read($, drawn))[runId]
     const width = Math.min(100, Math.max(10, (isWide ? Math.floor(columns / 2) : columns) - 2))
-    // The drawing fits the pane's rows less the facts line and the one under it.
+    // The picture fits the pane's rows less the facts line and the one under it.
     const room = Math.max(3, e.props.scroll.bodyRows - 2)
-    const usePicture = view.picture && 'Image' in ui && (await read($, pictures)) !== false
+    const usePicture = pick !== 'text' && view.picture && 'Image' in ui && (await read($, pictures)) !== false
+    let isGraph = true
     let drawing: ReturnType<typeof h>
     if (usePicture) {
       // A cell is about twice as tall as wide; a picture taller than the room is drawn narrower.
@@ -278,11 +300,22 @@ export function registerLive(on: On) {
         alt: `The workflow at ${view.line?.text ?? runId}`,
       })
     } else {
-      // The dot drawing when it fits, else the compact tree, which wraps rather than cuts.
-      const dots = view.dots ?? []
-      const isFit = dots.length <= room && dots.every(row => row.reduce((n, span) => n + [...span.text].length, 0) <= width)
-      const isTree = !isFit && Boolean(view.tree?.length)
-      const rows = isTree ? view.tree! : dots
+      // The roomiest dot drawing whose width fits, beside the files, else above them across the
+      // whole pane; the compact tree only when none fits. A drawing taller than the pane scrolls.
+      const widthOf = (rows: Span[][]) => Math.max(0, ...rows.map(row => row.reduce((n, span) => n + [...span.text].length, 0)))
+      const drawings = [view.dots ?? [], ...(view.narrower ?? [])].filter(rows => rows.length)
+      const fitting = (room: number) => drawings.find(rows => widthOf(rows) <= room)
+      // Picked, the graph is drawn even where none fits, as the narrowest cut at the pane's edge.
+      // Picked, the tree keeps the pane's layout: no unshown drawing moves it above the files.
+      const isText = pick === 'text' && Boolean(view.tree?.length)
+      let dots = isWide && !isText ? fitting(Math.floor(columns / 2) - 2) : undefined
+      if (!dots && !isText) {
+        dots = fitting(columns - 2) ?? (pick === 'graph' ? drawings.at(-1) : undefined)
+        if (dots) isWide = false
+      }
+      const isTree = (isText || !dots) && Boolean(view.tree?.length)
+      isGraph = !isTree
+      const rows = isTree ? view.tree! : (dots ?? drawings.at(-1) ?? [])
       // The row `reveal` scrolls to: the middle one of the current node's, its label's in a box.
       // A Text carries no key, so that row sits in a Box keyed `here`.
       const hereRows = rows.flatMap((row, i) => (row.some(span => span.style === 'here') ? [i] : []))
@@ -318,7 +351,24 @@ export function registerLive(on: On) {
       ...(view.settings?.length ? [fileBlock(ui, 'settings.json', view.settings)] : []),
       ...(instructions ? [instructions] : []),
     )
-    const body = isWide ? h(ui.Box, { flexDirection: 'row', gap: 3 }, drawing, files) : h(ui.Box, { flexDirection: 'column' }, drawing, files)
+    const toggle = h(ui.Button, {
+      key: 'drawn',
+      label: isGraph ? 'text' : 'graph',
+      hotkey: 't',
+      onPress: () => void update($, drawn, all => ({ ...all, [runId]: isGraph ? 'text' : 'graph' })),
+    })
+    // Folding shows the graph's part around the current node; each press takes one arrow more or less.
+    const fold = view.fold
+    const folding =
+      isGraph && fold && fold.whole > 1
+        ? [
+            ...(fold.depth > 1 ? [h(ui.Button, { key: 'fold', label: 'fold', hotkey: 'f', onPress: () => void refold($, runId, fold.depth - 1) })] : []),
+            h(ui.Text, { dimColor: true }, fold.depth < fold.whole ? `depth ${fold.depth} of ${fold.whole}` : 'whole graph'),
+            ...(fold.depth < fold.whole ? [h(ui.Button, { key: 'unfold', label: 'unfold', hotkey: 'u', onPress: () => void refold($, runId, fold.depth + 1) })] : []),
+          ]
+        : []
+    const facts = h(ui.Box, { flexDirection: 'row', gap: 2 }, h(ui.Box, { flexShrink: 1 }, factsText), h(ui.Box, { flexShrink: 0, gap: 1 }, toggle, ...folding))
+    const body = isWide ? h(ui.Box, { key: 'body', flexDirection: 'row', gap: 3 }, drawing, files) : h(ui.Box, { key: 'body', flexDirection: 'column' }, drawing, files)
     return h(ui.Box, { flexDirection: 'column' }, facts, h(ui.Box, { marginTop: 1 }, body)) as RenderElement
   })
 }

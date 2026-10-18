@@ -2,6 +2,14 @@
 
 What each ml-workflow version changed. Every change to the plugin raises the version and adds its section here with `bun scripts/plugin-version.ts bump` (AGENTS.md, Releasing a plugin). Versions up to 0.9.0 are in the git history of `.claude-plugin/plugin.json`.
 
+## 0.12.0
+
+- The live view draws the workflow as a graph where it showed the compact tree: laid out top to bottom in character cells, whatever the workflow's `rankdir`, to the pane's width, in the roomiest of four layouts that fits, scrolling with the current node in view; the tree only where none fits.
+- The graph shows two arrows around the current node; `fold` (hotkey f) and `unfold` (u) show one arrow less or more, up to the whole graph. Each node past the fold is a dashed box saying how many more it hides.
+- A `text`/`graph` button (hotkey t) switches the live view between the graph and the compact tree.
+- Node IDs with characters other than letters, digits, `_` and `-`, such as `review/a` and `review?a`, or `foo~2` beside `foo` folded at depth 2, no longer share a cached picture or layout, so the view never shows the other node's.
+- `claude-spore --help` lists `view`'s `--depth`.
+
 ## 0.11.5
 
 - claude-spore doctor needs spore 0.6.0, the first release that marks a try cut off by a kill (runspore#224), and offers the update for v0.4.0 and v0.5.0, on which the start line's "was cut off" and the menu's Continue never appeared (skills#133)
