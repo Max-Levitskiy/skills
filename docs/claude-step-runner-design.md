@@ -233,9 +233,13 @@ Rejected:
 
 Hosting modules is runspore work: rights to start programs and reach herdr (WASI 0.2 has no process
 spawning and no Unix sockets, so spore provides its own imports), granting them per workflow,
-sealing the module, and crash tests at each failpoint. It is tracked as a runspore issue, and the
-ml-workflow move to the runner module is blocked by it with a native GitHub blocking dependency, not
-a note in the text. Until that issue is done, `claude-spore` stays as it is.
+sealing the module, and crash tests at each failpoint. It is tracked as
+[Web-tree/runspore#233](https://github.com/Web-tree/runspore/issues/233), with the "needs you" mark
+of decision 8 as [Web-tree/runspore#234](https://github.com/Web-tree/runspore/issues/234). The
+ml-workflow move to the runner module,
+[Max-Levitskiy/skills#123](https://github.com/Max-Levitskiy/skills/issues/123), is blocked by both
+with native GitHub blocking dependencies, not a note in the text. Until they are done,
+`claude-spore` stays as it is.
 
 Rejected:
 - **Keep claude-spore, move the hook parts over now, switch when the host lands** (the original
@@ -364,4 +368,3 @@ None.
 - Whether "directly" in decision 1 also means an interactive Claude in a plain terminal (a third
   run mode).
 - Whether the hook parts should start before the module host (decision 9 as recorded says no).
-- The runspore issue for the module host and the blocked ml-workflow issue are not filed yet.
