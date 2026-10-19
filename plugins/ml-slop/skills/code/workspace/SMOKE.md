@@ -79,7 +79,7 @@ holds (clean 100 vs sloppy 78, a 22-pt gap ≥ the 20-pt target). The single unm
 is the absolute sloppy-score threshold, recorded above as the primary calibration input for
 Plan 2 Round 0.
 
-## Correctness-boundary regression: 2026-10-12
+## Correctness-boundary regression: 2026-10-12, repaired 2026-10-19
 
 `fixtures/dense_but_wrong.py` is an original synthetic negative control for a
 failure mode documented by Rathnasuriya and Yang, *Characterizing Overconfident
@@ -87,26 +87,76 @@ Failure in LLM-Based Code Generation* (submitted 2026-10-08,
 <https://arxiv.org/abs/2610.11300>): plausible, confident-looking generated code
 can still fail execution-based correctness checks.
 
-The fixture is intentionally compact and free of seeded slop, but its documented
-inclusive endpoint is wrong. The deterministic oracle in
-`dense_but_wrong.expected.json` must fail:
+The original fixture had an invalid "no findings" oracle: its docstring promised
+an inclusive endpoint, contradicting its body. The existing `comment-redundancy`
+method correctly requires a high-severity `stale-or-wrong` finding for that case.
+PR #69's review identified this and a literal scope-statement mismatch; the PR
+was merged without those fixture repairs. The repairs below leave all skill
+instructions, methods, weights, penalties, and score bands unchanged.
+
+| Analyze one file at a time | Expected slop behavior | Independent functional oracle |
+| --- | --- | --- |
+| `fixtures/dense_but_wrong.py` | No seeded slop; the inclusive contract is only in the external expectation JSON | Fails: `(1, 3)` returns 3, not 6; `(3, 3)` returns 0, not 3 |
+| `fixtures/stale_docstring.py` | `comment-redundancy`: `stale-or-wrong`, high severity | Fails with the same results |
+| `fixtures/useful_docstring.py` | No seeded slop; keep the correct public-API docstring | Passes both cases |
+
+The two docstring controls share exactly the same documentation; only the
+implementation differs. Do not weaken wrong-comment detection to make the
+negative control pass, and do not strip useful documentation. The boundary
+fixture intentionally has neither comments nor docstrings, and its neutral
+function name does not expose the hidden inclusive contract.
+
+Run the deterministic construction/oracle checks from the repository root:
 
 ```bash
-python -c "import sys; sys.path.insert(0, 'plugins/ml-slop/skills/code/workspace/fixtures'); from dense_but_wrong import inclusive_sum; assert inclusive_sum(1, 3) == 6"
+python plugins/ml-slop/skills/code/workspace/check_boundary_fixtures.py
 ```
 
-Use the same file to compare the code skill at base
-`7f9d2b119cfc0910b6b5894442387d15930b290b` and the candidate branch:
+The checker exits zero when the intentionally wrong implementations fail their
+functional contracts and the correct control passes. It does not invoke an LLM
+or prove the expected slop findings. Each JSON file's `required_scope_statement`
+is a literal substring of the existing report template. No numeric score or
+label is an acceptance oracle.
 
-1. Run `/ml-slop:code` in standalone mode with the same model, effort, and
-   harness settings.
-2. Save the exact reports and raw method envelopes.
-3. Expect no supported slop findings and no score reduction merely because the
-   functional oracle fails. Do not use the exact numeric score as an oracle.
-4. Confirm that the candidate report states that density is not functional
-   correctness, security, or authorship; the base report has no such required
-   scope line.
+### Compare against the current default-branch baseline
 
-The model-driven comparison has not been run in this repository. The fixture and
-expectation file are ready for the external harness; no improvement in score or
-detection accuracy is claimed.
+Baseline: `6be7c9e364ab580da4bf8afee21e47a520a31932` (includes merged PR #69).
+
+1. Run `/ml-slop:code` in standalone mode at that baseline and the candidate,
+   with identical model/version, effort, harness settings, and input bytes.
+2. For each run, provide only one candidate `.py` fixture at a time. Keep the
+   JSON expectations, sibling fixtures, and this protocol out of the analysis
+   input; they belong to the external evaluator. Otherwise the hidden contract
+   leaks and sibling implementations can produce false duplication findings.
+3. Save the exact reports and raw method envelopes. Judge findings against the
+   paired controls above, and check the literal scope substring in the JSON.
+   Both skill revisions should behave the same because their prompts are
+   unchanged. Do not interpret a numeric score difference as an improvement.
+4. To reproduce fixture-oracle defects at the baseline, run the candidate checker
+   against a baseline worktree (replace the path as needed):
+
+```bash
+git worktree add --detach ../ml-slop-boundary-base 6be7c9e364ab580da4bf8afee21e47a520a31932
+python plugins/ml-slop/skills/code/workspace/check_boundary_fixtures.py \
+  --plugin-root ../ml-slop-boundary-base/plugins/ml-slop --existing-only
+```
+
+The baseline is expected to fail construction checks for analyzed docstrings,
+the literal scope mismatch, and the numeric score oracle. Its functional failure
+still reproduces; the new paired controls are skipped because they did not exist.
+
+Recorded deterministic check on 2026-10-19:
+
+| Input fixture revision | Passed | Failed | Skipped |
+| --- | ---: | ---: | ---: |
+| Baseline, candidate checker with `--existing-only` | 1 | 3 | 1 |
+| Candidate with `--existing-only` | 4 | 0 | 1 |
+| Candidate, all controls | 5 | 0 | 0 |
+
+These counts measure fixture construction and oracle consistency only, not
+findings returned by either skill version. The new controls' expected findings
+remain unverified by a model harness.
+
+No model-driven comparison has been run for this repair. These are synthetic
+inputs and test-integrity checks, not a calibrated benchmark or evidence of
+better model accuracy.

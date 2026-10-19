@@ -1,0 +1,33 @@
+{
+  "fixture": "stale_docstring.py",
+  "purpose": "Positive control: a wrong public-API docstring remains reportable despite the correctness disclaimer.",
+  "provenance": {
+    "kind": "original synthetic example, isolated from the former dense_but_wrong fixture",
+    "review_date": "2026-10-12",
+    "review_url": "https://github.com/Max-Levitskiy/skills/pull/69#discussion_r4245729502"
+  },
+  "density_expectation": {
+    "expected_findings": [
+      {
+        "method": "comment-redundancy",
+        "pattern": "stale-or-wrong",
+        "severity": "high",
+        "anchor": "Return the sum of every integer from start through end, inclusive."
+      }
+    ],
+    "rule": "The scope disclaimer must not suppress a supported stale-or-wrong comment finding."
+  },
+  "functional_oracle": {
+    "contract": "Sum every integer from start through end, including both endpoints.",
+    "entrypoint": "range_total",
+    "cases": [
+      {"args": [1, 3], "expected": 6, "observed": 3},
+      {"args": [3, 3], "expected": 3, "observed": 0}
+    ],
+    "passes": false
+  },
+  "report_expectation": {
+    "match": "literal_substring",
+    "required_scope_statement": "Slop density only — not functional correctness, security, or authorship"
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "fixture": "useful_docstring.py",
+  "purpose": "Negative control: preserve useful, correct public-API documentation.",
+  "provenance": {
+    "kind": "original synthetic counterexample to stale_docstring.py",
+    "created": "2026-10-19"
+  },
+  "density_expectation": {
+    "expected_findings": [],
+    "preserve_spans": [
+      "Return the sum of every integer from start through end, inclusive."
+    ],
+    "rule": "Do not recommend deleting correct public-API documentation as redundant."
+  },
+  "functional_oracle": {
+    "contract": "Sum every integer from start through end, including both endpoints.",
+    "entrypoint": "range_total",
+    "cases": [
+      {"args": [1, 3], "expected": 6, "observed": 6},
+      {"args": [3, 3], "expected": 3, "observed": 3}
+    ],
+    "passes": true
+  },
+  "report_expectation": {
+    "match": "literal_substring",
+    "required_scope_statement": "Slop density only — not functional correctness, security, or authorship"
+  }
+}
