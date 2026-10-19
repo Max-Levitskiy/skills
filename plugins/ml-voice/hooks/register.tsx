@@ -332,6 +332,8 @@ const keys = new Map<string, string>()
 const HARNESS = { CLAUDECODE: '1' }
 
 let recording: Promise<void> = Promise.resolve()
+// Paid requests whose cost is still being asked for; the session's end waits on them.
+const pending = new Set<Promise<void>>()
 let doc = 0
 let playing: AbortController | undefined
 // The requests for one file that are in flight at once share one promise.
@@ -402,7 +404,11 @@ export const register: Register = on => {
       }
       await $.process.run(done)
       if (voice.billing === 'free') await remove([`${out}.headers`])
-      else void record(voice, text.length, `${out}.headers`, s.usageLog, mine).catch(() => {})
+      else {
+        const recorded = record(voice, text.length, `${out}.headers`, s.usageLog, mine).catch(() => {})
+        pending.add(recorded)
+        void recorded.finally(() => pending.delete(recorded))
+      }
     }
 
     // One line per paid request in the usage log, the reply's and the
@@ -435,6 +441,7 @@ export const register: Register = on => {
           }))
         })
         .catch(() => {})
+      await recording
     }
 
     // A file played again is touched, so the cleanup counts age from its last play.
@@ -486,9 +493,10 @@ export const register: Register = on => {
         const block = r.blocks[k]
         const text = block ? spokenOf(block) : ''
         if (!text) continue
+        let file: string
         let base64: string
         try {
-          const file = await clip(text, s)
+          file = await clip(text, s)
           const following = r.blocks[k + 1]
           if (following && spokenOf(following)) clip(spokenOf(following), s).catch(() => {})
           if (control.signal.aborted) return
@@ -498,7 +506,16 @@ export const register: Register = on => {
           return
         }
         if (control.signal.aborted) return
-        await $.audio.play({ base64, mime: s.voice.mime }, { signal: control.signal })
+        try {
+          await $.audio.play({ base64, mime: s.voice.mime }, { signal: control.signal })
+        } catch (err) {
+          if (control.signal.aborted) return
+          // Audio that cannot be played leaves the cache, so the next try makes it again.
+          clips.delete(file)
+          await remove([file])
+          await update($, reader, (r): Reader => ({ ...r, status: 'error', note: `The audio for this part did not play: ${String(err)}` }))
+          return
+        }
         if (control.signal.aborted) return
       }
     }
@@ -515,11 +532,12 @@ export const register: Register = on => {
       await sweeping
       const file = `${s.cacheDir}/narration/${await digest(asked)}.json`
       let spoken = await $.fs.read(file).then(t => parseSpoken(t as string, blocks), () => undefined)
-      if (spoken) await $.process.run(['touch', file])
+      if (spoken) await $.process.run(['touch', file]).catch(() => undefined)
       else {
-        const reply = await $.model.complete(asked)
-        spoken = reply.isAnswered ? parseSpoken(reply.text, blocks) : undefined
-        if (spoken) await $.fs.write(file, JSON.stringify(spoken))
+        // A failed call falls back to the plain cleanup below, like an answer that does not parse.
+        const reply = await $.model.complete(asked).catch(() => undefined)
+        spoken = reply?.isAnswered ? parseSpoken(reply.text, blocks) : undefined
+        if (spoken) await $.fs.write(file, JSON.stringify(spoken)).catch(() => undefined)
       }
       if (mine !== doc) return
       await update($, reader, (r): Reader => ({
@@ -646,8 +664,11 @@ export const register: Register = on => {
     return next(e)
   })
 
+  // A paid request's log line waits on its cost, asked for over about nine
+  // seconds; the session ends once those lines are written.
   on('session.end', async ($, e, next) => {
     stop()
+    await Promise.allSettled([...pending])
     return next(e)
   })
 
