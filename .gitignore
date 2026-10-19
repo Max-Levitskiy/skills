@@ -16,7 +16,7 @@
 
 # Written by Claude Code on each load of a hooks module, for the build that loaded it
 plugins/*/.claude-plugin/types/
-plugins/ml-agent-config/tsconfig.json
+plugins/*/tsconfig.json
 
 # Python bytecode
 __pycache__/
