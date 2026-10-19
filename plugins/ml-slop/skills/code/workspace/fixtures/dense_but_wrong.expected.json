@@ -11,16 +11,20 @@
   },
   "density_expectation": {
     "expected_findings": [],
-    "expected_label": "Dense",
-    "minimum_score": 80,
     "rule": "Do not lower the density score merely because the implementation fails its functional oracle."
   },
   "functional_oracle": {
-    "command": "python -c \"import sys; sys.path.insert(0, 'plugins/ml-slop/skills/code/workspace/fixtures'); from dense_but_wrong import inclusive_sum; assert inclusive_sum(1, 3) == 6\"",
-    "expected_exit_code": 1,
-    "expected_failure": "range(start, end) excludes the documented inclusive endpoint."
+    "contract": "Sum every integer from start through end, including both endpoints.",
+    "entrypoint": "range_total",
+    "cases": [
+      {"args": [1, 3], "expected": 6, "observed": 3},
+      {"args": [3, 3], "expected": 3, "observed": 0}
+    ],
+    "passes": false,
+    "expected_failure": "range(start, end) excludes the externally specified inclusive endpoint."
   },
   "report_expectation": {
-    "required_scope_statement": "The density score is not a functional-correctness, security, or authorship verdict."
+    "match": "literal_substring",
+    "required_scope_statement": "Slop density only — not functional correctness, security, or authorship"
   }
 }
