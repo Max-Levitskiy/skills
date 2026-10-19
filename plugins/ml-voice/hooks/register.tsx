@@ -353,6 +353,9 @@ let recording: Promise<void> = Promise.resolve()
 // written; the session's end waits on them.
 const pending = new Set<Promise<void>>()
 let doc = 0
+// Counts calls of readAloud: one overtaken by a later call while it loaded settings gives way.
+let loads = 0
+const OVERTAKEN = 'A later read took over.'
 let playing: AbortController | undefined
 // The requests for one file that are in flight at once share one promise; it
 // leaves the map when it settles, since the file on disk answers from then on.
@@ -660,6 +663,8 @@ export const register: Register = on => {
     // Loads the voice from agent-config and starts reading `reply`: what
     // /ml-voice:read and the pane's list of earlier replies both run.
     readAloud = async (reply, index) => {
+      const call = ++loads
+      const overtaken = { isReading: false, text: OVERTAKEN }
       // /clear ends a session and starts the next with no session.start.
       if (ending.signal.aborted) ending = new AbortController()
       agentConfig ||= await findAgentConfig()
@@ -694,6 +699,7 @@ export const register: Register = on => {
         return { isReading: false, text: (err as Error).message }
       }
       const home = (await $.env.get('HOME')) ?? ''
+      if (call !== loads) return overtaken
       const expand = (path: string) => path.replace(/^~(?=\/)/, home).replace(/\/$/, '')
       settings = {
         voice: provider.voice(config, key),
@@ -714,6 +720,7 @@ export const register: Register = on => {
       const { voice, style } = settings
       const blocks = split(reply.text)
       const total = Number((await $.store.get('totalCost')) ?? 0)
+      if (call !== loads) return overtaken
       await update($, reader, (previous): Reader => ({
         ...EMPTY,
         blocks,
@@ -810,7 +817,7 @@ export const register: Register = on => {
         if (!chosen) return
         $.clock.after(0, async () => {
           const started = await readAloud(chosen, index)
-          if (!started.isReading) await update($, reader, (s): Reader => ({ ...s, mode: 'reader', note: started.text }))
+          if (!started.isReading && started.text !== OVERTAKEN) await update($, reader, (s): Reader => ({ ...s, mode: 'reader', note: started.text }))
         })
       }
       const newestFirst = all.map((one, index) => ({ ...one, index })).reverse().slice(0, 40)
