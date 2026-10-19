@@ -33,6 +33,12 @@ describe('split', () => {
     expect(parts.map(p => p.source).join(' ')).toBe(runOn)
   })
 
+  test('cuts a single token longer than a part', async () => {
+    const parts = split('x'.repeat(5000))
+    expect(parts.every(p => p.source.length <= 240)).toBe(true)
+    expect(parts.map(p => p.source).join('')).toBe('x'.repeat(5000))
+  })
+
   test('cuts a long paragraph at sentence ends', async () => {
     const long = Array.from({ length: 8 }, (_, i) => `Sentence number ${i} is here and runs on a while.`).join(' ')
     const parts = split(long)

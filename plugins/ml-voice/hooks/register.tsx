@@ -35,7 +35,9 @@ function pieces(part: string): string[] {
   if (part.length <= 240) return [part]
   const out: string[] = []
   let cur = ''
-  for (const word of part.split(/\s+/)) {
+  // A token longer than a part (a URL, an encoded value) is cut wherever it must be.
+  const words = part.split(/\s+/).flatMap(word => word.match(/.{1,220}/g) ?? [])
+  for (const word of words) {
     if (cur && cur.length + word.length + 1 > 220) {
       out.push(cur)
       cur = ''
@@ -355,6 +357,8 @@ let playing: AbortController | undefined
 // The requests for one file that are in flight at once share one promise.
 const clips = new Map<string, Promise<string>>()
 let isSwept = false
+// Aborted when the session ends: cost polls stop and write the usage line at once.
+let ending = new AbortController()
 let sweeping: Promise<void> = Promise.resolve()
 
 function stop() {
@@ -389,7 +393,6 @@ function spent(u: Reader['usage']): string {
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
-    isSwept = false
     const remove = (paths: string[]) => $.process.run(['rm', '-f', '--', ...paths]).catch(() => undefined)
 
     // Made in work/ and moved into audio/ whole, so a failed or cut-off
@@ -398,13 +401,17 @@ export const register: Register = on => {
       const { voice } = s
       const work = `${s.cacheDir}/work/${crypto.randomUUID()}`
       const out = `${work}.${voice.ext}`
-      const done = ['sh', '-c', 'mkdir -p "$(dirname "$1")" && mv -f "$0" "$1"', out, file]
+      // A move that fails leaves no file, so it fails the synthesis and the next try makes it again.
+      const keep = async () => {
+        const moved = await $.process.run(['sh', '-c', 'mkdir -p "$(dirname "$1")" && mv -f "$0" "$1"', out, file])
+        if (moved.exitCode !== 0) throw new Error(`the audio could not be cached at ${file}: ${moved.stderr.trim()}`)
+      }
       if (voice.kind === 'say') {
         await $.fs.write(`${work}.txt`, text)
         const ran = await $.process.run(['say', '-o', out, '--file-format=WAVE', '--data-format=LEI16@22050', '-f', `${work}.txt`])
         await remove([`${work}.txt`])
         if (ran.exitCode !== 0) throw new Error(`say: ${ran.stderr.trim()}`)
-        await $.process.run(done)
+        await keep()
         return
       }
       const body = `${work}.json`
@@ -419,9 +426,11 @@ export const register: Register = on => {
         await remove([out, `${out}.headers`])
         throw new Error(`${voice.name}: ${ran.stderr.trim()} ${said.slice(0, 300)}`)
       }
-      await $.process.run(done)
+      // Paid for either way: the usage line is written even when the move fails.
+      const kept = keep()
       if (voice.billing === 'free') await remove([`${out}.headers`])
       else track(record(voice, text.length, `${out}.headers`, s.usageLog, mine))
+      await kept
     }
 
     const track = (work: Promise<unknown>) => {
@@ -443,7 +452,12 @@ export const register: Register = on => {
       const generation = /^x-generation-id:\s*(\S+)/im.exec(said)?.[1]
       let cost: number | null = null
       for (let tries = 0; generation && paid.billing === 'openrouter' && cost === null && tries < 6; tries++) {
-        await $.clock.sleep(1500)
+        // At the session's end the line is written with no cost; its generation id still finds it.
+        const isCut = await $.clock.sleep(1500, { signal: ending.signal }).then(
+          () => false,
+          () => true,
+        )
+        if (isCut) break
         const stats = await $.http
           .fetch(`https://openrouter.ai/api/v1/generation?id=${generation}`, { headers: { Authorization: `Bearer ${paid.key}` } })
           .catch(() => undefined)
@@ -625,6 +639,8 @@ export const register: Register = on => {
     // Loads the voice from agent-config and starts reading `reply`: what
     // /ml-voice:read and the pane's list of earlier replies both run.
     readAloud = async (reply, index) => {
+      // /clear ends a session and starts the next with no session.start.
+      if (ending.signal.aborted) ending = new AbortController()
       agentConfig ||= await findAgentConfig()
       const ac = agentConfig
       if (!ac) return { isReading: false, text: 'ml-voice needs the ml-agent-config plugin to choose a voice; install it and run /ml-voice:read again.' }
@@ -689,12 +705,17 @@ export const register: Register = on => {
     return next(e)
   })
 
-  // A paid request's log line waits on the request and then its cost, asked
-  // for over about nine seconds; the session ends once those lines are written.
+  // The whole session.end chain shares one short bound (1.5 s by default). Cost
+  // polls stop at once and write their usage lines; a narration still waiting
+  // on the model plays nothing. A request whose answer has not come back by the
+  // bound has no generation id to log.
   on('session.end', async ($, e, next) => {
     stop()
-    // A request that finishes meanwhile adds its usage line's work to the set.
-    while (pending.size > 0) await Promise.allSettled([...pending])
+    doc++
+    isSwept = false
+    ending.abort()
+    const left = next.budget.remainingMs - 250
+    if (pending.size > 0 && left > 0) await Promise.race([Promise.allSettled([...pending]), $.clock.sleep(left)])
     return next(e)
   })
 
