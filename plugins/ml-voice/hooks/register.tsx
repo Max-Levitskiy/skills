@@ -479,13 +479,13 @@ export const register: Register = on => {
             .run(['sh', '-c', 'mkdir -p "$(dirname "$0")" && cat >> "$0"', usageLog], { stdin: `${line}\n` })
             .catch((error: Error) => ({ exitCode: 1, stderr: error.message }))
           // The money is spent either way, so the totals still count it; the pane says the line is missing.
-          const note = logged.exitCode === 0 ? undefined : `The usage log could not be written (${usageLog}): ${logged.stderr.trim()}`
+          const logError = logged.exitCode === 0 ? undefined : `The usage log could not be written (${usageLog}): ${logged.stderr.trim()}`
           const total = Number((await $.store.get('totalCost')) ?? 0) + (cost ?? 0)
           await $.store.set('totalCost', total)
           // A prefetch of the reply before counts toward the all-time total only.
           await update($, reader, (r): Reader => ({
             ...r,
-            note: note ?? r.note,
+            logError: logError ?? r.logError,
             usage: mine === doc ? { ...r.usage, chars: r.usage.chars + chars, cost: r.usage.cost + (cost ?? 0), total } : { ...r.usage, total },
           }))
         })
@@ -714,12 +714,13 @@ export const register: Register = on => {
       const { voice, style } = settings
       const blocks = split(reply.text)
       const total = Number((await $.store.get('totalCost')) ?? 0)
-      await update($, reader, (): Reader => ({
+      await update($, reader, (previous): Reader => ({
         ...EMPTY,
         blocks,
         status: 'narrating',
         backend: style === 'compact' ? `${voice.name} · compact` : voice.name,
         usage: { ...EMPTY.usage, total, billing: voice.billing },
+        logError: previous.logError,
         replyIndex: index,
       }))
       const mine = doc
@@ -857,6 +858,7 @@ export const register: Register = on => {
         </Box>
         <Text dimColor>{status} · {r.backend}{r.replyIndex >= 0 ? ` · reply ${r.replyIndex + 1}` : ''}</Text>
         {r.usage.billing !== 'free' && <Text dimColor>{spent(r.usage)}</Text>}
+        {r.logError && <Text color="error">{r.logError}</Text>}
         {r.note && <Text color="error">{r.note}</Text>}
         {r.blocks.map((b, k) => {
           const isCurrent = k === r.current && r.status !== 'idle' && r.status !== 'narrating'

@@ -12,6 +12,8 @@ export type Reader = {
   view: 'source' | 'spoken'
   backend: string
   note?: string
+  /** A paid request's line that could not be written to the usage log: the session's, not the reply's. */
+  logError?: string
   /** Paid API use while reading this reply, and the cost across every session. */
   usage: { chars: number; cost: number; total: number; billing: Billing }
   /** The pane shows the reply being read, or the list of this session's replies to pick from. */

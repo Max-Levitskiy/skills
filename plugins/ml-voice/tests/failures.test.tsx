@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { PANE_PROPS, READ, boot, memoryDisk, settles } from './boot'
+import { PANE_PROPS, READ, boot, memoryDisk, settles, sleep } from './boot'
 
 test('a narration call that fails reads the plain cleanup instead of hanging', async ($, on) => {
   const disk = memoryDisk(on)
@@ -95,4 +95,46 @@ test('a narration that answers after the session ended plays nothing', async ($,
   for (let i = 0; i < 20; i++) await Promise.resolve()
   expect(syntheses).toBe(0)
   expect(plays).toBe(0)
+})
+
+test('a usage line that could not be written stays on screen through narration and the next read', async ($, on) => {
+  const disk = memoryDisk(on)
+  const settled = settles(on)
+  on('audio.play', () => ({ value: undefined }))
+  on('model.complete', () => ({ value: { isAnswered: true, text: '["Here is the answer."]', usage: {} } }) as never)
+  const clock = await boot($, on, {
+    plan: {
+      ready: true,
+      config: { voice: { provider: 'fish-audio' }, fishAudio: { model: 's2-pro' }, credentials: { fishAudioKey: { source: 'env', var: 'FISH' } } },
+    },
+    run: e => {
+      const [cmd, , script] = e.argv
+      if (cmd === 'sh' && script?.includes(' load ')) return { exitCode: 0, stdout: JSON.stringify({ 'credentials.fishAudioKey': 'test-key' }), stderr: '' }
+      // Fish Audio bills by characters; the log cannot be appended to.
+      if (cmd === 'sh' && script?.includes('cat >>')) return { exitCode: 1, stdout: '', stderr: 'Read-only file system' }
+      if (cmd === 'curl') {
+        const out = /output = "([^"]+)"/.exec(String((e as { stdin?: string }).stdin))?.[1] ?? ''
+        disk.files.set(out, 'mp3')
+        return { exitCode: 0, stdout: '', stderr: '' }
+      }
+      return disk.run(e)
+    },
+  })
+  const done = settled('done')
+  await $.prompt.submit(READ)
+  await clock.advance(1)
+  await done
+  for (let i = 0; i < 100; i++) {
+    const pane = await $.ui.mount({ plugin: 'ml-voice', surface: 'terminal', component: 'Pane', requestId: 'ml-voice', props: PANE_PROPS })
+    const isShown = (await pane.find({ type: 'Text', text: /usage log could not be written/ })) !== undefined
+    await pane.unmount()
+    if (isShown) break
+    await sleep(5)
+  }
+
+  // The next read starts a new reply; the failure belongs to the session and stays.
+  await $.prompt.submit(READ)
+  const pane = await $.ui.mount({ plugin: 'ml-voice', surface: 'terminal', component: 'Pane', requestId: 'ml-voice', props: PANE_PROPS })
+  expect(await pane.find({ type: 'Text', text: /usage log could not be written/ })).toBeDefined()
+  await pane.unmount()
 })
