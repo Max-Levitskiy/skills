@@ -1,0 +1,164 @@
+{
+  "$schema": "https://raw.githubusercontent.com/Max-Levitskiy/skills/main/plugins/ml-agent-config/agent-config.schema.json",
+  "version": 2,
+  "name": "voice-reader",
+  "schema": {
+    "version": 1,
+    "keys": {
+      "voice.provider": {
+        "description": "Who synthesizes the voice: fish-audio (Fish Audio's API, drama-3 and the S2 models), openrouter (OpenRouter's speech API), kokoro (local Kokoros server, free), self-hosted (your own OpenAI-shaped speech server, such as vLLM serving drama-3), or say (macOS built-in)",
+        "layer": "global",
+        "enum": [
+          "fish-audio",
+          "openrouter",
+          "kokoro",
+          "self-hosted",
+          "say"
+        ]
+      },
+      "narration.model": {
+        "description": "The Claude model that rewrites a reply as talk before it is read",
+        "layer": "global",
+        "default": "haiku",
+        "type": "string"
+      },
+      "usage.log": {
+        "description": "Where each paid API request is logged, one JSON line per request (time, provider, model, characters, cost in USD where the provider states it)",
+        "layer": "global",
+        "default": "~/.agents/voice-reader/usage.jsonl",
+        "type": "string"
+      },
+      "narration.style": {
+        "description": "How replies are retold: full keeps everything, said as talk; compact keeps only what matters (decisions, results, numbers, risks, what you must do) and skips the rest",
+        "layer": "global",
+        "default": "full",
+        "enum": [
+          "full",
+          "compact"
+        ]
+      },
+      "playback.autoStart": {
+        "description": "Start reading as soon as /ml-voice:read runs or a reply is picked; off, the pane prepares the reply and waits for play",
+        "layer": "global",
+        "default": true,
+        "type": "boolean"
+      },
+      "cache.dir": {
+        "description": "Where generated audio and narrations are kept, so a reply read again costs nothing. Shared by every session",
+        "layer": "global",
+        "default": "~/.cache/voice-reader",
+        "type": "string"
+      },
+      "cache.maxAgeDays": {
+        "description": "Delete cached audio and narrations not played for this many days, checked once a session; 0 keeps them however old",
+        "layer": "global",
+        "default": 30,
+        "type": "integer",
+        "minimum": 0
+      },
+      "cache.maxSizeMB": {
+        "description": "Cap on the cache's size in megabytes: past it, the least recently played files go first; 0 sets no cap",
+        "layer": "global",
+        "default": 500,
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    "groups": [
+      {
+        "when": {
+          "voice.provider": "fish-audio"
+        },
+        "keys": {
+          "credentials.fishAudioKey": {
+            "description": "Where your Fish Audio API key lives (fish.audio → Developers). API credit is billed apart from platform credit. A reference, never the key",
+            "layer": "global"
+          },
+          "fishAudio.model": {
+            "description": "Fish Audio model, sent as the model header: drama-3 (most expressive), s2.1-pro, s2-pro, or s2.1-pro-free (no API credit needed)",
+            "layer": "global",
+            "default": "drama-3",
+            "enum": [
+              "drama-3",
+              "s2.1-pro",
+              "s2-pro",
+              "s2.1-pro-free"
+            ]
+          },
+          "fishAudio.voice": {
+            "description": "Fish Audio voice model id (reference_id) from fish.audio; empty uses the default voice",
+            "layer": "global",
+            "default": "",
+            "type": "string"
+          }
+        }
+      },
+      {
+        "when": {
+          "voice.provider": "openrouter"
+        },
+        "keys": {
+          "credentials.openrouterKey": {
+            "description": "Where your OpenRouter API key lives (openrouter.ai → Keys). A reference, never the key",
+            "layer": "global"
+          },
+          "openrouter.model": {
+            "description": "OpenRouter speech model id",
+            "layer": "global",
+            "default": "fish-audio/drama-3",
+            "type": "string"
+          },
+          "openrouter.voice": {
+            "description": "The model's provider-specific voice id; empty uses its default",
+            "layer": "global",
+            "default": "",
+            "type": "string"
+          }
+        }
+      },
+      {
+        "when": {
+          "voice.provider": "kokoro"
+        },
+        "keys": {
+          "kokoro.url": {
+            "description": "Kokoro's OpenAI-shaped speech endpoint",
+            "layer": "global",
+            "default": "http://127.0.0.1:3030/v1/audio/speech",
+            "type": "string"
+          },
+          "kokoro.voice": {
+            "description": "Kokoro voice name, or a mix such as af_sky.4+af_nicole.6",
+            "layer": "global",
+            "default": "af_bella",
+            "type": "string"
+          }
+        }
+      },
+      {
+        "when": {
+          "voice.provider": "self-hosted"
+        },
+        "keys": {
+          "selfHosted.url": {
+            "description": "Your server's OpenAI-shaped speech endpoint, such as http://gpu-box:8091/v1/audio/speech",
+            "layer": "global",
+            "type": "string"
+          },
+          "selfHosted.model": {
+            "description": "The model name your server serves",
+            "layer": "global",
+            "default": "fishaudio/drama-3",
+            "type": "string"
+          },
+          "selfHosted.voice": {
+            "description": "Voice id your server takes; empty uses its default",
+            "layer": "global",
+            "default": "",
+            "type": "string"
+          }
+        }
+      }
+    ]
+  }
+}

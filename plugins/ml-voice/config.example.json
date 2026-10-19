@@ -1,0 +1,36 @@
+{
+  "//": "Example only. Write it with `agent-config write voice-reader --layer global`, never by hand,",
+  "//1": "or change any value in the /agent-config pane. Never put an API key in here, only a reference",
+  "//2": "to where it lives. `agent-config describe voice-reader` lists every key with its default.",
+  "voice": {
+    "provider": "openrouter"
+  },
+  "openrouter": {
+    "model": "fish-audio/drama-3",
+    "voice": ""
+  },
+  "credentials": {
+    "openrouterKey": {
+      "source": "1password",
+      "ref": "op://Vault/OpenRouter API key/credential",
+      "account": "OPTIONAL_ACCOUNT_ID"
+    }
+  },
+  "//fish-audio": "provider fish-audio reads fishAudio.{model,voice} and credentials.fishAudioKey instead.",
+  "//kokoro": "provider kokoro reads kokoro.{url,voice}; self-hosted reads selfHosted.{url,model,voice}; say needs nothing.",
+  "narration": {
+    "model": "haiku",
+    "style": "full"
+  },
+  "playback": {
+    "autoStart": true
+  },
+  "usage": {
+    "log": "~/.agents/voice-reader/usage.jsonl"
+  },
+  "cache": {
+    "dir": "~/.cache/voice-reader",
+    "maxAgeDays": 30,
+    "maxSizeMB": 500
+  }
+}
