@@ -39,6 +39,11 @@ describe('split', () => {
     expect(parts.map(p => p.source).join('')).toBe('x'.repeat(5000))
   })
 
+  test('cuts a heading longer than a part', async () => {
+    const parts = split(`## See ${'x'.repeat(3000)}`)
+    expect(parts.every(p => p.kind === 'heading' && p.source.length <= 240)).toBe(true)
+  })
+
   test('cuts a long paragraph at sentence ends', async () => {
     const long = Array.from({ length: 8 }, (_, i) => `Sentence number ${i} is here and runs on a while.`).join(' ')
     const parts = split(long)

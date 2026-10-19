@@ -82,3 +82,27 @@ test('reading again while a part is still being made joins that request instead 
   await done
   expect(syntheses).toBe(1)
 })
+
+test('reading again while Haiku is still answering waits for that answer instead of asking twice', async ($, on) => {
+  const disk = memoryDisk(on)
+  const settled = settles(on)
+  let narrations = 0
+  let answer = () => {}
+  on('audio.play', () => ({ value: undefined }))
+  on('model.complete', () => {
+    narrations++
+    return new Promise(resolve => (answer = () => resolve({ value: { isAnswered: true, text: '["Here is the answer."]', usage: {} } }))) as never
+  })
+  const clock = await boot($, on, { run: disk.run })
+  await $.prompt.submit(READ)
+  await clock.advance(1)
+  for (let i = 0; i < 100 && narrations === 0; i++) await sleep(5)
+
+  await $.prompt.submit(READ)
+  await clock.advance(1)
+  await sleep(100)
+  const done = settled('done')
+  answer()
+  await done
+  expect(narrations).toBe(1)
+})

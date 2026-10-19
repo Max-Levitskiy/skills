@@ -88,7 +88,7 @@ export function split(text: string): Block[] {
       blocks.push({ kind: 'table', source: lines.slice(start, i + 1).join('\n') })
     } else if (/^#{1,6}\s/.test(line)) {
       flush()
-      blocks.push({ kind: 'heading', source: line.trim() })
+      for (const part of pieces(line.trim())) blocks.push({ kind: 'heading', source: part })
     } else if (LIST_ITEM.test(line)) {
       flush()
       const item = [line.trimEnd()]
@@ -357,6 +357,8 @@ let playing: AbortController | undefined
 // The requests for one file that are in flight at once share one promise; it
 // leaves the map when it settles, since the file on disk answers from then on.
 const clips = new Map<string, Promise<string>>()
+// The same for narrations: a reread while Haiku is still answering waits for that answer.
+const narrations = new Map<string, Promise<string[] | undefined>>()
 let isSwept = false
 // Aborted when the session ends: cost polls stop and write the usage line at once.
 let ending = new AbortController()
@@ -462,7 +464,12 @@ export const register: Register = on => {
         const stats = await $.http
           .fetch(`https://openrouter.ai/api/v1/generation?id=${generation}`, { headers: { Authorization: `Bearer ${paid.key}` } })
           .catch(() => undefined)
-        if (stats?.ok) cost = (JSON.parse(stats.text) as { data?: { total_cost?: number } }).data?.total_cost ?? null
+        // A body that does not parse is a cost not yet stated: the line is still written.
+        if (stats?.ok) {
+          try {
+            cost = (JSON.parse(stats.text) as { data?: { total_cost?: number } }).data?.total_cost ?? null
+          } catch {}
+        }
       }
       const at = new Date(await $.clock.now()).toISOString()
       const line = JSON.stringify({ at, provider: paid.name, model: paid.model, chars, cost, generation })
@@ -577,14 +584,24 @@ export const register: Register = on => {
       const asked = narration(blocks, s)
       await sweeping
       const file = `${s.cacheDir}/narration/${await digest(asked)}.json`
-      let spoken = await $.fs.read(file).then(t => parseSpoken(t as string, blocks), () => undefined)
-      if (spoken) await $.process.run(['touch', file]).catch(() => undefined)
-      else {
-        // A failed call falls back to the plain cleanup below, like an answer that does not parse.
-        const reply = await $.model.complete(asked).catch(() => undefined)
-        spoken = reply?.isAnswered ? parseSpoken(reply.text, blocks) : undefined
-        if (spoken) await $.fs.write(file, JSON.stringify(spoken)).catch(() => undefined)
+      let asking = narrations.get(file)
+      if (!asking) {
+        asking = (async () => {
+          const kept = await $.fs.read(file).then(t => parseSpoken(t as string, blocks), () => undefined)
+          if (kept) {
+            await $.process.run(['touch', file]).catch(() => undefined)
+            return kept
+          }
+          // A failed call falls back to the plain cleanup below, like an answer that does not parse.
+          const reply = await $.model.complete(asked).catch(() => undefined)
+          const made = reply?.isAnswered ? parseSpoken(reply.text, blocks) : undefined
+          if (made) await $.fs.write(file, JSON.stringify(made)).catch(() => undefined)
+          return made
+        })()
+        narrations.set(file, asking)
+        void asking.finally(() => narrations.delete(file))
       }
+      const spoken = await asking
       if (mine !== doc) return
       await update($, reader, (r): Reader => ({
         ...r,
