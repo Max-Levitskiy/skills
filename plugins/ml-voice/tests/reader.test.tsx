@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { latestReply, parseSpoken, replies, split } from '../hooks/register'
+import { parseSpoken, replies, split } from '../hooks/register'
 
 const REPLY = `## Plan
 
@@ -34,14 +34,14 @@ describe('split', () => {
 })
 
 test('the latest reply joins the texts written since the last prompt', async () => {
-  const text = latestReply([
+  const text = replies([
     { role: 'user', text: 'old' },
     { role: 'assistant', text: 'old answer' },
     { role: 'user', text: 'new question' },
     { role: 'assistant', text: 'Looking.' },
     { role: 'user', text: '', toolResults: [{}] },
     { role: 'assistant', text: 'Found it.' },
-  ])
+  ]).at(-1)?.text
   expect(text).toBe('Looking.\n\nFound it.')
 })
 

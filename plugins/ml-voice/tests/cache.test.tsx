@@ -1,8 +1,9 @@
-import { expect, mock, test } from 'claude-code/testing'
+import { expect, test } from 'claude-code/testing'
+
 import { expired } from '../hooks/register'
+import { READ, boot } from './boot'
 
 const DAY = 86_400_000
-const BAND_PROPS = { hasSurvey: false, isWorking: false, maxRows: 4, bodyColumns: 100, scroll: { top: 0, bodyRows: 4 } } as never
 const MB = 1024 * 1024
 
 test('the cleanup drops files unplayed past the age limit, then the least recently played past the size cap', () => {
@@ -22,23 +23,7 @@ test('a reply read twice is narrated and synthesized once', async ($, on) => {
   let narrations = 0
   let syntheses = 0
   let plays = 0
-  let played = () => {}
-  mock.env(on, { TMPDIR: '/tmp', HOME: '/home/test' })
-  mock.store(on)
-  const clock = mock.clock(on)
-  on('session.start', ($, e) => ({ cwd: e.cwd }))
-  on('session.id', () => ({ value: 'test-session' }) as never)
-  on('ui.open', () => ({ value: { isPlaced: false } }) as never)
-  on('ui.render', { component: 'AbovePrompt' }, ($, e) => {
-    const { Box } = $.ui.resolve(e)
-    return <Box key="engine-band" />
-  })
-  on('session.messages', () => ({
-    value: [
-      { role: 'user', text: 'a question', toolUses: [] },
-      { role: 'assistant', text: 'An answer.', toolUses: [] },
-    ],
-  }))
+  let finished = () => {}
   on('fs.exists', ($, e) => ({ value: files.has(e.path) }))
   on('fs.read', ($, e) => {
     const text = files.get(e.path)
@@ -52,44 +37,38 @@ test('a reply read twice is narrated and synthesized once', async ($, on) => {
   on('fs.list', () => ({ value: [] }))
   on('audio.play', () => {
     plays++
-    played()
     return { value: undefined }
   })
   on('model.complete', () => {
     narrations++
     return { value: { isAnswered: true, text: '["Here is the answer."]', usage: {} } } as never
   })
-  on('process.run', ($, e) => {
-    const [cmd, , , from, to] = e.argv
-    const ok = (stdout = '') => ({ value: { exitCode: 0, stdout, stderr: '' } }) as never
-    if (cmd === 'sh' && e.argv[2]?.includes('agent-config')) return ok('/bin/agent-config\n')
-    if (cmd === 'sh' && e.argv[2]?.includes('mv -f') && from && to) {
-      files.set(to, files.get(from) ?? '')
-      files.delete(from)
-      return ok()
-    }
-    if (cmd === '/bin/agent-config') return ok(JSON.stringify({ ready: true, config: { voice: { provider: 'say' } } }))
-    if (cmd === 'say') {
-      syntheses++
-      files.set(e.argv[2] ?? '', 'wav')
-    }
-    return ok()
+  // The reader's last write of a reading is its status turning done.
+  on('state.set', async ($, e, next) => {
+    const answered = await next(e)
+    if (JSON.stringify(e.value).includes('"status":"done"')) finished()
+    return answered
   })
-  await $.session.start({ cwd: '/tmp', surface: 'terminal', isInteractive: true })
+  const clock = await boot($, on, {
+    run: e => {
+      const [cmd, script, , from, to] = e.argv
+      if (cmd === 'sh' && script === '-c' && e.argv[2]?.includes('mv -f') && from && to) {
+        files.set(to, files.get(from) ?? '')
+        files.delete(from)
+      }
+      if (cmd === 'say') {
+        syntheses++
+        files.set(e.argv[2] ?? '', 'wav')
+      }
+      return undefined
+    },
+  })
 
-  // Narration and playback run off a timer; each read is heard before the next starts.
   for (let i = 0; i < 2; i++) {
-    const heard = new Promise<void>(resolve => (played = resolve))
-    await $.prompt.submit({ text: '/ml-voice:read', command: { name: 'ml-voice:read', args: '' } } as never)
+    const done = new Promise<void>(resolve => (finished = resolve))
+    await $.prompt.submit(READ)
     await clock.advance(1)
-    await heard
-    // The band goes away once the reading is done, which is the reader's last write.
-    for (let t = 0; t < 200; t++) {
-      const band = await $.ui.mount({ plugin: 'ml-voice', surface: 'terminal', component: 'AbovePrompt', props: BAND_PROPS })
-      const isDone = (await band.find({ key: 'band-stop' })) === undefined
-      await band.unmount()
-      if (isDone) break
-    }
+    await done
   }
 
   expect(plays).toBe(2)

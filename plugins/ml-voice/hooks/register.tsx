@@ -1,14 +1,14 @@
-// PROTOTYPE, throwaway. The question it answers: does a read-aloud pane over
-// Claude's latest reply feel right, with the part being read highlighted, a
-// click on any part jumping there, Haiku rewriting the reply as talk, and
-// Fish Audio drama-3 as the voice?
+// ml-voice: /ml-voice:read reads Claude's replies aloud in a pane. Haiku first
+// retells the reply as talk, the part being read is highlighted, a click on
+// any part jumps there, and a band above the prompt keeps pause and stop in
+// reach while the pane is out of sight. The voice is agent-config's
+// voice-reader namespace; audio and narrations are cached on disk.
 import { atom, read, update } from 'claude-code'
 import type { FsEntry, Register } from 'claude-code'
 
-import type { Block, Reader } from '../types'
+import type { Billing, Block, Reader } from '../types'
 
 const PANE = 'ml-voice'
-const READER = { plugin: 'ml-voice', key: 'reader' } as const
 // The skill the person types; the mod answers it before it is rendered.
 const SKILL = 'ml-voice:read'
 const EMPTY: Reader = {
@@ -17,26 +17,17 @@ const EMPTY: Reader = {
   status: 'idle',
   view: 'source',
   backend: '',
-  usage: { requests: 0, chars: 0, cost: 0, total: 0, isPaid: false },
+  usage: { chars: 0, cost: 0, total: 0, billing: 'free' },
   mode: 'reader',
-  replies: [],
   replyIndex: -1,
-  isPaneOpen: false,
 }
-const reader = atom(READER, EMPTY)
-
-// The state outlives reloads of this module, so a value an older version
-// wrote can lack fields this one reads: every field gets its default back.
-const settled = (r: Partial<Reader> | undefined): Reader => ({
-  ...EMPTY,
-  ...r,
-  usage: { ...EMPTY.usage, ...r?.usage },
-  replies: r?.replies ?? [],
-})
+// Bump the shape when Reader changes: a value an older version wrote then reads as absent.
+const reader = atom({ plugin: 'ml-voice', key: 'reader' } as const, EMPTY, { shape: 'reader-2' })
 
 // ---------------------------------------------------------------- splitting
 
 const LIST_ITEM = /^\s*([-*+]|\d+[.)])\s/
+const MARKS = /[#*_`>|]/g
 
 function sentences(body: string): string[] {
   if (body.length <= 240) return [body]
@@ -57,7 +48,7 @@ function sentences(body: string): string[] {
 export function split(text: string): Block[] {
   const blocks: Block[] = []
   const lines = text.split('\n')
-  const at = (j: number) => lines[j] ?? ''
+  const lineAt = (j: number) => lines[j] ?? ''
   let para: string[] = []
   const flush = () => {
     const body = para.join(' ').trim()
@@ -65,16 +56,16 @@ export function split(text: string): Block[] {
     if (body) for (const s of sentences(body)) blocks.push({ kind: 'prose', source: s })
   }
   for (let i = 0; i < lines.length; i++) {
-    const line = at(i)
+    const line = lineAt(i)
     if (/^\s*```/.test(line)) {
       flush()
       const start = i++
-      while (i < lines.length && !/^\s*```/.test(at(i))) i++
+      while (i < lines.length && !/^\s*```/.test(lineAt(i))) i++
       blocks.push({ kind: 'code', source: lines.slice(start, i + 1).join('\n') })
     } else if (/^\s*\|/.test(line)) {
       flush()
       const start = i
-      while (i + 1 < lines.length && /^\s*\|/.test(at(i + 1))) i++
+      while (i + 1 < lines.length && /^\s*\|/.test(lineAt(i + 1))) i++
       blocks.push({ kind: 'table', source: lines.slice(start, i + 1).join('\n') })
     } else if (/^#{1,6}\s/.test(line)) {
       flush()
@@ -82,8 +73,8 @@ export function split(text: string): Block[] {
     } else if (LIST_ITEM.test(line)) {
       flush()
       const item = [line.trimEnd()]
-      while (i + 1 < lines.length && /^\s{2,}\S/.test(at(i + 1)) && !LIST_ITEM.test(at(i + 1))) {
-        item.push(at(++i).trim())
+      while (i + 1 < lines.length && /^\s{2,}\S/.test(lineAt(i + 1)) && !LIST_ITEM.test(lineAt(i + 1))) {
+        item.push(lineAt(++i).trim())
       }
       blocks.push({ kind: 'list', source: item.join(' ') })
     } else if (!line.trim() || /^\s*(---|\*\*\*)\s*$/.test(line)) {
@@ -97,29 +88,27 @@ export function split(text: string): Block[] {
 }
 
 type Message = { role: string; text: string; toolResults?: unknown[] }
-export type Reply = { prompt: string; text: string }
+type Reply = { prompt: string; text: string }
 
 // A reply is every assistant text between two of the person's prompts: text
 // written before tool calls belongs to the same reply. Oldest first.
 export function replies(messages: Message[]): Reply[] {
   const all: Reply[] = []
-  let at: Reply | undefined
+  let last: Reply | undefined
   for (const m of messages) {
     if (m.role === 'user' && !m.toolResults?.length) {
-      at = { prompt: m.text, text: '' }
-      all.push(at)
+      last = { prompt: m.text, text: '' }
+      all.push(last)
     } else if (m.role === 'assistant' && m.text.trim()) {
-      if (!at) all.push((at = { prompt: '', text: '' }))
-      at.text = at.text ? `${at.text}\n\n${m.text}` : m.text
+      if (!last) all.push((last = { prompt: '', text: '' }))
+      last.text = last.text ? `${last.text}\n\n${m.text}` : m.text
     }
   }
   return all.filter(r => r.text.trim())
 }
 
-export const latestReply = (messages: Message[]) => replies(messages).at(-1)?.text ?? ''
-
 const oneLine = (text: string, max: number) => {
-  const line = text.replace(/<[^>]+>/g, ' ').replace(/[#*_`>|]/g, '').replace(/\s+/g, ' ').trim()
+  const line = text.replace(/<[^>]+>/g, ' ').replace(MARKS, '').replace(/\s+/g, ' ').trim()
   return line.length > max ? `${line.slice(0, max - 1)}…` : line
 }
 
@@ -151,7 +140,7 @@ function plain(block: Block): string {
   if (block.kind === 'code') return 'There is a code block here.'
   if (block.kind === 'table') return 'There is a table here.'
   return block.source
-    .replace(/[#*_`>|]/g, '')
+    .replace(MARKS, '')
     .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
     .replace(/^\s*([-+]|\d+[.)])\s/, '')
     .trim()
@@ -159,16 +148,12 @@ function plain(block: Block): string {
 
 const spokenOf = (block: Block) => (block.spoken ?? plain(block)).trim()
 
-let narrator = 'haiku'
-let style: 'full' | 'compact' = 'full'
-let autoStart = true
-
-function narration(blocks: Block[]) {
+function narration(blocks: Block[], s: Settings) {
   const parts = blocks.map(b => ({ kind: b.kind, text: b.source }))
   const chars = parts.reduce((n, p) => n + p.text.length, 0)
   return {
-    model: narrator,
-    system: style === 'compact' ? NARRATE + COMPACT : NARRATE,
+    model: s.narrator,
+    system: s.style === 'compact' ? NARRATE + COMPACT : NARRATE,
     prompt: JSON.stringify(parts),
     maxTokens: Math.min(32000, 1024 + Math.ceil(chars / 2)),
     effort: 'low',
@@ -191,9 +176,6 @@ export function parseSpoken(text: string, blocks: Block[]): string[] | undefined
 
 // Every provider but macOS say is one HTTP POST answered with MP3 bytes; they
 // differ in URL, headers and the body's field names.
-// `billing` says how a paid provider reports cost: OpenRouter per generation,
-// Fish Audio not at all (its characters are logged instead).
-type Billing = 'openrouter' | 'chars' | 'free'
 type Voice =
   | {
       kind: 'http'
@@ -205,12 +187,12 @@ type Voice =
       body: Record<string, string>
       textField: string
       billing: Billing
+      ext: 'mp3'
+      mime: 'audio/mpeg'
     }
-  | { kind: 'say'; name: string; model: string; billing: 'free' }
+  | { kind: 'say'; name: string; model: string; billing: 'free'; ext: 'wav'; mime: 'audio/wav' }
 
-const SAY: Voice = { kind: 'say', name: 'macOS say', model: 'say', billing: 'free' }
-const AC_FIND =
-  'command -v agent-config || ls -d "$HOME"/.claude/plugins/cache/*/ml-agent-config/*/bin/agent-config 2>/dev/null | sort -V | tail -1'
+const SAY: Voice = { kind: 'say', name: 'macOS say', model: 'say', billing: 'free', ext: 'wav', mime: 'audio/wav' }
 
 type Provider = 'fish-audio' | 'openrouter' | 'kokoro' | 'self-hosted' | 'say'
 type Endpoint = { model?: string; voice?: string; url?: string }
@@ -226,12 +208,7 @@ type VoiceConfig = {
   selfHosted?: Endpoint
   usage?: { log?: string }
   cache?: { dir?: string; maxAgeDays?: number; maxSizeMB?: number }
-}
-
-// The provider's secret, by its credentials key; the rest of the voice is config.
-const KEYED: Partial<Record<Provider, string>> = {
-  'fish-audio': 'credentials.fishAudioKey',
-  openrouter: 'credentials.openrouterKey',
+  credentials?: Record<string, unknown>
 }
 
 const openAiShaped = (name: string, url: string, at: Endpoint, key?: string, billing: Billing = 'free'): Voice => ({
@@ -244,13 +221,15 @@ const openAiShaped = (name: string, url: string, at: Endpoint, key?: string, bil
   headers: [],
   body: { model: at.model ?? '', response_format: 'mp3', ...(at.voice ? { voice: at.voice } : {}) },
   textField: 'input',
+  ext: 'mp3',
+  mime: 'audio/mpeg',
 })
 
-function voiceOf(config: VoiceConfig, key?: string): Voice {
-  const provider = config.voice?.provider
-  if (provider === 'fish-audio') {
-    const at = config.fishAudio ?? {}
-    return {
+// Each provider: the credentials key holding its secret, if any, and its voice.
+const PROVIDERS: Record<Provider, { secret?: string; voice: (config: VoiceConfig, key?: string) => Voice }> = {
+  'fish-audio': {
+    secret: 'fishAudioKey',
+    voice: ({ fishAudio: at = {} }, key) => ({
       kind: 'http',
       name: `Fish Audio ${at.model}`,
       model: at.model ?? '',
@@ -260,26 +239,26 @@ function voiceOf(config: VoiceConfig, key?: string): Voice {
       headers: [`model: ${at.model}`],
       body: { format: 'mp3', latency: 'normal', ...(at.voice ? { reference_id: at.voice } : {}) },
       textField: 'text',
-    }
-  }
-  if (provider === 'openrouter') {
-    const at = config.openrouter ?? {}
-    return openAiShaped(`OpenRouter ${at.model}`, 'https://openrouter.ai/api/v1/audio/speech', at, key, 'openrouter')
-  }
-  if (provider === 'kokoro') {
-    const at = config.kokoro ?? {}
-    return openAiShaped('Kokoro', at.url ?? '', { model: 'kokoro', voice: at.voice })
-  }
-  if (provider === 'self-hosted') {
-    const at = config.selfHosted ?? {}
-    return openAiShaped(`${at.model} (self-hosted)`, at.url ?? '', at)
-  }
-  return SAY
+      ext: 'mp3',
+      mime: 'audio/mpeg',
+    }),
+  },
+  openrouter: {
+    secret: 'openrouterKey',
+    voice: ({ openrouter: at = {} }, key) =>
+      openAiShaped(`OpenRouter ${at.model}`, 'https://openrouter.ai/api/v1/audio/speech', at, key, 'openrouter'),
+  },
+  kokoro: { voice: ({ kokoro: at = {} }) => openAiShaped('Kokoro', at.url ?? '', { model: 'kokoro', voice: at.voice }) },
+  'self-hosted': { voice: ({ selfHosted: at = {} }) => openAiShaped(`${at.model} (self-hosted)`, at.url ?? '', at) },
+  say: { voice: () => SAY },
 }
 
-const mimeOf = (v: Voice) => (v.kind === 'say' ? 'audio/wav' : 'audio/mpeg')
-const extOf = (v: Voice) => (v.kind === 'say' ? 'wav' : 'mp3')
-const quote = (s: string) => `"${s.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`
+// curl's config format reads a newline as the start of another directive, so
+// a value holding one could add a URL that the key is then sent to.
+function quote(s: string): string {
+  if (/[\x00-\x1f\x7f]/.test(s)) throw new Error('a voice setting holds a control character')
+  return `"${s.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`
+}
 
 // The key goes in curl's config on stdin, never in argv.
 function curlConfig(v: Voice & { kind: 'http' }, body: string, out: string): string {
@@ -294,23 +273,13 @@ function curlConfig(v: Voice & { kind: 'http' }, body: string, out: string): str
   ].join('\n')
 }
 
-// ---------------------------------------------------------------- playback
+// ---------------------------------------------------------------- cache
 
-// Module state; the engine-facing functions are made in session.start, where
-// $ is in scope (a hooks module never passes $ around).
-let voice: Voice = SAY
-let usageLog = ''
-let recording: Promise<void> = Promise.resolve()
-let doc = 0
-let run = 0
-let playing: AbortController | undefined
 // Audio and narrations are kept on disk by a hash of what made them, so a
-// reply read again, in this session or a later one, costs nothing; `clips`
-// joins the requests for one file that are in flight at once.
-let cacheDir = ''
-let isSwept = false
-const clips = new Map<string, Promise<string>>()
+// reply read again, in this session or a later one, costs nothing.
 const DAY = 86_400_000
+const CACHED = /^[0-9a-f]{64}\.(mp3|wav|json)$/
+const WORK = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\./
 
 async function digest(value: unknown): Promise<string> {
   const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(value)))
@@ -342,41 +311,74 @@ export function expired(files: Cached[], policy: Policy, now: number): string[] 
   return [...doomed]
 }
 
+// ---------------------------------------------------------------- playback
+
+// What one /ml-voice:read loaded from agent-config. Replaced whole on each
+// read; work already under way keeps the settings it started with.
+type Settings = {
+  voice: Voice
+  narrator: string
+  style: 'full' | 'compact'
+  autoStart: boolean
+  usageLog: string
+  cacheDir: string
+}
+let settings: Settings = { voice: SAY, narrator: 'haiku', style: 'full', autoStart: true, usageLog: '', cacheDir: '' }
+
+// The agent-config binary, and resolved keys by their reference, kept for the
+// module's life so 1Password is asked once rather than on every read.
+let agentConfig = ''
+const keys = new Map<string, string>()
+const HARNESS = { CLAUDECODE: '1' }
+
+let recording: Promise<void> = Promise.resolve()
+let doc = 0
+let playing: AbortController | undefined
+// The requests for one file that are in flight at once share one promise.
+const clips = new Map<string, Promise<string>>()
+let isSwept = false
+let sweeping: Promise<void> = Promise.resolve()
+
 function stop() {
-  run++
   playing?.abort()
   playing = undefined
 }
 
 // Made in session.start, the one place $ lives for the session's length.
 let playFrom: (start: number) => Promise<void> = async () => {}
+let playAt: (k: number) => void = () => {}
 let narrateThenPlay: (mine: number) => Promise<void> = async () => {}
 let pause: () => Promise<void> = async () => {}
 let halt: () => Promise<void> = async () => {}
+let openPane: () => Promise<void> = async () => {}
 let readAloud: (reply: Reply, index: number) => Promise<{ isReading: boolean; text: string }> = async () => ({
   isReading: false,
-  text: 'voice-reader is still starting.',
+  text: 'ml-voice is still starting.',
 })
 
 const dollars = (n: number) => `$${n < 0.01 ? n.toFixed(4) : n.toFixed(2)}`
+const partOf = (r: Reader) => `part ${r.current + 1} of ${r.blocks.length}`
+const isActive = (r: Reader) => r.status === 'narrating' || r.status === 'ready' || r.status === 'playing' || r.status === 'paused'
 
 function spent(u: Reader['usage']): string {
-  const reply = `this reply ${dollars(u.cost)} for ${u.chars.toLocaleString('en')} characters`
-  return `Paid API: ${reply} · all time ${dollars(u.total)} · log: ${usageLog.replace(/^.*\/\.agents\//, '~/.agents/')}`
+  const log = `log: ${settings.usageLog.replace(/^.*\/\.agents\//, '~/.agents/')}`
+  const chars = `${u.chars.toLocaleString('en')} characters`
+  if (u.billing === 'chars') return `Paid API: this reply ${chars}; Fish Audio states no price · ${log}`
+  return `Paid API: this reply ${dollars(u.cost)} for ${chars} · all time ${dollars(u.total)} · ${log}`
 }
 
 // ---------------------------------------------------------------- hooks
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
-    await update($, reader, settled)
     const remove = (paths: string[]) => $.process.run(['rm', '-f', '--', ...paths]).catch(() => undefined)
 
     // Made in work/ and moved into audio/ whole, so a failed or cut-off
     // request never leaves a file the cache would play.
-    const synth = async (text: string, file: string) => {
-      const work = `${cacheDir}/work/${crypto.randomUUID()}`
-      const out = `${work}.${extOf(voice)}`
+    const synth = async (text: string, file: string, s: Settings, mine: number) => {
+      const { voice } = s
+      const work = `${s.cacheDir}/work/${crypto.randomUUID()}`
+      const out = `${work}.${voice.ext}`
       const done = ['sh', '-c', 'mkdir -p "$(dirname "$1")" && mv -f "$0" "$1"', out, file]
       if (voice.kind === 'say') {
         await $.fs.write(`${work}.txt`, text)
@@ -399,19 +401,17 @@ export const register: Register = on => {
         throw new Error(`${voice.name}: ${ran.stderr.trim()} ${said.slice(0, 300)}`)
       }
       await $.process.run(done)
-      if (voice.billing === 'free') {
-        await remove([`${out}.headers`])
-        return
-      }
-      const paid = voice
-      recording = recording.then(() => record(paid, text.length, `${out}.headers`)).catch(() => {})
+      if (voice.billing === 'free') await remove([`${out}.headers`])
+      else void record(voice, text.length, `${out}.headers`, s.usageLog, mine).catch(() => {})
     }
 
     // One line per paid request in the usage log, the reply's and the
     // all-time totals in the pane. OpenRouter states each generation's cost a
-    // moment after it is made; Fish Audio states none.
-    const record = async (paid: Voice & { kind: 'http' }, chars: number, headers: string) => {
+    // moment after it is made; Fish Audio states none. The polls run side by
+    // side; only the log line and the totals wait their turn.
+    const record = async (paid: Voice & { kind: 'http' }, chars: number, headers: string, usageLog: string, mine: number) => {
       const said = await $.fs.read(headers).catch(() => '')
+      await remove([headers])
       const generation = /^x-generation-id:\s*(\S+)/im.exec(said)?.[1]
       let cost: number | null = null
       for (let tries = 0; generation && paid.billing === 'openrouter' && cost === null && tries < 6; tries++) {
@@ -421,26 +421,32 @@ export const register: Register = on => {
           .catch(() => undefined)
         if (stats?.ok) cost = (JSON.parse(stats.text) as { data?: { total_cost?: number } }).data?.total_cost ?? null
       }
-      await remove([headers])
       const at = new Date(await $.clock.now()).toISOString()
       const line = JSON.stringify({ at, provider: paid.name, model: paid.model, chars, cost, generation })
-      await $.process.run(['sh', '-c', 'mkdir -p "$(dirname "$0")" && cat >> "$0"', usageLog], { stdin: `${line}\n` })
-      const total = Number((await $.store.get('totalCost')) ?? 0) + (cost ?? 0)
-      await $.store.set('totalCost', total)
-      await update($, reader, (s): Reader => ({
-        ...s,
-        usage: { ...s.usage, requests: s.usage.requests + 1, chars: s.usage.chars + chars, cost: s.usage.cost + (cost ?? 0), total },
-      }))
+      recording = recording
+        .then(async () => {
+          await $.process.run(['sh', '-c', 'mkdir -p "$(dirname "$0")" && cat >> "$0"', usageLog], { stdin: `${line}\n` })
+          const total = Number((await $.store.get('totalCost')) ?? 0) + (cost ?? 0)
+          await $.store.set('totalCost', total)
+          // A prefetch of the reply before counts toward the all-time total only.
+          await update($, reader, (r): Reader => ({
+            ...r,
+            usage: mine === doc ? { ...r.usage, chars: r.usage.chars + chars, cost: r.usage.cost + (cost ?? 0), total } : { ...r.usage, total },
+          }))
+        })
+        .catch(() => {})
     }
 
     // A file played again is touched, so the cleanup counts age from its last play.
-    const clip = async (text: string): Promise<string> => {
-      const file = `${cacheDir}/audio/${await digest(soundOf(voice, text))}.${extOf(voice)}`
+    const clip = async (text: string, s: Settings): Promise<string> => {
+      await sweeping
+      const file = `${s.cacheDir}/audio/${await digest(soundOf(s.voice, text))}.${s.voice.ext}`
       let made = clips.get(file)
       if (!made) {
+        const mine = doc
         made = $.fs.exists(file).then(async isKept => {
           if (isKept) await $.process.run(['touch', file])
-          else await synth(text, file)
+          else await synth(text, file, s, mine)
           return file
         })
         made.catch(() => clips.delete(file))
@@ -449,61 +455,65 @@ export const register: Register = on => {
       return made
     }
 
-    // Deletes what the cache policy no longer keeps; once a session, in the
-    // background. Files in work/ are only ever half made, so a day is enough.
-    const sweep = async (policy: Policy) => {
-      // Before the cache, clips lived a session at a time under TMPDIR.
-      const tmp = ((await $.env.get('TMPDIR')) ?? '/tmp').replace(/\/$/, '')
-      await $.process.run(['rm', '-rf', '--', `${tmp}/voice-reader`])
+    // Deletes what the cache policy no longer keeps, once a session, before
+    // anything is read from the cache. Only names the cache wrote are touched,
+    // so a cache.dir shared with other files loses none of them. Files in
+    // work/ are only ever half made, so a day is enough.
+    const sweep = async (dir: string, policy: Policy) => {
       const now = await $.clock.now()
-      const listed = async (dir: string): Promise<Cached[]> =>
-        ((await $.fs.list(`${cacheDir}/${dir}`).catch(() => [])) as FsEntry[])
-          .filter(f => f.kind === 'file')
-          .map(f => ({ path: `${cacheDir}/${dir}/${f.name}`, size: f.size, mtimeMs: f.mtimeMs }))
-      const doomed = [
-        ...expired([...(await listed('audio')), ...(await listed('narration'))], policy, now),
-        ...expired(await listed('work'), { maxAgeDays: 1, maxSizeMB: 0 }, now),
-      ]
+      const listed = async (sub: string, name: RegExp): Promise<Cached[]> =>
+        ((await $.fs.list(`${dir}/${sub}`).catch(() => [])) as FsEntry[])
+          .filter(f => f.kind === 'file' && name.test(f.name))
+          .map(f => ({ path: `${dir}/${sub}/${f.name}`, size: f.size, mtimeMs: f.mtimeMs }))
+      const [audio, narrations, work] = await Promise.all([listed('audio', CACHED), listed('narration', CACHED), listed('work', WORK)])
+      const doomed = [...expired([...audio, ...narrations], policy, now), ...expired(work, { maxAgeDays: 1, maxSizeMB: 0 }, now)]
       for (let i = 0; i < doomed.length; i += 200) await remove(doomed.slice(i, i + 200))
     }
 
     playFrom = async start => {
       stop()
-      const mine = run
       const control = new AbortController()
       playing = control
+      const s = settings
       for (let k = Math.max(0, start); ; k++) {
         const r = await read($, reader)
-        if (mine !== run) return
+        if (control.signal.aborted) return
         if (k >= r.blocks.length) {
-          await update($, reader, (s): Reader => ({ ...s, status: 'done' }))
+          await update($, reader, (r): Reader => ({ ...r, status: 'done' }))
           return
         }
-        await update($, reader, (s): Reader => ({ ...s, current: k, status: 'playing' }))
+        await update($, reader, (r): Reader => ({ ...r, current: k, status: 'playing' }))
         const block = r.blocks[k]
         const text = block ? spokenOf(block) : ''
         if (!text) continue
-        let file: string
+        let base64: string
         try {
-          file = await clip(text)
+          const file = await clip(text, s)
+          const following = r.blocks[k + 1]
+          if (following && spokenOf(following)) clip(spokenOf(following), s).catch(() => {})
+          if (control.signal.aborted) return
+          base64 = (await $.fs.read(file, { as: 'bytes' })).base64
         } catch (err) {
-          if (mine === run) await update($, reader, (s): Reader => ({ ...s, status: 'error', note: String(err) }))
+          if (!control.signal.aborted) await update($, reader, (r): Reader => ({ ...r, status: 'error', note: String(err) }))
           return
         }
-        const following = r.blocks[k + 1]
-        if (following && spokenOf(following)) clip(spokenOf(following)).catch(() => {})
-        if (mine !== run) return
-        const { base64 } = await $.fs.read(file, { as: 'bytes' })
-        if (mine !== run) return
-        await $.audio.play({ base64, mime: mimeOf(voice) }, { signal: control.signal })
-        if (mine !== run) return
+        if (control.signal.aborted) return
+        await $.audio.play({ base64, mime: s.voice.mime }, { signal: control.signal })
+        if (control.signal.aborted) return
       }
     }
 
+    // Each press plays from a timer, so the press answers before the reading ends.
+    playAt = k => {
+      $.clock.after(0, () => void playFrom(k))
+    }
+
     narrateThenPlay = async mine => {
+      const s = settings
       const { blocks } = await read($, reader)
-      const asked = narration(blocks)
-      const file = `${cacheDir}/narration/${await digest(asked)}.json`
+      const asked = narration(blocks, s)
+      await sweeping
+      const file = `${s.cacheDir}/narration/${await digest(asked)}.json`
       let spoken = await $.fs.read(file).then(t => parseSpoken(t as string, blocks), () => undefined)
       if (spoken) await $.process.run(['touch', file])
       else {
@@ -512,88 +522,122 @@ export const register: Register = on => {
         if (spoken) await $.fs.write(file, JSON.stringify(spoken))
       }
       if (mine !== doc) return
-      await update($, reader, (s): Reader => ({
-        ...s,
-        blocks: s.blocks.map((b, i) => ({ ...b, spoken: spoken?.[i] ?? plain(b) })),
+      await update($, reader, (r): Reader => ({
+        ...r,
+        blocks: r.blocks.map((b, i) => ({ ...b, spoken: spoken?.[i] ?? plain(b) })),
         note: spoken ? undefined : 'Haiku narration failed; reading a plain cleanup.',
       }))
       // A click during narration already started playback; leave it be.
       if ((await read($, reader)).status !== 'narrating') return
-      if (autoStart) await playFrom(0)
-      else await update($, reader, (s): Reader => ({ ...s, status: 'ready' }))
-    }
-
-    pause = async () => {
-      stop()
-      await update($, reader, (s): Reader => ({ ...s, status: 'paused' }))
+      if (s.autoStart) await playFrom(0)
+      else await update($, reader, (r): Reader => ({ ...r, status: 'ready' }))
     }
 
     // Stop ends the reading: the band above the prompt goes away with it.
     // Audio already made stays cached, so playing again costs nothing more.
-    halt = async () => {
+    const end = (status: 'paused' | 'stopped') => async () => {
       stop()
-      await update($, reader, (s): Reader => ({ ...s, status: 'stopped' }))
+      await update($, reader, (r): Reader => ({ ...r, status }))
+    }
+    pause = end('paused')
+    halt = end('stopped')
+
+    // The band draws itself from whether the pane is on screen, so it is drawn
+    // again whenever that changes.
+    openPane = async () => {
+      await $.ui.open({ id: PANE, title: 'Voice', focus: true })
+      $.ui.invalidate('ui.render')
+    }
+
+    // The agent-config CLI, found the way working-actions.md says: the
+    // AGENT_CONFIG_ROOT override, then PATH, then the plugin caches.
+    const findAgentConfig = async (): Promise<string> => {
+      const root = await $.env.get('AGENT_CONFIG_ROOT')
+      if (root) return `${root}/bin/agent-config`
+      const found = await $.process
+        .run(['sh', '-c', 'command -v agent-config || for c in $(ls -d "$HOME"/.claude/plugins/cache/*/ml-agent-config/*/bin/agent-config "${CODEX_HOME:-$HOME/.codex}"/plugins/cache/*/ml-agent-config/*/bin/agent-config 2>/dev/null | sort -rV); do [ -x "$c" ] && echo "$c" && break; done'])
+        .catch(() => undefined)
+      return found?.stdout.trim().split('\n')[0] ?? ''
+    }
+
+    // The provider's key, loaded through agent-config (secrets come back on
+    // fd 3) and kept by its reference: a changed reference is loaded again.
+    const keyOf = async (ac: string, config: VoiceConfig, secret: string): Promise<string> => {
+      const reference = JSON.stringify(config.credentials?.[secret] ?? null)
+      const kept = keys.get(reference)
+      if (kept) return kept
+      const path = `credentials.${secret}`
+      const ran = await $.process
+        .run(['sh', '-c', 'exec "$0" load voice-reader --from "$1" --secrets "$2" 3>&1 1>/dev/null', ac, $.plugin.root, path], {
+          env: HARNESS,
+          timeoutMs: 120_000,
+        })
+        .catch((error: Error) => ({ exitCode: 1, stdout: '', stderr: error.message }))
+      if (ran.exitCode !== 0) throw new Error(`ml-voice could not read ${path}: ${ran.stderr.trim()}`)
+      const key = (JSON.parse(ran.stdout) as Record<string, string>)[path] ?? ''
+      keys.set(reference, key)
+      return key
     }
 
     // Loads the voice from agent-config and starts reading `reply`: what
     // /ml-voice:read and the pane's list of earlier replies both run.
     readAloud = async (reply, index) => {
-      // The voice is agent-config's voice-reader namespace; the first /ml-voice:read onboards.
-      const found = await $.process.run(['sh', '-c', AC_FIND])
-      const ac = found.stdout.trim().split('\n').at(-1) ?? ''
-      if (!ac) return { isReading: false, text: 'voice-reader needs the ml-agent-config plugin to choose a voice; install it and run /ml-voice:read again.' }
-      const started = await $.process.run([ac, 'start', 'voice-reader', '--from', $.plugin.root])
+      agentConfig ||= await findAgentConfig()
+      const ac = agentConfig
+      if (!ac) return { isReading: false, text: 'ml-voice needs the ml-agent-config plugin to choose a voice; install it and run /ml-voice:read again.' }
+      const started = await $.process
+        .run([ac, 'start', 'voice-reader', '--from', $.plugin.root], { env: HARNESS, timeoutMs: 15_000 })
+        .catch((error: Error) => ({ exitCode: 1, stdout: '', stderr: error.message }))
       const plan = JSON.parse(started.stdout || '{}') as { ready?: boolean; guide?: string; config?: VoiceConfig }
       if (started.exitCode !== 0 || !plan.ready || !plan.config) {
         // A command's own hook cannot queue a prompt (it would wait on this
         // turn); a timer submits it once the command has answered.
         const setup =
-          'Set up voice-reader, the /ml-voice:read read-aloud pane: `agent-config start voice-reader` below is not ready. ' +
+          "Set up ml-voice's voice (agent-config namespace voice-reader): `agent-config start voice-reader` below is not ready. " +
           `Read ${plan.guide ?? 'the agent-config guide'} and work its actions with \`${ac}\`, ` +
           `passing \`--from ${$.plugin.root}\`. Then tell me to run /ml-voice:read again.\n\n` +
           '```json\n' + (started.stdout || started.stderr).trim() + '\n```'
         $.clock.after(0, () => void $.prompt.submit({ text: setup }))
-        return { isReading: false, text: 'voice-reader has no voice chosen yet; Claude will set it up with you now.' }
+        return { isReading: false, text: 'ml-voice has no voice chosen yet; Claude will set it up with you now.' }
       }
       const config = plan.config
-      narrator = config.narration?.model ?? 'haiku'
-      style = config.narration?.style ?? 'full'
-      autoStart = config.playback?.autoStart ?? true
-      const secretKey = KEYED[config.voice?.provider ?? 'say']
+      const provider = PROVIDERS[config.voice?.provider ?? 'say']
       let key: string | undefined
-      if (secretKey) {
-        const secret = await $.process.run(['sh', '-c', `"$0" load voice-reader --from "$1" --secrets ${secretKey} 3>&1 1>/dev/null`, ac, $.plugin.root])
-        if (secret.exitCode !== 0) return { isReading: false, text: `voice-reader could not read ${secretKey}: ${secret.stderr.trim()}` }
-        key = (JSON.parse(secret.stdout) as Record<string, string>)[secretKey]
+      try {
+        key = provider.secret ? await keyOf(ac, config, provider.secret) : undefined
+      } catch (err) {
+        return { isReading: false, text: (err as Error).message }
       }
-      voice = voiceOf(config, key)
       const home = (await $.env.get('HOME')) ?? ''
       const expand = (path: string) => path.replace(/^~(?=\/)/, home).replace(/\/$/, '')
-      usageLog = expand(config.usage?.log ?? '~/.agents/voice-reader/usage.jsonl')
-      cacheDir = expand(config.cache?.dir ?? '~/.cache/voice-reader')
+      settings = {
+        voice: provider.voice(config, key),
+        narrator: config.narration?.model ?? 'haiku',
+        style: config.narration?.style ?? 'full',
+        autoStart: config.playback?.autoStart ?? true,
+        usageLog: expand(config.usage?.log ?? '~/.agents/voice-reader/usage.jsonl'),
+        cacheDir: expand(config.cache?.dir ?? '~/.cache/voice-reader'),
+      }
       if (!isSwept) {
         isSwept = true
         const policy = { maxAgeDays: config.cache?.maxAgeDays ?? 30, maxSizeMB: config.cache?.maxSizeMB ?? 500 }
-        $.clock.after(0, () => void sweep(policy).catch(() => {}))
+        sweeping = sweep(settings.cacheDir, policy).catch(() => {})
       }
 
       stop()
       doc++
       clips.clear()
+      const { voice, style } = settings
       const blocks = split(reply.text)
       const total = Number((await $.store.get('totalCost')) ?? 0)
-      await $.state.set(READER, {
+      await update($, reader, (): Reader => ({
+        ...EMPTY,
         blocks,
-        current: 0,
         status: 'narrating',
-        view: 'source',
         backend: style === 'compact' ? `${voice.name} · compact` : voice.name,
-        usage: { requests: 0, chars: 0, cost: 0, total, isPaid: voice.billing !== 'free' },
-        mode: 'reader',
-        replies: (await read($, reader)).replies,
+        usage: { ...EMPTY.usage, total, billing: voice.billing },
         replyIndex: index,
-        isPaneOpen: (await read($, reader)).isPaneOpen ?? false,
-      })
+      }))
       const mine = doc
       $.clock.after(0, () => void narrateThenPlay(mine))
       return { isReading: true, text: `Reading reply ${index + 1} aloud (${blocks.length} parts, ${voice.name}).` }
@@ -616,35 +660,28 @@ export const register: Register = on => {
     const latest = all.at(-1)
     if (!latest) return { drop: 'There is no reply to read yet.' }
     const started = await readAloud(latest, all.length - 1)
-    if (started.isReading) {
-      const opened = await $.ui.open({ id: PANE, title: 'Voice', focus: true })
-      await update($, reader, (s): Reader => ({ ...s, isPaneOpen: opened.isPlaced }))
-    }
+    if (started.isReading) await openPane()
     return { drop: started.text }
   })
 
-  // The band stands in for the pane: it hides while the pane is open.
   on('ui.close', async ($, e, next) => {
-    if (e.id === PANE) await update($, reader, (s): Reader => ({ ...settled(s), isPaneOpen: false }))
-    return next(e)
+    const closed = await next(e)
+    if (e.id === PANE) $.ui.invalidate('ui.render')
+    return closed
   })
 
-  // While anything is being read, a row above the prompt keeps the controls in
-  // reach whether the pane is open, docked away or closed.
+  // While anything is being read and the pane is not on screen (closed, a tab
+  // behind another, or waiting for a wider terminal), a row above the prompt
+  // keeps the controls in reach.
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    const r = settled(await read($, reader))
-    const isActive = r.status === 'narrating' || r.status === 'ready' || r.status === 'playing' || r.status === 'paused'
-    if (!isActive || r.isPaneOpen || e.props.hasSurvey) return next(e)
+    const r = await read($, reader)
+    if (!isActive(r) || e.props.hasSurvey) return next(e)
+    if ((await $.ui.panes()).some(p => p.id === PANE && p.isShown && p.isPlaced)) return next(e)
     const { Box, Button, Text } = $.ui.resolve(e)
     const isPlaying = r.status === 'playing'
-    const where =
-      r.status === 'narrating'
-        ? 'preparing'
-        : r.status === 'ready'
-          ? 'ready'
-          : `${isPlaying ? 'reading' : 'paused at'} part ${r.current + 1}/${r.blocks.length}`
+    const where = r.status === 'narrating' ? 'preparing' : r.status === 'ready' ? 'ready' : `${isPlaying ? 'reading' : 'paused at'} ${partOf(r)}`
     const reply = r.replyIndex >= 0 ? `reply ${r.replyIndex + 1}` : 'reply'
-    const cost = r.usage.isPaid ? ` · ${dollars(r.usage.cost)}` : ''
+    const cost = r.usage.billing === 'openrouter' ? ` · ${dollars(r.usage.cost)}` : ''
     return (
       <Box flexDirection="row" gap={1}>
         <Text color="claude">♪</Text>
@@ -652,66 +689,64 @@ export const register: Register = on => {
           {reply} · {where}{cost}
         </Text>
         <Button key="band-toggle" variant="primary" label={isPlaying ? 'pause' : 'play'}
-          onPress={() => (isPlaying ? pause() : $.clock.after(0, () => void playFrom(r.current)))} />
+          onPress={() => (isPlaying ? pause() : playAt(r.current))} />
         <Button key="band-stop" label="stop" onPress={() => halt()} />
-        <Button key="band-open" label="open" onPress={async () => {
-          const opened = await $.ui.open({ id: PANE, title: 'Voice', focus: true })
-          await update($, reader, (s): Reader => ({ ...s, isPaneOpen: opened.isPlaced }))
-        }} />
+        <Button key="band-open" label="open" onPress={() => openPane()} />
       </Box>
     )
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text, Button } = $.ui.resolve(e)
-    const r = settled(await read($, reader))
-    const go = (k: number) => {
-      $.clock.after(0, () => void playFrom(Math.min(k, r.blocks.length - 1)))
-    }
-    const openList = async () => {
-      const all = replies(await $.session.messages())
-      const shown = all.map(one => ({ prompt: oneLine(one.prompt, 90) || '(no prompt)', preview: oneLine(one.text, 140) }))
-      await update($, reader, (s): Reader => ({ ...s, mode: 'picker', replies: shown }))
-    }
-    // The reply's full text is read again at the pick: the list holds previews.
-    const pick = async (index: number) => {
-      const chosen = replies(await $.session.messages())[index]
-      if (!chosen) return
-      $.clock.after(0, async () => {
-        const started = await readAloud(chosen, index)
-        if (!started.isReading) await update($, reader, (s): Reader => ({ ...s, mode: 'reader', note: started.text }))
-      })
-    }
+    const r = await read($, reader)
+    const isPlaying = r.status === 'playing'
+    const go = (k: number) => playAt(Math.min(k, r.blocks.length - 1))
+    // Pause and stop stay on screen in the list too: the band hides while the pane shows.
+    const controls = [
+      <Button key="toggle" hotkey="p" variant="primary" label={isPlaying ? 'pause' : 'play'}
+        onPress={() => (isPlaying ? pause() : go(r.status === 'done' ? 0 : r.current))} />,
+      <Button key="stop" hotkey="s" label="stop" onPress={() => halt()} />,
+    ]
 
     if (r.mode === 'picker') {
-      const newestFirst = r.replies.map((one, index) => ({ ...one, index })).reverse().slice(0, 40)
+      const all = replies(await $.session.messages())
+      // The reply's full text is read again at the pick: the list shows previews.
+      const pick = (index: number) => {
+        const chosen = all[index]
+        if (!chosen) return
+        $.clock.after(0, async () => {
+          const started = await readAloud(chosen, index)
+          if (!started.isReading) await update($, reader, (s): Reader => ({ ...s, mode: 'reader', note: started.text }))
+        })
+      }
+      const newestFirst = all.map((one, index) => ({ ...one, index })).reverse().slice(0, 40)
       return (
         <Box flexDirection="column">
           <Box flexDirection="row" gap={1}>
             <Button key="back" hotkey="b" label="back" onPress={() => update($, reader, (s): Reader => ({ ...s, mode: 'reader' }))} />
+            {isActive(r) && controls}
           </Box>
-          <Text dimColor>Pick a reply to read · {r.replies.length} in this session, newest first</Text>
+          <Text dimColor>Pick a reply to read · {all.length} in this session, newest first</Text>
           {newestFirst.map(one => (
             <Box key={`reply-${one.index}`} flexDirection="column" marginTop={1}>
               <Button key={`pick-${one.index}`} plain onPress={() => pick(one.index)}>
                 <Text weight="bold" color={one.index === r.replyIndex ? 'claude' : undefined} hover={{ underline: true }}>
-                  {one.index === r.replyIndex ? '▶ ' : ''}{one.index + 1}. {one.prompt}
+                  {one.index === r.replyIndex ? '▶ ' : ''}{one.index + 1}. {oneLine(one.prompt, 90) || '(no prompt)'}
                 </Text>
               </Button>
-              <Text dimColor>{one.preview}</Text>
+              <Text dimColor>{oneLine(one.text, 140)}</Text>
             </Box>
           ))}
         </Box>
       )
     }
 
-    const isPlaying = r.status === 'playing'
     const status = {
       idle: 'Nothing loaded. Run /ml-voice:read.',
-      narrating: style === 'compact' ? 'Haiku is picking out what matters…' : 'Haiku is rewriting the reply as talk…',
+      narrating: settings.style === 'compact' ? 'Haiku is picking out what matters…' : 'Haiku is rewriting the reply as talk…',
       ready: 'Ready. Press play.',
-      playing: `Reading part ${r.current + 1} of ${r.blocks.length}`,
-      paused: `Paused at part ${r.current + 1} of ${r.blocks.length}`,
+      playing: `Reading ${partOf(r)}`,
+      paused: `Paused at ${partOf(r)}`,
       stopped: 'Stopped.',
       done: 'Finished.',
       error: 'Stopped on an error.',
@@ -720,17 +755,15 @@ export const register: Register = on => {
     return (
       <Box flexDirection="column">
         <Box flexDirection="row" gap={1}>
-          <Button key="toggle" hotkey="p" variant="primary" label={isPlaying ? 'pause' : 'play'}
-            onPress={() => (isPlaying ? pause() : go(r.status === 'done' ? 0 : r.current))} />
-          <Button key="stop" hotkey="s" label="stop" onPress={() => halt()} />
+          {controls}
           <Button key="prev" hotkey="k" label="prev" onPress={() => go(r.current - 1)} />
           <Button key="next" hotkey="j" label="next" onPress={() => go(r.current + 1)} />
           <Button key="view" hotkey="v" label={r.view === 'source' ? 'show spoken' : 'show original'}
             onPress={() => update($, reader, (s): Reader => ({ ...s, view: s.view === 'source' ? 'spoken' : 'source' }))} />
-          <Button key="replies" hotkey="r" label="earlier replies" onPress={openList} />
+          <Button key="replies" hotkey="r" label="earlier replies" onPress={() => update($, reader, (s): Reader => ({ ...s, mode: 'picker' }))} />
         </Box>
-        <Text dimColor>{status} · {r.backend}{r.replyIndex >= 0 ? ` · reply ${r.replyIndex + 1} of ${Math.max(r.replies.length, r.replyIndex + 1)}` : ''}</Text>
-        {r.usage.isPaid && <Text dimColor>{spent(r.usage)}</Text>}
+        <Text dimColor>{status} · {r.backend}{r.replyIndex >= 0 ? ` · reply ${r.replyIndex + 1}` : ''}</Text>
+        {r.usage.billing !== 'free' && <Text dimColor>{spent(r.usage)}</Text>}
         {r.note && <Text color="error">{r.note}</Text>}
         {r.blocks.map((b, k) => {
           const isCurrent = k === r.current && r.status !== 'idle' && r.status !== 'narrating'

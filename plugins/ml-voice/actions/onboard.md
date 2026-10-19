@@ -4,7 +4,7 @@ type: prompt
 parallel: false
 ---
 
-voice-reader (the `/ml-voice:read` read-aloud pane) is missing the keys in `keys`. Ask the user, with
+ml-voice's voice settings (agent-config namespace `voice-reader`, read by `/ml-voice:read`) are missing the keys in `keys`. Ask the user, with
 `AskUserQuestion`, then write the answers with `agent-config write voice-reader --layer global`.
 Describe the keys first with `agent-config describe voice-reader`. Pass `--from <mod dir>` (the
 parent of this `actions/` folder) to every `agent-config` call.
