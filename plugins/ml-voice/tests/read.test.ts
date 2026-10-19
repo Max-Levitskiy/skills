@@ -14,3 +14,9 @@ test('/ml-voice:read with no voice chosen hands setup to Claude', async ($, on) 
   await clock.advance(1)
   expect(submitted[0]).toContain("Set up ml-voice's voice")
 })
+
+test('a provider ml-voice does not know is named, not crashed on', async ($, on) => {
+  await boot($, on, { plan: { ready: true, config: { voice: { provider: 'elevenlabs' } } } })
+  const out = await $.prompt.submit(READ)
+  expect((out as { drop?: string }).drop).toContain('does not know the voice provider "elevenlabs"')
+})

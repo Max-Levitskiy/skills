@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import { expired } from '../hooks/register'
-import { READ, boot, memoryDisk, settles } from './boot'
+import { READ, boot, memoryDisk, settles, sleep } from './boot'
 
 const DAY = 86_400_000
 const MB = 1024 * 1024
@@ -51,4 +51,34 @@ test('a reply read twice is narrated and synthesized once', async ($, on) => {
   expect(syntheses).toBe(1)
   expect([...disk.files.keys()].some(f => f.startsWith('/home/test/.cache/voice-reader/audio/'))).toBe(true)
   expect([...disk.files.keys()].some(f => f.startsWith('/home/test/.cache/voice-reader/narration/'))).toBe(true)
+})
+
+test('reading again while a part is still being made joins that request instead of paying twice', async ($, on) => {
+  const disk = memoryDisk(on)
+  const settled = settles(on)
+  let syntheses = 0
+  let finishSay = () => {}
+  on('audio.play', () => ({ value: undefined }))
+  on('model.complete', () => ({ value: { isAnswered: true, text: '["Here is the answer."]', usage: {} } }) as never)
+  const clock = await boot($, on, {
+    run: e => {
+      if (e.argv[0] !== 'say') return disk.run(e)
+      syntheses++
+      disk.run(e)
+      return new Promise(resolve => (finishSay = () => resolve({ exitCode: 0, stdout: '', stderr: '' })))
+    },
+  })
+  await $.prompt.submit(READ)
+  await clock.advance(1)
+  for (let i = 0; i < 100 && syntheses === 0; i++) await sleep(5)
+  expect(syntheses).toBe(1)
+
+  // The first part is still being made when the same reply is read again.
+  await $.prompt.submit(READ)
+  await clock.advance(1)
+  await sleep(100)
+  const done = settled('done')
+  finishSay()
+  await done
+  expect(syntheses).toBe(1)
 })

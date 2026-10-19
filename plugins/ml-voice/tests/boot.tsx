@@ -37,6 +37,9 @@ export function memoryDisk(on: On) {
   return { files, run }
 }
 
+declare const setTimeout: (run: () => void, ms: number) => unknown
+export const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
+
 // Resolves when the reader's status turns to one of `statuses`.
 export function settles(on: On) {
   let wanted: string[] = []
@@ -62,7 +65,7 @@ export async function boot(
     reply?: string
     plan?: unknown
     isPaneShown?: () => boolean
-    run?: (e: ProcessRun) => Ran | undefined
+    run?: (e: ProcessRun) => Ran | undefined | Promise<Ran>
   } = {},
 ) {
   const { reply = 'An answer.', plan = { ready: true, config: { voice: { provider: 'say' } } }, isPaneShown = () => true } = options
@@ -81,8 +84,8 @@ export async function boot(
       { role: 'assistant', text: reply, toolUses: [] },
     ],
   }))
-  on('process.run', ($, e) => {
-    const answered = options.run?.(e)
+  on('process.run', async ($, e) => {
+    const answered = await options.run?.(e)
     if (answered) return { value: answered } as never
     if (e.argv[0] === 'sh' && e.argv[2]?.includes('command -v agent-config')) return { value: ok('/bin/agent-config\n') } as never
     if (e.argv[0] === '/bin/agent-config') return { value: ok(JSON.stringify(plan)) } as never

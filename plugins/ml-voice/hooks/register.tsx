@@ -354,7 +354,8 @@ let recording: Promise<void> = Promise.resolve()
 const pending = new Set<Promise<void>>()
 let doc = 0
 let playing: AbortController | undefined
-// The requests for one file that are in flight at once share one promise.
+// The requests for one file that are in flight at once share one promise; it
+// leaves the map when it settles, since the file on disk answers from then on.
 const clips = new Map<string, Promise<string>>()
 let isSwept = false
 // Aborted when the session ends: cost polls stop and write the usage line at once.
@@ -497,8 +498,11 @@ export const register: Register = on => {
           else await synth(text, file, s, mine)
           return file
         })
-        made.catch(() => clips.delete(file))
         clips.set(file, made)
+        void made.then(
+          () => clips.delete(file),
+          () => clips.delete(file),
+        )
         if (s.voice.billing !== 'free') track(made)
       }
       return made
@@ -660,7 +664,12 @@ export const register: Register = on => {
         return { isReading: false, text: 'ml-voice has no voice chosen yet; Claude will set it up with you now.' }
       }
       const config = plan.config
-      const provider = PROVIDERS[config.voice?.provider ?? 'say']
+      // agent-config reports a value its enum refuses as a problem but still answers ready.
+      const named = config.voice?.provider ?? 'say'
+      if (!Object.hasOwn(PROVIDERS, named)) {
+        return { isReading: false, text: `ml-voice does not know the voice provider "${named}"; pick one of ${Object.keys(PROVIDERS).join(', ')} in /agent-config voice-reader.` }
+      }
+      const provider = PROVIDERS[named]
       let key: string | undefined
       try {
         key = provider.secret ? await keyOf(ac, config, provider.secret) : undefined
@@ -685,7 +694,6 @@ export const register: Register = on => {
 
       stop()
       doc++
-      clips.clear()
       const { voice, style } = settings
       const blocks = split(reply.text)
       const total = Number((await $.store.get('totalCost')) ?? 0)
