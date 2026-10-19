@@ -325,14 +325,19 @@ type Settings = {
 }
 let settings: Settings = { voice: SAY, narrator: 'haiku', style: 'full', autoStart: true, usageLog: '', cacheDir: '' }
 
-// The agent-config binary, and resolved keys by their reference, kept for the
-// module's life so 1Password is asked once rather than on every read.
+// The agent-config binary, found once for the module's life.
 let agentConfig = ''
-const keys = new Map<string, string>()
 const HARNESS = { CLAUDECODE: '1' }
+// AGENT_CONFIG_SECRETS is agent-config's session cache of 1Password secrets, keyed as
+// ml-agent-config's src/secret-cache.ts keys it: `load` answers from it, and
+// /agent-config forget empties it.
+type Reference = { source?: string; ref?: string; account?: string; var?: string; path?: string; service?: string; command?: string }
+const cacheKey = ({ source, ref, account, var: name, path, service, command }: Reference) =>
+  JSON.stringify([source, ref ?? null, account ?? null, name ?? null, path ?? null, service ?? null, command ?? null])
 
 let recording: Promise<void> = Promise.resolve()
-// Paid requests whose cost is still being asked for; the session's end waits on them.
+// Paid requests from the moment they are sent until their usage line is
+// written; the session's end waits on them.
 const pending = new Set<Promise<void>>()
 let doc = 0
 let playing: AbortController | undefined
@@ -373,6 +378,7 @@ function spent(u: Reader['usage']): string {
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
+    isSwept = false
     const remove = (paths: string[]) => $.process.run(['rm', '-f', '--', ...paths]).catch(() => undefined)
 
     // Made in work/ and moved into audio/ whole, so a failed or cut-off
@@ -404,11 +410,16 @@ export const register: Register = on => {
       }
       await $.process.run(done)
       if (voice.billing === 'free') await remove([`${out}.headers`])
-      else {
-        const recorded = record(voice, text.length, `${out}.headers`, s.usageLog, mine).catch(() => {})
-        pending.add(recorded)
-        void recorded.finally(() => pending.delete(recorded))
-      }
+      else track(record(voice, text.length, `${out}.headers`, s.usageLog, mine))
+    }
+
+    const track = (work: Promise<unknown>) => {
+      const settled = work.then(
+        () => {},
+        () => {},
+      )
+      pending.add(settled)
+      void settled.finally(() => pending.delete(settled))
     }
 
     // One line per paid request in the usage log, the reply's and the
@@ -431,12 +442,17 @@ export const register: Register = on => {
       const line = JSON.stringify({ at, provider: paid.name, model: paid.model, chars, cost, generation })
       recording = recording
         .then(async () => {
-          await $.process.run(['sh', '-c', 'mkdir -p "$(dirname "$0")" && cat >> "$0"', usageLog], { stdin: `${line}\n` })
+          const logged = await $.process
+            .run(['sh', '-c', 'mkdir -p "$(dirname "$0")" && cat >> "$0"', usageLog], { stdin: `${line}\n` })
+            .catch((error: Error) => ({ exitCode: 1, stderr: error.message }))
+          // The money is spent either way, so the totals still count it; the pane says the line is missing.
+          const note = logged.exitCode === 0 ? undefined : `The usage log could not be written (${usageLog}): ${logged.stderr.trim()}`
           const total = Number((await $.store.get('totalCost')) ?? 0) + (cost ?? 0)
           await $.store.set('totalCost', total)
           // A prefetch of the reply before counts toward the all-time total only.
           await update($, reader, (r): Reader => ({
             ...r,
+            note: note ?? r.note,
             usage: mine === doc ? { ...r.usage, chars: r.usage.chars + chars, cost: r.usage.cost + (cost ?? 0), total } : { ...r.usage, total },
           }))
         })
@@ -458,6 +474,7 @@ export const register: Register = on => {
         })
         made.catch(() => clips.delete(file))
         clips.set(file, made)
+        if (s.voice.billing !== 'free') track(made)
       }
       return made
     }
@@ -579,11 +596,10 @@ export const register: Register = on => {
     }
 
     // The provider's key, loaded through agent-config (secrets come back on
-    // fd 3) and kept by its reference: a changed reference is loaded again.
+    // fd 3). A 1Password secret then joins agent-config's session cache, as
+    // its own unlock does, so the next read asks 1Password nothing and
+    // /agent-config forget drops it with the rest.
     const keyOf = async (ac: string, config: VoiceConfig, secret: string): Promise<string> => {
-      const reference = JSON.stringify(config.credentials?.[secret] ?? null)
-      const kept = keys.get(reference)
-      if (kept) return kept
       const path = `credentials.${secret}`
       const ran = await $.process
         .run(['sh', '-c', 'exec "$0" load voice-reader --from "$1" --secrets "$2" 3>&1 1>/dev/null', ac, $.plugin.root, path], {
@@ -593,7 +609,15 @@ export const register: Register = on => {
         .catch((error: Error) => ({ exitCode: 1, stdout: '', stderr: error.message }))
       if (ran.exitCode !== 0) throw new Error(`ml-voice could not read ${path}: ${ran.stderr.trim()}`)
       const key = (JSON.parse(ran.stdout) as Record<string, string>)[path] ?? ''
-      keys.set(reference, key)
+      const reference = config.credentials?.[secret] as Reference | undefined
+      if (key && reference?.source === '1password') {
+        let cached: Record<string, string> = {}
+        try {
+          cached = JSON.parse((await $.env.get('AGENT_CONFIG_SECRETS')) || '{}') as Record<string, string>
+        } catch {}
+        const entry = cacheKey(reference)
+        if (cached[entry] !== key) await $.env.set('AGENT_CONFIG_SECRETS', JSON.stringify({ ...cached, [entry]: key }))
+      }
       return key
     }
 
@@ -664,11 +688,12 @@ export const register: Register = on => {
     return next(e)
   })
 
-  // A paid request's log line waits on its cost, asked for over about nine
-  // seconds; the session ends once those lines are written.
+  // A paid request's log line waits on the request and then its cost, asked
+  // for over about nine seconds; the session ends once those lines are written.
   on('session.end', async ($, e, next) => {
     stop()
-    await Promise.allSettled([...pending])
+    // A request that finishes meanwhile adds its usage line's work to the set.
+    while (pending.size > 0) await Promise.allSettled([...pending])
     return next(e)
   })
 
