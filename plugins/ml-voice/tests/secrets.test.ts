@@ -4,7 +4,7 @@ import { READ, boot } from './boot'
 
 const REFERENCE = { source: '1password', ref: 'op://Vault/OpenRouter/credential', account: 'ACME' }
 
-test("a 1Password key joins agent-config's session cache, where /agent-config forget drops it", async ($, on) => {
+test('the key is loaded through agent-config on fd 3 and cached nowhere by ml-voice', async ($, on) => {
   const loads: string[][] = []
   const written = new Map<string, string | undefined>()
   on('env.set', ($, e) => {
@@ -23,6 +23,8 @@ test("a 1Password key joins agent-config's session cache, where /agent-config fo
   expect((out as { drop?: string }).drop).toContain('OpenRouter fish-audio/drama-3')
   // The key reaches the CLI through fd 3, never argv.
   expect(loads[0]?.some(arg => arg.includes('test-key'))).toBe(false)
-  const cached = JSON.parse(written.get('AGENT_CONFIG_SECRETS') ?? '{}') as Record<string, string>
-  expect(cached[JSON.stringify(['1password', REFERENCE.ref, 'ACME', null, null, null, null])]).toBe('test-key')
+  // Only agent-config's own unlock and forget change its session cache.
+  expect(written.has('AGENT_CONFIG_SECRETS')).toBe(false)
+  await $.prompt.submit(READ)
+  expect(loads).toHaveLength(2)
 })

@@ -29,9 +29,26 @@ const reader = atom({ plugin: 'ml-voice', key: 'reader' } as const, EMPTY, { sha
 const LIST_ITEM = /^\s*([-*+]|\d+[.)])\s/
 const MARKS = /[#*_`>|]/g
 
+// A run-on stretch with no sentence end is cut between words, so no part
+// outgrows what a speech API takes in one request.
+function pieces(part: string): string[] {
+  if (part.length <= 240) return [part]
+  const out: string[] = []
+  let cur = ''
+  for (const word of part.split(/\s+/)) {
+    if (cur && cur.length + word.length + 1 > 220) {
+      out.push(cur)
+      cur = ''
+    }
+    cur = cur ? `${cur} ${word}` : word
+  }
+  if (cur) out.push(cur)
+  return out
+}
+
 function sentences(body: string): string[] {
   if (body.length <= 240) return [body]
-  const parts = body.split(/(?<=[.!?]["')\]]?)\s+(?=[A-Z`*"(\[])/)
+  const parts = body.split(/(?<=[.!?]["')\]]?)\s+(?=[A-Z`*"(\[])/).flatMap(pieces)
   const out: string[] = []
   let cur = ''
   for (const part of parts) {
@@ -76,7 +93,7 @@ export function split(text: string): Block[] {
       while (i + 1 < lines.length && /^\s{2,}\S/.test(lineAt(i + 1)) && !LIST_ITEM.test(lineAt(i + 1))) {
         item.push(lineAt(++i).trim())
       }
-      blocks.push({ kind: 'list', source: item.join(' ') })
+      for (const s of sentences(item.join(' '))) blocks.push({ kind: 'list', source: s })
     } else if (!line.trim() || /^\s*(---|\*\*\*)\s*$/.test(line)) {
       flush()
     } else {
@@ -328,12 +345,6 @@ let settings: Settings = { voice: SAY, narrator: 'haiku', style: 'full', autoSta
 // The agent-config binary, found once for the module's life.
 let agentConfig = ''
 const HARNESS = { CLAUDECODE: '1' }
-// AGENT_CONFIG_SECRETS is agent-config's session cache of 1Password secrets, keyed as
-// ml-agent-config's src/secret-cache.ts keys it: `load` answers from it, and
-// /agent-config forget empties it.
-type Reference = { source?: string; ref?: string; account?: string; var?: string; path?: string; service?: string; command?: string }
-const cacheKey = ({ source, ref, account, var: name, path, service, command }: Reference) =>
-  JSON.stringify([source, ref ?? null, account ?? null, name ?? null, path ?? null, service ?? null, command ?? null])
 
 let recording: Promise<void> = Promise.resolve()
 // Paid requests from the moment they are sent until their usage line is
@@ -595,10 +606,10 @@ export const register: Register = on => {
       return found?.stdout.trim().split('\n')[0] ?? ''
     }
 
-    // The provider's key, loaded through agent-config (secrets come back on
-    // fd 3). A 1Password secret then joins agent-config's session cache, as
-    // its own unlock does, so the next read asks 1Password nothing and
-    // /agent-config forget drops it with the rest.
+    // The provider's key, loaded through agent-config on every read (secrets
+    // come back on fd 3) and kept nowhere: agent-config's own session cache,
+    // filled by /agent-config unlock voice-reader and emptied by its forget, is
+    // the one place a resolved key is cached.
     const keyOf = async (ac: string, config: VoiceConfig, secret: string): Promise<string> => {
       const path = `credentials.${secret}`
       const ran = await $.process
@@ -608,17 +619,7 @@ export const register: Register = on => {
         })
         .catch((error: Error) => ({ exitCode: 1, stdout: '', stderr: error.message }))
       if (ran.exitCode !== 0) throw new Error(`ml-voice could not read ${path}: ${ran.stderr.trim()}`)
-      const key = (JSON.parse(ran.stdout) as Record<string, string>)[path] ?? ''
-      const reference = config.credentials?.[secret] as Reference | undefined
-      if (key && reference?.source === '1password') {
-        let cached: Record<string, string> = {}
-        try {
-          cached = JSON.parse((await $.env.get('AGENT_CONFIG_SECRETS')) || '{}') as Record<string, string>
-        } catch {}
-        const entry = cacheKey(reference)
-        if (cached[entry] !== key) await $.env.set('AGENT_CONFIG_SECRETS', JSON.stringify({ ...cached, [entry]: key }))
-      }
-      return key
+      return (JSON.parse(ran.stdout) as Record<string, string>)[path] ?? ''
     }
 
     // Loads the voice from agent-config and starts reading `reply`: what

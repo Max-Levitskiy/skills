@@ -25,6 +25,14 @@ describe('split', () => {
     expect(split(REPLY)[4]?.source).toBe('- one item continues here')
   })
 
+  test('cuts a run-on stretch with no sentence end between words', async () => {
+    const runOn = Array.from({ length: 900 }, (_, i) => `word${i}`).join(' ')
+    const parts = split(runOn)
+    expect(parts.length).toBeGreaterThan(10)
+    expect(parts.every(p => p.source.length <= 240)).toBe(true)
+    expect(parts.map(p => p.source).join(' ')).toBe(runOn)
+  })
+
   test('cuts a long paragraph at sentence ends', async () => {
     const long = Array.from({ length: 8 }, (_, i) => `Sentence number ${i} is here and runs on a while.`).join(' ')
     const parts = split(long)
