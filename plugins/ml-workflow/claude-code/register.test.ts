@@ -27,6 +27,9 @@ type World = {
   view: Record<string, Answer>
   blit: { deny?: string }
   blits: string[]
+  // What `herdr agent focus` answers, and the agents it was asked to focus.
+  focus: Ran
+  focused: string[]
   // The opens and the helper's runs in the order they came: an open the person asked for comes first.
   order: string[]
 }
@@ -64,6 +67,8 @@ function world(on: On, version: World['version'], doctor: Answer = { exitCode: 0
     view: {},
     blit: {},
     blits: [],
+    focus: { exitCode: 0, stdout: '', stderr: '' },
+    focused: [],
     order: [],
   }
   on('session.version', () => ({ value: w.version }))
@@ -74,6 +79,10 @@ function world(on: On, version: World['version'], doctor: Answer = { exitCode: 0
   })
   on('process.run', ($, e) => {
     w.runs.push([...e.argv])
+    if (e.argv[0] === 'herdr') {
+      w.focused.push(e.argv.slice(1).join(' '))
+      return { value: { ...w.focus, isStdoutTruncated: false, isStderrTruncated: false } }
+    }
     const [command, runId = ''] = e.argv.slice(1)
     w.order.push(`run ${command}`)
     const missing: Ran = { exitCode: 1, stdout: '', stderr: '' }
@@ -395,7 +404,7 @@ const BAND = {
 } as const
 const VIEW_PANE = { plugin: 'ml-workflow', component: 'Pane', requestId: 'run-run_a', props: paneProps('coding-loop-0238a2a3', 100) } as const
 
-function lineOf(text: string, fields: { shorter?: string[]; needsYou?: boolean; ended?: boolean } = {}): Ran {
+function lineOf(text: string, fields: { shorter?: string[]; needsYou?: boolean; ended?: boolean; herdrAgent?: string | null } = {}): Ran {
   const line = { runId: 'run_a', db: DB, name: 'coding-loop-0238a2a3', text, needsYou: false, ended: false, ...fields }
   return { exitCode: 0, stdout: JSON.stringify(line), stderr: '' }
 }
@@ -473,6 +482,36 @@ test('the band leads with "needs you" and shows the longest form of the line tha
   await ui.unmount()
 })
 
+test('a step held by a herdr pane gets a pane button that brings the pane to the front', async ($, on) => {
+  const clock = mock.clock(on)
+  const w = world(on, NEW)
+  w.line.run_a = lineOf('coding-loop-0238a2a3 at implement for 2 min', { herdrAgent: 'sp-implement-0238' })
+  await $.tool.call({ tool: 'Bash', command: FOLLOW })
+  await clock.settle()
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect((await ui.find({ key: 'pane:run_a' }))?.props.hotkey).toBe('p')
+  await ui.press({ key: 'pane:run_a' })
+  await clock.settle()
+  expect(w.focused).toEqual(['agent focus sp-implement-0238'])
+  expect(w.logs).toEqual([])
+  w.focus = { exitCode: 1, stdout: '', stderr: '{"error":{"code":"agent_not_found","message":"no agent"}}\n' }
+  await ui.press({ key: 'pane:run_a' })
+  await clock.settle()
+  expect(w.logs).toEqual(['ml-workflow: the pane of sp-implement-0238 could not be brought to the front: {"error":{"code":"agent_not_found","message":"no agent"}}'])
+  await ui.unmount()
+})
+
+test('a run line with no pane holding its step has no pane button', async ($, on) => {
+  const clock = mock.clock(on)
+  const w = world(on, NEW)
+  w.line.run_a = lineOf(RUNNING)
+  await $.tool.call({ tool: 'Bash', command: FOLLOW })
+  await clock.settle()
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await ui.find({ key: 'pane:run_a' })).toBeUndefined()
+  await ui.unmount()
+})
+
 test('other commands follow nothing, and nothing is polled', async ($, on) => {
   const clock = mock.clock(on)
   const w = world(on, NEW)
@@ -532,6 +571,21 @@ test("the view button opens the pane run-<runId> drawing the helper's view", asy
   expect(await pane.find({ type: 'Text', text: '- `cameFrom`' })).toBeDefined()
   await pane.unmount()
   await band.unmount()
+})
+
+test("the live view of a step held by a herdr pane has a pane button beside the facts", async ($, on) => {
+  const clock = mock.clock(on)
+  const w = world(on, NEW)
+  const held = { ...LIVE, line: { ...LIVE.line, herdrAgent: 'sp-implement-0238' } }
+  w.view.run_a = { exitCode: 0, stdout: JSON.stringify(held), stderr: '' }
+  expect((await $.command.run({ command: 'ml-workflow:view', args: 'run_a' })).text).toBe('The live view of run_a is open.')
+  await clock.settle()
+  const pane = await $.ui.mount({ ...VIEW_PANE, surface: 'terminal' })
+  expect((await pane.find({ key: 'pane' }))?.props.hotkey).toBe('p')
+  await pane.press({ key: 'pane' })
+  await clock.settle()
+  expect(w.focused).toEqual(['agent focus sp-implement-0238'])
+  await pane.unmount()
 })
 
 test('a picture check the terminal denies switches the session to the dot drawing', async ($, on) => {

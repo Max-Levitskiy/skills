@@ -2,6 +2,10 @@
 
 What each ml-workflow version changed. Every change to the plugin raises the version and adds its section here with `bun scripts/plugin-version.ts bump` (AGENTS.md, Releasing a plugin). Versions up to 0.9.0 are in the git history of `.claude-plugin/plugin.json`.
 
+## 0.13.0
+
+- A run held by a watched Claude step's herdr pane gets a `pane` button (hotkey p) on its run line and in its live view, which brings that pane to the front with `herdr agent focus`.
+
 ## 0.12.0
 
 - The live view draws the workflow as a graph where it showed the compact tree: laid out top to bottom in character cells, whatever the workflow's `rankdir`, to the pane's width, in the roomiest of four layouts that fits, scrolling with the current node in view; the tree only where none fits.

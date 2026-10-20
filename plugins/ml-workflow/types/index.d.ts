@@ -12,7 +12,7 @@ export type MenuRow = { key: string; label: string; options: MenuOption[] }
 export type Menu = { rows: MenuRow[]; problem: string | null; isReading?: boolean }
 
 /** `claude-spore line --json`: one run line, and the shorter forms of its text for a narrow band. */
-export type RunLine = { runId: string; db: string | null; name: string; text: string; shorter?: string[]; needsYou: boolean; ended: boolean }
+export type RunLine = { runId: string; db: string | null; name: string; text: string; shorter?: string[]; needsYou: boolean; ended: boolean; herdrAgent?: string | null }
 
 /** A run the session follows, newest first, with its line once the helper gave one. */
 export type Followed = { runId: string; db: string | null; line: RunLine | null }
