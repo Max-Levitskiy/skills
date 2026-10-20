@@ -81,9 +81,11 @@ A workflow folder is committed code in the project, trusted like a script in it.
 that folder and spore enforces it, so a run started overnight never stalls on a prompt.
 
 The right to start programs names the programs, not "any program": the list gives each executable
-(for example `claude` and `herdr`, resolved to a path when the run starts) and, where it matters,
-the arguments it may take. A runner that tries to start anything else fails the step with a code
-naming the missing grant.
+(for example `claude`, resolved to a path when the run starts), and the sockets it may reach (herdr's).
+It does not limit a program's arguments: spore 0.7.0's grants name programs only, and the runner is
+the plugin's own sealed code, so a second limit inside it buys little. A runner that tries to start
+anything else, or reach another socket, fails the step with `component.not-granted`, naming the
+missing grant.
 
 The boundary is the runner, not what it starts. A program the runner starts runs with the worker
 user's own rights, as any `command` action does today; spore does not sandbox it. Claude's own
@@ -111,7 +113,7 @@ Claude Code runs all matching `Stop` hooks at once, and any of them, including t
    the attempt's candidate answer. If the check fails, the hook refuses the stop.
 2. **Commit:** the runner completes the attempt with the candidate only once it sees Claude has
    really stopped. It watches for this on its own, not through our hooks: a background `claude`
-   process exits; in a pane, herdr reports the agent `idle` or `done` (`herdr agent wait`). If
+   process exits; in a pane, herdr reports the agent `idle` or `done` (`agent.get`). If
    Claude goes on working instead, the candidate is discarded at the first sign of it (a
    `PreToolUse`, a `UserPromptSubmit`, or herdr reporting the pane `working`), so a later stop
    whose hook fails cannot commit an earlier, stale answer. A candidate belongs to one stop.
@@ -177,7 +179,7 @@ This interception has to fail closed: a reply hook that times out or crashes wou
 the prompt through while the run has no attempt. The hook is set to block on failure if Claude Code
 offers that; this was not confirmed in 2.1.302 and is on the list to check. The runner also backs
 it up: if herdr reports the pane `working` while the run is at the reply node, the runner
-interrupts Claude (Escape, through herdr), and you can send the reply again.
+interrupts Claude (Escape, through herdr's `agent.send_keys`), and you can send the reply again.
 
 Accepted cost: a workflow node for the reply and a resumed conversation.
 
@@ -258,6 +260,23 @@ features land, this decision reopens.
 
 ## Routine choices
 
+- **The runner drives herdr over its socket, never the `herdr` CLI.** The CLI is a thin client over
+  the same socket, and a program the runner starts has its output thrown away, so the CLI could
+  not hand back a pane ID or a state. Each job is one newline-delimited JSON request and one reply
+  line, which the `request` import does:
+  - start: `workspace.create` (or `tab.create`) with the project folder and `focus: false`, then
+    `agent.start` with `kind: "claude"` and Claude's arguments. `agent.start` blocks until Claude
+    is ready (30 seconds by default), so the action's `timeoutMs` must be longer;
+  - probe: `agent.get`, whose `agent_status` is `idle`, `working`, `blocked` or `done`;
+  - prompt: `agent.prompt`, whose `agent_prompt_stalled` and `agent_blocked` errors say Claude did
+    not take it, so the runner retries on those instead of typing again blind;
+  - Escape: `agent.send_keys` with `esc`;
+  - stop: `workspace.close` for a workspace the runner made, `pane.close` otherwise.
+
+  The pane ID and the agent name go into the handle `start` returns, which spore gives back to
+  every `probe` and `stop`. The runner sends `ping` first and refuses a herdr whose `protocol` it
+  was not built for. The grant names the socket, `~/.config/herdr/herdr.sock` by default, or
+  `HERDR_SOCKET_PATH` when set.
 - **Herdr unreachable** is an ordinary retryable failure (Q6). Spore's normal rules handle it:
   tries with a wait between them, then the step gives up and the run pauses for a person, who resumes
   it once herdr is back. The node's `settings.json` can change the tries and waits. The plugin's
@@ -295,9 +314,11 @@ features land, this decision reopens.
   and `resume` leave the same process running on a different conversation: the runner closes it and
   fails the step, so the next try resumes the step's own conversation in a new pane.
 - **Safety net:** hooks are the fast path, not a guarantee. A SIGKILL, a dead machine or a failed
-  hook call fires nothing, so the runner's probe stays. It checks the process group, start time
-  and boot (the host's `process-alive`), plus the Claude session ID recorded at `SessionStart`, so
-  a live process on another conversation is not taken for the step.
+  hook call fires nothing, so the runner's probe stays. For a background step it checks the
+  process group, start time and boot (the host's `process-alive`); for a watched step, which herdr
+  started, it asks herdr (`agent.get`), and a closed pane or an unknown agent is dead. Both also
+  check the Claude session ID recorded at `SessionStart`, so a live Claude on another conversation
+  is not taken for the step.
 - **The step token stays out of Claude's environment:** hooks and the tools Claude runs inherit
   `claude`'s environment, and decision 7 loads the user's own hooks too. The runner writes the
   token to a file only the user can read, in the step's work folder, and only the runner's hook
@@ -338,6 +359,13 @@ features land, this decision reopens.
   done) through a Claude Code hook it installs, `~/.claude/hooks/herdr-agent-state.sh`, which reports
   over `HERDR_SOCKET_PATH` for `HERDR_PANE_ID`. `herdr agent wait --until done|blocked` waits on that
   state.
+- **Herdr's socket is its contract,** and the CLI is a client of it ("Herdr's CLI talks to the
+  running server over the same local socket API", herdr `cli-reference.mdx`). It is
+  newline-delimited JSON, `{"id","method","params"}` in and `{"id","result"}` or
+  `{"id","error":{"code","message"}}` out. `ping` on herdr 0.9.3 returned protocol 22, and
+  `herdr api schema --json` prints the schema of about 130 methods. Tried on 0.9.3 in a throwaway
+  workspace: `workspace.create`, `pane.send_input`, `pane.send_keys`, `agent.list`, `pane.get` and
+  `workspace.close`. Herdr keeps no state file that holds an agent's state.
 - **spore 0.4.0** has `spore signal <run> <name> --id <id>` (a repeated ID does nothing) and
   `spore step claim|renew|complete|fail|abandon|show` for external steps.
 - **Runspore retries can wait between tries:** an action's `retry` takes `maxAttempts` (1 to 100)
@@ -368,10 +396,9 @@ features land, this decision reopens.
 
 ## Risks
 
-- **The runner can reach herdr only through its socket.** A program the runner starts has its
-  output thrown away, so `herdr agent wait` or a herdr status command gives the runner nothing to
-  read. The `request` import can talk to herdr's Unix socket, but herdr's socket protocol has not
-  been checked (see Open threads).
+- **Herdr's socket calls not yet tried:** `agent.start` and `agent.prompt` against a real Claude,
+  `esc` as the key name for Claude rather than a shell, a call from a process outside any herdr
+  pane, and a newer herdr (0.9.5 is out) against a runner built for protocol 22.
 - **Switching off a plugin for one session** should work through a per-session settings override
   (`--settings` with `enabledPlugins`), but it has not been tried.
 - **Managed hook policies:** where an organisation sets `allowManagedHooksOnly`, the runner's hook plugin's
@@ -401,9 +428,3 @@ None.
   run mode).
 - Whether the hook parts should start before the open runspore features (decision 9 as recorded
   says no).
-- How the runner reads herdr's pane state (decision 4's commit, the probe, prompt delivery): over
-  herdr's Unix socket with the `request` import, which spore 0.7.0 offers, or through a new
-  runspore import that runs a program and returns its output, so the `herdr` CLI can be used as Q6
-  assumed.
-- Decision 3 says a grant can limit a program's arguments; spore 0.7.0 grants name programs only.
-  Whether that limit is still wanted, as a runspore request, or dropped.
