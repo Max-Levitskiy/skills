@@ -494,7 +494,6 @@ test('a step held by a herdr pane gets a pane button that brings the pane to the
   await clock.settle()
   expect(w.focused).toEqual(['agent focus sp-implement-0238'])
   expect(w.logs).toEqual([])
-  // A pane that is gone is said in one line.
   w.focus = { exitCode: 1, stdout: '', stderr: '{"error":{"code":"agent_not_found","message":"no agent"}}\n' }
   await ui.press({ key: 'pane:run_a' })
   await clock.settle()

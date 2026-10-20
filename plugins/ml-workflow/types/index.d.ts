@@ -11,10 +11,7 @@ export type MenuRow = { key: string; label: string; options: MenuOption[] }
 /** The rows, or why there are none: the helper's first stderr line, or that it gave no rows; `isReading` while the open pane waits for them. */
 export type Menu = { rows: MenuRow[]; problem: string | null; isReading?: boolean }
 
-/**
- * `claude-spore line --json`: one run line, and the shorter forms of its text for a narrow band.
- * `herdrAgent` is the herdr agent whose pane holds the step, null when no pane does.
- */
+/** `claude-spore line --json`: one run line, and the shorter forms of its text for a narrow band. */
 export type RunLine = { runId: string; db: string | null; name: string; text: string; shorter?: string[]; needsYou: boolean; ended: boolean; herdrAgent?: string | null }
 
 /** A run the session follows, newest first, with its line once the helper gave one. */

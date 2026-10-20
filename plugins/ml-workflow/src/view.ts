@@ -154,8 +154,7 @@ export async function draw(argv: string[]): Promise<number> {
  * The run line's words (docs/spec.md, p.24): where the run is and for how long first, as
  * `kubectl get pods` leads with STATUS and AGE. `shorter` is the same line with the arrow cut down,
  * then without it, for a band too narrow for the whole line. A run whose decision was sent and not
- * yet acted on (`decided`) does not need the person. `herdrAgent` names the herdr agent whose pane
- * holds the step, for the mod's `pane` button.
+ * yet acted on (`decided`) does not need the person.
  */
 export function lineOf(status: Status, decided = false): Line {
   const key = status.startKey || status.runId;

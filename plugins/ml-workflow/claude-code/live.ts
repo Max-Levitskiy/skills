@@ -12,8 +12,7 @@ const TAKEN = '#e8590c'
 const POLL_MS = 1000
 // How many arrows around the current node the graph shows until the person unfolds it.
 const DEPTH = 2
-// The run line's fixed parts: `needs you` with the two spaces after it, ` [ view ]`, and
-// ` [ pane ]` while a herdr pane holds the step.
+// The run line's fixed parts: `needs you` with the two spaces after it, and each ` [ button ]`.
 const NEEDS_YOU = 'needs you'
 const BUTTON_COLUMNS = 9
 
@@ -72,8 +71,6 @@ async function helperJson($: EngineInterface, args: string[]): Promise<any> {
 
 const dbArgs = (db: string | null) => (db ? ['--db', db] : [])
 
-// The `pane` button: herdr brings the pane holding the step to the front, as the menu's Open its
-// pane does. A pane that is gone, or a herdr that does not answer, is said in one line.
 async function focusPane($: EngineInterface, agent: string) {
   let problem: string
   try {
