@@ -10,7 +10,7 @@ Reflects:
   q6  herdr unreachable = ordinary retryable failure, back-off, then pause for a person
   q7  spore checks the final message against the step's output schema; refused -> fix, up to the limit
   q8  the workflow lists the runner's rights; spore enforces exactly that list
-  q9  runspore "module host" issue blocks the plugin switch; claude-spore stays until then
+  q9  runspore issues (module host done in 0.7.0; #234, #278 open) block the plugin switch; claude-spore stays until then
   q10 "asking you" is an allowed answer; run waits for the reply, then resumes the same conversation
 Assumed regions: none (every question answered).
 Marked "to check": switching a plugin off for one session (q5 thread: not yet tried).
@@ -98,7 +98,7 @@ Proposed default, not a question: 3 tries from a 30 s wait (q6 thread).
 <body>
 <header>
   <h1>How a Claude step runs once claude-spore is gone</h1>
-  <p>Every question is answered, so nothing on this page is assumed. Hooks report to spore; spore owns the lease, the schema check and the "needs you" mark.</p>
+  <p>Every question is answered, so nothing on this page is assumed. Hooks report to spore; spore owns the probe, the schema check and the "needs you" mark.</p>
   <div class="legend">
     <span><i class="sw" style="background:var(--spore);border-color:var(--spore-stroke)"></i>spore (Rust, Wasmtime)</span>
     <span><i class="sw" style="background:var(--seal);border-color:var(--seal-stroke)"></i>sealed in the workflow</span>
@@ -173,11 +173,11 @@ Proposed default, not a question: 3 tries from a 30 s wait (q6 thread).
 
   <!-- lower row of spore checks -->
   <rect class="b" x="470" y="270" width="230" height="124" rx="6"/>
-  <text x="484" y="291" class="t">lease + liveness check</text>
-  <text x="484" y="311">host renews it while alive</text>
+  <text x="484" y="291" class="t">runner probe</text>
+  <text x="484" y="311">alive while Claude is alive</text>
   <text x="484" y="330">and a turn is in progress</text>
   <text x="484" y="354" class="m">safety net when hooks go quiet:</text>
-  <text x="484" y="371" class="m">a lapsed lease fails the step</text>
+  <text x="484" y="371" class="m">a dead probe frees the step</text>
 
   <rect class="b" x="740" y="270" width="230" height="124" rx="6"/>
   <text x="754" y="291" class="t">output schema check (Q7)</text>
@@ -201,7 +201,7 @@ Proposed default, not a question: 3 tries from a 30 s wait (q6 thread).
   <text x="446" y="172" class="lbl" text-anchor="middle">fails</text>
 
   <path class="a" d="M585,270 L585,232"/>
-  <text x="593" y="256" class="lbl">lease lapses</text>
+  <text x="593" y="256" class="lbl">probe says dead</text>
 
   <path class="a" d="M855,270 L855,232"/>
   <text x="863" y="256" class="lbl">fits, and Claude stopped</text>
@@ -309,9 +309,9 @@ Proposed default, not a question: 3 tries from a 30 s wait (q6 thread).
   <text x="234" y="812" class="m">a GitHub blocking link, not a note in the text</text>
 
   <rect class="spore" x="40" y="826" width="360" height="96" rx="8"/>
-  <text x="56" y="849" class="t">runspore issue: module host</text>
-  <text x="56" y="869">rights to start programs and reach herdr,</text>
-  <text x="56" y="888">sealing, crash tests</text>
+  <text x="56" y="849" class="t">runspore: host (done), #234, #278</text>
+  <text x="56" y="869">still open: the "needs you" mark</text>
+  <text x="56" y="888">and the answer candidate</text>
 
   <path class="a" d="M400,874 L478,874"/>
   <text x="439" y="866" class="lbl" text-anchor="middle">blocks</text>

@@ -5,9 +5,10 @@ a small **runner module** (WASM, written in Rust, owned by ml-workflow) is seale
 artifact. Spore loads it and grants it only the rights the workflow lists. The module starts Claude
 Code for the step, in a herdr pane or as a plain windowless process, then detaches. Claude Code's own
 **hooks** tell spore what happens next: still working, finished (with the answer, which spore checks
-against the step's output schema), asking you, needs you, session closed. The step's lease plus a
-liveness check catch the cases where no hook fires. Runspore has to learn to host modules first;
-that runspore issue blocks the switch, and `claude-spore` stays as it is until then. Diagram:
+against the step's output schema), asking you, needs you, session closed. The runner's `probe`,
+which spore calls on a held step, catches the cases where no hook fires. Spore 0.7.0 hosts runner
+modules; two more runspore features (decision 9) block the switch, and `claude-spore` stays as it
+is until then. Diagram:
 [claude-step-runner-visual.html](claude-step-runner-visual.html).
 
 ## Terms
@@ -115,10 +116,13 @@ Claude Code runs all matching `Stop` hooks at once, and any of them, including t
    `PreToolUse`, a `UserPromptSubmit`, or herdr reporting the pane `working`), so a later stop
    whose hook fails cannot commit an earlier, stale answer. A candidate belongs to one stop.
 
-This needs spore operations that spore 0.4.0 lacks. One checks an answer and stores it as the
-attempt's candidate without completing the attempt. Others commit that candidate or discard it.
-`spore step` has only `claim`, `renew`, `complete`, `fail`, `abandon` and `show`, so these are
-part of the runspore work in decision 9.
+This needs spore features that spore 0.7.0 lacks, tracked as
+[Web-tree/runspore#278](https://github.com/Web-tree/runspore/issues/278). One checks an answer and
+stores it as the attempt's candidate without completing the attempt. Another discards it. The
+commit cannot be the runner's own call: a 0.7.0 runner exports only `start`, `probe` and `stop`
+and cannot call spore, and its `probe` answers only `alive`, `dead` or `unknown`. So the runner's
+probe says what it sees ("Claude has stopped"), and spore commits the candidate. Spore probes a
+held step at most every 30 seconds, so an answer can take up to that long to land.
 
 Rejected:
 - **A "report" tool from the step plugin** (the original recommendation). It keeps the token out of
@@ -229,25 +233,28 @@ Rejected:
   plain terminal or after the session closes.
 - **Nowhere: you notice by looking at the pane.** Loses what the watcher does today.
 
-### 9. The switch is blocked by a runspore issue for the module host (Q9)
+### 9. The switch is blocked by runspore issues (Q9)
 
-Hosting modules is runspore work: rights to start programs and reach herdr (WASI 0.2 has no process
+Hosting modules was runspore work: rights to start programs and reach herdr (WASI 0.2 has no process
 spawning and no Unix sockets, so spore provides its own imports), granting them per workflow,
-sealing the module, and crash tests at each failpoint. It is tracked as
-[Web-tree/runspore#233](https://github.com/Web-tree/runspore/issues/233), with the "needs you" mark
-of decision 8 as [Web-tree/runspore#234](https://github.com/Web-tree/runspore/issues/234). The
+sealing the module, and crash tests at each failpoint. It was
+[Web-tree/runspore#233](https://github.com/Web-tree/runspore/issues/233), shipped in spore 0.7.0
+(runspore PR #269) as a `component` action kind; Verified facts lists what it offers. Two runspore
+features are still open: the "needs you" mark of decision 8,
+[Web-tree/runspore#234](https://github.com/Web-tree/runspore/issues/234), and the candidate answer
+of decision 4, [Web-tree/runspore#278](https://github.com/Web-tree/runspore/issues/278). The
 ml-workflow move to the runner module,
-[Max-Levitskiy/skills#123](https://github.com/Max-Levitskiy/skills/issues/123), is blocked by both
-with native GitHub blocking dependencies, not a note in the text. Until they are done,
-`claude-spore` stays as it is.
+[Max-Levitskiy/skills#123](https://github.com/Max-Levitskiy/skills/issues/123), is blocked by all
+three with native GitHub blocking dependencies, not a note in the text. Until the open ones are
+done, `claude-spore` stays as it is.
 
 Rejected:
 - **Keep claude-spore, move the hook parts over now, switch when the host lands** (the original
   recommendation). Would shrink claude-spore early, at the cost of a period with both.
 - **Build the small separate runner first as a stepping stone.** Builds a runner twice.
 
-If the hook parts (decisions 4, 5, 8 and the heartbeat) should start before the module host, this
-decision reopens.
+If the hook parts (decisions 4, 5, 8 and the liveness probe) should start before the open runspore
+features land, this decision reopens.
 
 ## Routine choices
 
@@ -256,21 +263,26 @@ decision reopens.
   it once herdr is back. The node's `settings.json` can change the tries and waits. The plugin's
   default: the step fails as retryable with a message naming herdr, 3 tries, starting at a 30-second
   wait.
-- **Heartbeat:** the host renews the step's lease on a timer while two things hold: the runner's
-  liveness check says Claude is alive, and a turn is in progress. A turn starts when a prompt
-  reaches Claude (the runner delivers it, or `UserPromptSubmit` lets it through). It ends when the
-  runner sees Claude has really stopped, as in decision 4's commit step: the background process
-  exits, or herdr reports the pane `idle` or `done`. Hooks do not decide it, so a refused `Stop`
-  (decision 5's fix loop) keeps the turn in progress, and a `Stop` hook that crashed, timed out or
-  was cancelled cannot leave a turn running forever. Hooks do not carry the heartbeat either:
-  `PostToolUse` fires only after a tool succeeds, so a long model response, one long tool or an
-  answer with no tools would let the lease run out while Claude is still working.
-- **A turn that ends without a candidate answer** stops the renewal. In a pane, Claude idling at
-  its prompt is then not taken for work in progress. `StopFailure`, which Claude Code fires
-  instead of `Stop` when a turn ends on an API error, fails the attempt as retryable. If the
-  `Stop` hook crashed, timed out or was cancelled, no candidate was recorded: renewal stops, the
-  step shows "needs you" once Claude is idle, and if nobody acts the lease runs out and spore
-  retries as usual.
+- **Liveness is the runner's probe:** once `start` returns its handle, spore holds the step and
+  no worker renews a lease for it. Spore calls the runner's `probe` at most every 30 seconds, and
+  a `dead` answer frees the step for another try. The probe says `alive` while Claude is alive and
+  a turn is in progress. A turn starts when a prompt reaches Claude (the runner delivers it, or
+  `UserPromptSubmit` lets it through). It ends when the runner sees Claude has really stopped, as
+  in decision 4's commit step: the background process exits, or herdr reports the pane `idle` or
+  `done`. Hooks do not decide it, so a refused `Stop` (decision 5's fix loop) keeps the turn in
+  progress, and a `Stop` hook that crashed, timed out or was cancelled cannot leave a turn running
+  forever. Hooks do not carry the liveness either: `PostToolUse` fires only after a tool succeeds,
+  so a long model response, one long tool or an answer with no tools would look like a dead step.
+  The step's async deadline still bounds the whole try.
+- **The probe keeps no memory:** each call runs a fresh instance, and a runner can read granted
+  folders but not write them. What the probe knows across calls comes from files the hooks write
+  in the step's work folder, or from herdr.
+- **A turn that ends without a candidate answer** is not taken for work in progress. In a pane,
+  Claude idling at its prompt then shows "needs you", and the probe answers `dead` once it has
+  been idle with no candidate for a set idle limit, so spore retries as usual. `StopFailure`,
+  which Claude Code fires instead of `Stop` when a turn ends on an API error, fails the attempt as
+  retryable. A `Stop` hook that crashed, timed out or was cancelled recorded no candidate, so it
+  ends the same way.
 - **The step's hooks must load:** the runner's hook plugin's `SessionStart` hook tells spore the Claude
   session ID. If that does not arrive within a short time, the runner stops Claude and fails the
   step, not retryable, with a message saying the step's hooks did not load. A managed policy with
@@ -279,13 +291,13 @@ decision reopens.
   an answer and could only retry or expire.
 - **Session closed without an answer:** a `SessionEnd` hook acts on the end reason.
   `prompt_input_exit`, `logout` and `other` mean Claude exited: the hook fails the step
-  (`spore step fail`), so it retries at once instead of waiting for the lease to run out. `clear`
+  (`spore step fail`), so it retries at once instead of waiting for the probe to see it. `clear`
   and `resume` leave the same process running on a different conversation: the runner closes it and
   fails the step, so the next try resumes the step's own conversation in a new pane.
 - **Safety net:** hooks are the fast path, not a guarantee. A SIGKILL, a dead machine or a failed
-  hook call fires nothing, so the step's lease and a liveness check stay. The check covers the pid,
-  process start time and boot ID, as `probe` does today, plus the Claude session ID recorded at
-  `SessionStart`, so a live process on another conversation is not taken for the step.
+  hook call fires nothing, so the runner's probe stays. It checks the process group, start time
+  and boot (the host's `process-alive`), plus the Claude session ID recorded at `SessionStart`, so
+  a live process on another conversation is not taken for the step.
 - **The step token stays out of Claude's environment:** hooks and the tools Claude runs inherit
   `claude`'s environment, and decision 7 loads the user's own hooks too. The runner writes the
   token to a file only the user can read, in the step's work folder, and only the runner's hook
@@ -331,16 +343,35 @@ decision reopens.
 - **Runspore retries can wait between tries:** an action's `retry` takes `maxAttempts` (1 to 100)
   and a back-off (`backoffMs`), and the next try is not before `now + delay` (runspore
   `spec/kernel.md`).
-- **The module slot is reserved:** runspore `spec/host.md` names a `component` form for `probe`,
-  `watch` and `stop`, and the current host refuses it with `action.component-unsupported`. No form
-  is specified for the action itself yet.
+- **Spore 0.7.0 hosts runner modules** as a `component` action kind (runspore `spec/host.md` §3,
+  `contracts/wit/runner/runner.wit`, world `runspore:runner/runner@0.1.0`). Checked against
+  runspore `main` at `531833d`:
+  - The runner exports `start`, `probe` and `stop`, and no `watch`. A `component` action is
+    always async: `start` returns a handle of at most 4 KiB, and spore holds the step with it.
+  - The host imports: `start-process` (detached, with standard input, output and error on the
+    null device), `process-alive`, `signal-process`, `request` (one request over a Unix socket),
+    `sleep`, and read-only `read-file` and `list-folder`. There is no import that runs a program
+    and reads its output, and none that calls spore.
+  - Grants list `programs`, `sockets` and `folders`, with no per-program arguments. A call outside
+    them fails the step with `component.not-granted`, naming the grant and the value.
+  - Each call runs a fresh instance with 64 MiB of memory, a fuel watchdog and no WASI; `start`
+    gets the action's `timeoutMs`, `probe` and `stop` 10 seconds.
+  - A started program gets `RUNSPORE_TOKEN` and the other async start variables, so the work
+    reports with `complete_step` or `fail_step`.
+  - A `dead` probe frees the step. Probes run in the sweep, at most every 30 seconds.
+  - Known limit: the host checks a handle's program and start time, not that the runner started
+    the process.
+  - The `component` form of `probe`, `watch` and `stop` on other actions is still refused, with
+    `action.component-unsupported`.
 - **Runspore's security chapter** already plans WASM activities with an import allowlist, memory
   and CPU limits and capability-scoped host calls (`docs/11-security.md`).
 
 ## Risks
 
-- **The module host is a large runspore change** (imports for starting programs and reaching
-  herdr, grants, sealing, recovery tests), and everything in this design waits on it.
+- **The runner can reach herdr only through its socket.** A program the runner starts has its
+  output thrown away, so `herdr agent wait` or a herdr status command gives the runner nothing to
+  read. The `request` import can talk to herdr's Unix socket, but herdr's socket protocol has not
+  been checked (see Open threads).
 - **Switching off a plugin for one session** should work through a per-session settings override
   (`--settings` with `enabledPlugins`), but it has not been tried.
 - **Managed hook policies:** where an organisation sets `allowManagedHooksOnly`, the runner's hook plugin's
@@ -357,7 +388,8 @@ decision reopens.
 - **What spore does with a signal nothing waits for** has not been checked; the "needs you" mark
   (decision 8) is a new step-level feature, not a signal.
 - **Prompt delivery to a herdr pane** ("typed again until Claude takes it" today) still has to be
-  done by the runner module, which needs herdr's `agent prompt` or `wait` through its imports.
+  done by the runner module. The runner only runs inside `start`, `probe` and `stop`, so a prompt
+  typed again, or decision 6's Escape, happens on a probe, up to 30 seconds apart.
 
 ## Deferred
 
@@ -367,4 +399,11 @@ None.
 
 - Whether "directly" in decision 1 also means an interactive Claude in a plain terminal (a third
   run mode).
-- Whether the hook parts should start before the module host (decision 9 as recorded says no).
+- Whether the hook parts should start before the open runspore features (decision 9 as recorded
+  says no).
+- How the runner reads herdr's pane state (decision 4's commit, the probe, prompt delivery): over
+  herdr's Unix socket with the `request` import, which spore 0.7.0 offers, or through a new
+  runspore import that runs a program and returns its output, so the `herdr` CLI can be used as Q6
+  assumed.
+- Decision 3 says a grant can limit a program's arguments; spore 0.7.0 grants name programs only.
+  Whether that limit is still wanted, as a runspore request, or dropped.
