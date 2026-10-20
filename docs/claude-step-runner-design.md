@@ -141,7 +141,9 @@ The hook does not judge whether the message is an answer; spore checks it agains
 output schema, as runspore already does for any step. A message that fits is the answer. One that
 does not is refused: the hook refuses the stop (`{"decision":"block","reason":…}`) and passes
 spore's error back to Claude to fix, up to the fix limit (today's limit, twice, carries over). The
-same in both run modes.
+same in both run modes. The hook counts the refusals itself: Claude Code's own cap on `Stop`
+continuations is far higher (a spike saw 12 in a row before Claude stopped). The step's prompt
+states the answer's shape, since a refusal alone did not teach a model to produce it.
 
 The answer names its outcome. As json Claude steps already do (`plugins/ml-workflow/src/schema.ts`),
 the final message is `{"answer": {"outcome": "<outcome>", "output": {…}}}`, and each outcome has
@@ -176,9 +178,9 @@ node, so Claude has no step attempt to work under. While the step waits for a re
 runner delivers the reply to Claude as the next prompt, in the same conversation.
 
 This interception has to fail closed: a reply hook that times out or crashes would otherwise let
-the prompt through while the run has no attempt. The hook is set to block on failure if Claude Code
-offers that; this was not confirmed in 2.1.302 and is on the list to check. The runner also backs
-it up: if herdr reports the pane `working` while the run is at the reply node, the runner
+the prompt through while the run has no attempt. The hook sets `"onFailure": "block"`, which Claude
+Code 2.1.305 offers: with it, a crash, a timeout and a missing script each blocked the prompt in a
+spike, where without it all three let the prompt through. The runner also backs it up: if herdr reports the pane `working` while the run is at the reply node, the runner
 interrupts Claude (Escape, through herdr's `agent.send_keys`), and you can send the reply again.
 
 Accepted cost: a workflow node for the reply and a resumed conversation.
@@ -265,13 +267,21 @@ features land, this decision reopens.
   not hand back a pane ID or a state. Each job is one newline-delimited JSON request and one reply
   line, which the `request` import does:
   - start: `workspace.create` (or `tab.create`) with the project folder and `focus: false`, then
-    `agent.start` with `kind: "claude"` and Claude's arguments. `agent.start` blocks until Claude
-    is ready (30 seconds by default), so the action's `timeoutMs` must be longer;
-  - probe: `agent.get`, whose `agent_status` is `idle`, `working`, `blocked` or `done`;
-  - prompt: `agent.prompt`, whose `agent_prompt_stalled` and `agent_blocked` errors say Claude did
-    not take it, so the runner retries on those instead of typing again blind;
-  - Escape: `agent.send_keys` with `esc`;
-  - stop: `workspace.close` for a workspace the runner made, `pane.close` otherwise.
+    `agent.start` with `kind: "claude"` and Claude's arguments. `agent.start` returns at once with
+    `launch_pending: true`, so `start` polls `agent.get` until `interactive_ready` is true (under 3
+    seconds in the spike), within the action's `timeoutMs`;
+  - probe: `agent.get`, whose `agent_status` is `idle`, `working`, `blocked`, `done` or `unknown`.
+    The status lags a prompt (it still read `idle` just after one) and `done` stays until the next
+    prompt, so "this turn ended" is `completion_seq` rising above its value when the prompt went
+    in, not the status word;
+  - prompt: `agent.prompt`, only while Claude is `idle` or `done`. A prompt sent mid-turn is not
+    refused: Claude queues it, and it still runs after an interrupt. The `agent_prompt_stalled` and
+    `agent_blocked` errors say Claude did not take it, so the runner retries on those instead of
+    typing again blind;
+  - Escape: `agent.send_keys` with `esc`, then `agent.get` to see it took. In the spike the first
+    Escape did nothing and the second interrupted the turn, so the runner retries;
+  - stop: `workspace.close` for a workspace the runner made (the spike saw the `claude` process
+    gone after it), `pane.close` otherwise.
 
   The pane ID and the agent name go into the handle `start` returns, which spore gives back to
   every `probe` and `stop`. The runner sends `ping` first and refuses a herdr whose `protocol` it
@@ -328,7 +338,14 @@ features land, this decision reopens.
   token into the file before it delivers the next prompt, so the process needs no restart. It is not a hard
   boundary: in the local profile, any program running as the same user can read that file, which
   runspore `docs/11-security.md` accepts ("same-user native code and installed mods are trusted").
+  How the file gets written with spore 0.7.0 is open (see Open threads).
 - **Hooks stay short:** they block Claude while they run, so each spore call has a tight timeout.
+- **Hooks that guard fail closed:** every hook whose failure would let something through
+  (`UserPromptSubmit` during a reply wait, the `Stop` check) sets `"onFailure": "block"`. Claude
+  Code's default is `"continue"`, so a crash, a timeout or a missing script lets the action
+  through.
+- **Claude's exit code means nothing:** `claude -p` exits 0 even when a hook blocked its prompt,
+  so the runner reads what happened from spore and the hooks, never from the exit status.
 - **Repeated signals are harmless:** spore ignores a repeated message ID, so each signal's ID names
   the one moment it answers. A reply uses the reply node's activation ID (`position.activationId`,
   for example `reply/2`), as the shipped `approve` and `tests_stuck` steps already do. A session
@@ -359,6 +376,16 @@ features land, this decision reopens.
   done) through a Claude Code hook it installs, `~/.claude/hooks/herdr-agent-state.sh`, which reports
   over `HERDR_SOCKET_PATH` for `HERDR_PANE_ID`. `herdr agent wait --until done|blocked` waits on that
   state.
+- **Hooks from `--plugin-dir`, Claude Code 2.1.305** (spike): `SessionStart`, `UserPromptSubmit`
+  and `Stop` fire and see the variables in `claude`'s environment. `Stop`'s input carries
+  `session_id`, `last_assistant_message`, `stop_hook_active`, `background_tasks` and
+  `session_crons`. `"onFailure": "block"` makes a failed or timed-out hook block; exit 2 and
+  `{"decision":"block"}` block from a hook that runs.
+- **`spore step complete` from a hook** (spore 0.6.1, spike) is accepted for a step another process
+  claimed, with the token and `RUNSPORE_DB` from the environment. A second complete and a changed
+  token give `lease.lost`; a malformed token gives `step.token-invalid`; an answer that does not
+  fit gives `output.invalid` with each error's path, and leaves the step held and the token valid,
+  so Claude can try again. A completed step finishes the run only once a worker applies it.
 - **Herdr's socket is its contract,** and the CLI is a client of it ("Herdr's CLI talks to the
   running server over the same local socket API", herdr `cli-reference.mdx`). It is
   newline-delimited JSON, `{"id","method","params"}` in and `{"id","result"}` or
@@ -396,27 +423,24 @@ features land, this decision reopens.
 
 ## Risks
 
-- **Herdr's socket calls not yet tried:** `agent.start` and `agent.prompt` against a real Claude,
-  `esc` as the key name for Claude rather than a shell, a call from a process outside any herdr
-  pane, and a newer herdr (0.9.5 is out) against a runner built for protocol 22.
+- **Not yet tried in a spike:** Claude's folder-trust prompt at start (herdr's `blocked` and
+  `agent_not_ready`), a `Stop` hook that fails, `SessionEnd`, a long turn against the step's
+  deadline, how to clear prompts Claude has queued, and a newer herdr (0.9.5 is out) against a
+  runner built for protocol 22.
 - **Switching off a plugin for one session** should work through a per-session settings override
   (`--settings` with `enabledPlugins`), but it has not been tried.
 - **Managed hook policies:** where an organisation sets `allowManagedHooksOnly`, the runner's hook plugin's
   hooks are blocked and Claude steps cannot hand in answers at all. The `SessionStart` check turns
   that into a clear failure; making it work needs the runner's hook plugin installed through managed policy.
-- **Hooks reaching the run:** not yet tested whether a hook from `--plugin-dir` sees the
-  `RUNSPORE_DB`, the run ID and the token file's path that the runner put in `claude`'s
-  environment, and whether
-  `spore step complete` from inside the pane is accepted for the attempt the runner claimed.
 - **Runs depend on the user's setup** (decision 7): a plugin or hook the user installs can change
   how a workflow behaves, or slow it.
 - **A trusted workflow list** (decision 3) does not protect against a workflow copied without
   reading it.
 - **What spore does with a signal nothing waits for** has not been checked; the "needs you" mark
   (decision 8) is a new step-level feature, not a signal.
-- **Prompt delivery to a herdr pane** ("typed again until Claude takes it" today) still has to be
-  done by the runner module. The runner only runs inside `start`, `probe` and `stop`, so a prompt
-  typed again, or decision 6's Escape, happens on a probe, up to 30 seconds apart.
+- **The runner acts only inside `start`, `probe` and `stop`,** so a prompt typed again or decision
+  6's Escape happens on a probe, up to 30 seconds apart. The first prompt can go in as Claude's
+  argument at `agent.start`; a later one is a new attempt's `start`.
 
 ## Deferred
 
@@ -428,3 +452,12 @@ None.
   run mode).
 - Whether the hook parts should start before the open runspore features (decision 9 as recorded
   says no).
+- **How the step's token and run reach the hooks.** The token-file choice assumed the runner writes
+  the file, but a 0.7.0 runner cannot write files. And the two run modes differ: a program the
+  runner starts always gets `RUNSPORE_TOKEN` and the other `RUNSPORE_*` variables after the
+  spawn's own (`runner.wit`), so a background Claude has the token in its environment whatever the
+  runner does; a watched Claude is started by herdr, whose `agent.start` takes no environment, so
+  its hooks get none of them. Ways out: a runspore import that writes a file in a granted folder
+  and an option to start a program without the token (the token-file choice then holds as
+  written); or accept the token in a background Claude's environment, as runspore's same-user
+  trust model allows, and pass a watched Claude only non-secret paths through `--settings`.
