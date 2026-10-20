@@ -12,7 +12,8 @@ const TAKEN = '#e8590c'
 const POLL_MS = 1000
 // How many arrows around the current node the graph shows until the person unfolds it.
 const DEPTH = 2
-// The run line's fixed parts: `needs you` with the two spaces after it, and ` [ view ]`.
+// The run line's fixed parts: `needs you` with the two spaces after it, ` [ view ]`, and
+// ` [ pane ]` while a herdr pane holds the step.
 const NEEDS_YOU = 'needs you'
 const BUTTON_COLUMNS = 9
 
@@ -70,6 +71,24 @@ async function helperJson($: EngineInterface, args: string[]): Promise<any> {
 }
 
 const dbArgs = (db: string | null) => (db ? ['--db', db] : [])
+
+// The `pane` button: herdr brings the pane holding the step to the front, as the menu's Open its
+// pane does. A pane that is gone, or a herdr that does not answer, is said in one line.
+async function focusPane($: EngineInterface, agent: string) {
+  let problem: string
+  try {
+    const { exitCode, stderr } = await $.process.run(['herdr', 'agent', 'focus', agent], { timeoutMs: 5000 })
+    if (exitCode === 0) return
+    problem = stderr.trim().split('\n')[0] || `herdr exited ${exitCode}`
+  } catch (error) {
+    problem = String(error)
+  }
+  $.ui.log(`ml-workflow: the pane of ${agent} could not be brought to the front: ${problem}`)
+}
+
+function paneButton($: EngineInterface, ui: Record<string, any>, key: string, agent: string, hotkey?: string) {
+  return h(ui.Button, { key, label: 'pane', ...(hotkey ? { hotkey } : {}), onPress: () => void focusPane($, agent) })
+}
 
 async function readView($: EngineInterface, runId: string, db: string | null): Promise<any> {
   const depth = (await read($, depths))[runId] ?? DEPTH
@@ -252,7 +271,8 @@ export function registerLive(on: On) {
     // helper's forms that fits, cut at its end only past the shortest.
     const rows = runs.map((run, i) => {
       const line = run.line!
-      const room = e.props.bodyColumns - BUTTON_COLUMNS - (line.needsYou ? NEEDS_YOU.length + 2 : 0)
+      const agent = line.herdrAgent
+      const room = e.props.bodyColumns - BUTTON_COLUMNS * (agent ? 2 : 1) - (line.needsYou ? NEEDS_YOU.length + 2 : 0)
       const forms = [line.text, ...(line.shorter ?? [])]
       return h(
         ui.Box,
@@ -264,6 +284,7 @@ export function registerLive(on: On) {
           { flexShrink: 0 },
           h(ui.Text, {}, ' '),
           h(ui.Button, { key: `view:${run.runId}`, label: 'view', ...(i === 0 ? { hotkey: 'v' } : {}), onPress: () => void openView($, run.runId, run.db, line.name).catch(() => undefined) }),
+          ...(agent ? [h(ui.Text, {}, ' '), paneButton($, ui, `pane:${run.runId}`, agent, i === 0 ? 'p' : undefined)] : []),
         ),
       )
     })
@@ -367,7 +388,9 @@ export function registerLive(on: On) {
             ...(fold.depth < fold.whole ? [h(ui.Button, { key: 'unfold', label: 'unfold', hotkey: 'u', onPress: () => void refold($, runId, fold.depth + 1) })] : []),
           ]
         : []
-    const facts = h(ui.Box, { flexDirection: 'row', gap: 2 }, h(ui.Box, { flexShrink: 1 }, factsText), h(ui.Box, { flexShrink: 0, gap: 1 }, toggle, ...folding))
+    const agent = view.line?.herdrAgent
+    const pane = agent ? [paneButton($, ui, 'pane', agent, 'p')] : []
+    const facts = h(ui.Box, { flexDirection: 'row', gap: 2 }, h(ui.Box, { flexShrink: 1 }, factsText), h(ui.Box, { flexShrink: 0, gap: 1 }, ...pane, toggle, ...folding))
     const body = isWide ? h(ui.Box, { key: 'body', flexDirection: 'row', gap: 3 }, drawing, files) : h(ui.Box, { key: 'body', flexDirection: 'column' }, drawing, files)
     return h(ui.Box, { flexDirection: 'column' }, facts, h(ui.Box, { marginTop: 1 }, body)) as RenderElement
   })

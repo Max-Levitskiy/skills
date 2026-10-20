@@ -35,10 +35,10 @@ type Status = {
   intervention?: Standing;
   running?: Standing;
   quarantine?: { code?: string | null } | null;
-  step?: { state?: string | null; actor?: string | null } | null;
+  step?: { state?: string | null; actor?: string | null; holder?: { herdrAgent?: string | null } | null } | null;
 };
 
-export type Line = { runId: string; db: string | null; name: string; text: string; shorter: string[]; needsYou: boolean; ended: boolean };
+export type Line = { runId: string; db: string | null; name: string; text: string; shorter: string[]; needsYou: boolean; ended: boolean; herdrAgent: string | null };
 type Failure = { runId: string; db: null; error: { code: string; message: string } };
 type Marked = { n: number; text: string; mark: "here" | "taken" | null };
 
@@ -154,7 +154,8 @@ export async function draw(argv: string[]): Promise<number> {
  * The run line's words (docs/spec.md, p.24): where the run is and for how long first, as
  * `kubectl get pods` leads with STATUS and AGE. `shorter` is the same line with the arrow cut down,
  * then without it, for a band too narrow for the whole line. A run whose decision was sent and not
- * yet acted on (`decided`) does not need the person.
+ * yet acted on (`decided`) does not need the person. `herdrAgent` names the herdr agent whose pane
+ * holds the step, for the mod's `pane` button.
  */
 export function lineOf(status: Status, decided = false): Line {
   const key = status.startKey || status.runId;
@@ -178,7 +179,8 @@ export function lineOf(status: Status, decided = false): Line {
   const shorter = arrow ? [`${head}, from ${arrow.from}:${arrow.outcome}${tail}`, `${head}${tail}`] : [];
   const step = status.step;
   const needsYou = !ended && Boolean((status.waiting && !decided) || status.intervention || status.quarantine || (step?.state === "ready" && step.actor === "person"));
-  return { runId: status.runId, db: status.db ?? null, name: key, text, shorter, needsYou, ended };
+  const herdrAgent = !ended && step?.state === "held" ? step.holder?.herdrAgent || null : null;
+  return { runId: status.runId, db: status.db ?? null, name: key, text, shorter, needsYou, ended, herdrAgent };
 }
 
 // ` for 13 min`: how long the run has stood as it is at its node, from what it waits for. A try in

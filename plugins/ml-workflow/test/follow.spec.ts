@@ -302,6 +302,7 @@ describe.skipIf(!follows())(`following a run under a real spore ${version ?? ""}
       shorter: [],
       needsYou: true,
       ended: false,
+      herdrAgent: null,
     });
 
     const view = JSON.parse(helper("view", runId, "--db", db, "--json").stdout);

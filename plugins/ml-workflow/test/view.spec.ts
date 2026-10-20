@@ -124,8 +124,16 @@ test("a running run: node, how long it has stood there and visit, the arrow just
     ],
     needsYou: false,
     ended: false,
+    herdrAgent: null,
   });
   expect(calls()).toEqual(["status run_a --json --no-probe"]);
+});
+
+test("a step held by a herdr pane names its agent, for the pane button; one held by an actor names none", () => {
+  status("run_p", { position: at("implement", 1), step: { kind: "external", actor: "claude-spore", state: "held", holder: { herdrAgent: "sp-implement-0238" } } });
+  status("run_q", { position: at("review", 1), step: { kind: "external", actor: "reviewer", state: "held", holder: null } });
+  status("run_r", { status: "cancelled", position: at("implement", 1), step: { kind: "external", state: "held", holder: { herdrAgent: "sp-implement-0238" } } });
+  expect(["run_p", "run_q", "run_r"].map((id) => helper(["line", id, "--json"]).report.herdrAgent)).toEqual(["sp-implement-0238", null, null]);
 });
 
 test("a run waiting for a decision needs you, and says so first", () => {
