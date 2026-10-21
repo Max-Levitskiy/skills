@@ -49,9 +49,9 @@ describe("contexts", () => {
   });
   test("an abstract context never matches but can be named", () => {
     const { h, put } = home();
-    put("neo", {});
+    put("beta", {});
     expect(resolveChain(readContexts(h), place({}), {})).toEqual([]);
-    expect(resolveChain(readContexts(h), place({}), { explicit: "neo" }).map(c => c.name)).toEqual(["neo"]);
+    expect(resolveChain(readContexts(h), place({}), { explicit: "beta" }).map(c => c.name)).toEqual(["beta"]);
   });
   test("a path in the team file is ignored and reported", () => {
     const { h, put } = home();

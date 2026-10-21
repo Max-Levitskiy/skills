@@ -96,8 +96,8 @@ describe("contexts through the CLI", () => {
     const { run, put, putContext, putContextDef, repoDir } = sandbox();
     put("global", { site: "mine" }); putContext("acme", "demo", { site: "theirs" });
     expect(run("load", "demo", "--cwd", repoDir, "--no-context").json.config.site).toBe("mine");
-    putContextDef("neo", {}); putContext("neo", "demo", { site: "neo" });
-    expect(run("load", "demo", "--cwd", repoDir, "--context", "neo").json.provenance.site).toBe("context:neo");
+    putContextDef("gamma", {}); putContext("gamma", "demo", { site: "gamma" });
+    expect(run("load", "demo", "--cwd", repoDir, "--context", "gamma").json.provenance.site).toBe("context:gamma");
   });
 
   test("--context naming a matched sibling moves it to the end, as the innermost and the write target", () => {
