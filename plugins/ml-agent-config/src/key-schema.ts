@@ -41,10 +41,10 @@ const TYPING = ["$ref", "type", "enum", "const", "properties", "additionalProper
 const TYPES: JsonType[] = ["string", "number", "integer", "boolean", "object", "array", "null"];
 const REF = /^#\/\$defs\/([^/]+)$/;
 
-/** A key entry's schema: the entry itself, less the advisory `layer`. Null when it types nothing. */
-export function keySchema(entry: ValueSchema & { layer?: string }): ValueSchema | null {
+/** A key entry's schema: the entry itself, less the advisory `layer` and `personal`. Null when it types nothing. */
+export function keySchema(entry: ValueSchema & { layer?: string; personal?: boolean }): ValueSchema | null {
   if (!TYPING.some((keyword) => entry[keyword] !== undefined)) return null;
-  const { layer: _layer, ...schema } = entry;
+  const { layer: _layer, personal: _personal, ...schema } = entry;
   return schema;
 }
 

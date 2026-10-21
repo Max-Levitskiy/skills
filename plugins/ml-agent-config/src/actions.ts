@@ -13,9 +13,11 @@
 
 import { join } from "path";
 import { existsSync, readFileSync, readdirSync } from "fs";
-import { ConfigError, type ConfigObject, type LayerFile, type LegacyFile } from "./layers";
+import { ConfigError, type ConfigObject, type ConfigValue, type LayerFile, type LegacyFile } from "./layers";
 import {
+  declaredKeys,
   isMarketplaceInstall,
+  isPersonalKey,
   type Declaration,
   type Dependency,
   type FoundDeclaration,
@@ -29,6 +31,8 @@ import {
 } from "./harness";
 import type { EmittedAction, Problem, RepoReport } from "./types";
 import type { Effective } from "./effective";
+import type { MatchedContext } from "./contexts";
+import type { Place } from "./place";
 
 const BUILTIN_PREFIX = "agent-config:";
 const FRONTMATTER_FIELDS = ["id", "type", "command", "parallel", "requires"] as const;
@@ -172,6 +176,10 @@ export interface PlanInput {
   legacy?: LegacyFile[];
   /** The `--from` this plan was made with, so the adopt command finds the same declaration. */
   from?: string;
+  /** The contexts that apply here, outermost first: keys recommending `context` go to the last. */
+  chain: MatchedContext[];
+  /** Where `start` runs, which pre-fills the context to create when none applies. */
+  place: Place;
 }
 
 const quote = (text: string) => `'${text.replace(/'/g, `'\\''`)}'`;
@@ -283,6 +291,22 @@ export function schemaDrift(
   return { behind, problems };
 }
 
+/**
+ * The filters a new context for this place starts from: the first remote widened to its owner
+ * (`host/org/**`), so the owner's other repositories match too, and the checkout root, or the cwd
+ * outside git. The suggested name is the owner, or the folder's name when there is no remote.
+ */
+function contextSuggestion(place: Place): Record<string, ConfigValue> {
+  const path = place.paths[0];
+  const owner = place.remotes[0]?.split("/").slice(0, 2);
+  return {
+    suggestedName: owner?.[1] || (path.split("/").filter(Boolean).at(-1) ?? ""),
+    ...(owner ? { remote: `${owner.join("/")}/**` } : {}),
+    path,
+    alternative: "global",
+  };
+}
+
 /** The flat action list, plus the problems that have no action to fix them. */
 export function buildPlan(input: PlanInput): Plan {
   const { found, harness, repo, effective, layers, userRepoLayer } = input;
@@ -305,7 +329,14 @@ export function buildPlan(input: PlanInput): Plan {
   }
 
   // 1. The component onboards its own config. Five missing keys pointing at one action produce one
-  //    action carrying all five as context, not five identical interviews (D2).
+  //    action carrying all five as context, not five identical interviews (D2). A gap whose keys
+  //    all recommend `context` is written to the innermost matched context: its me file when any
+  //    key is the person's own or a credential, else its team file. With no context matched, one
+  //    context-add action comes first, however many gaps wait on it; a gap mixing layers is left
+  //    to the onboard action.
+  const entries = new Map(declaredKeys(found.declaration).map(({ path, entry }) => [path, entry]));
+  const innermost = input.chain.at(-1);
+  let contextAdd: EmittedAction | null = null;
   for (const gap of effective.gaps) {
     const action = authored.get(gap.action);
     if (!action) {
@@ -314,7 +345,22 @@ export function buildPlan(input: PlanInput): Plan {
           `but ${found.dir}/actions/ has no action with that id`,
       );
     }
-    actions.push(emit(action, { keys: gap.keys, requires: [...action.requires, ...(adoptable.length > 0 ? [adoptId] : [])] }));
+    const requires = [...action.requires, ...(adoptable.length > 0 ? [adoptId] : [])];
+    const context: Record<string, ConfigValue> = {};
+    if (gap.keys.every((key) => entries.get(key)?.layer === "context")) {
+      if (innermost) {
+        const me = gap.keys.some((key) => isPersonalKey(key, entries.get(key)));
+        context.layer = `context:${innermost.name}${me ? ":me" : ""}`;
+      } else {
+        if (!contextAdd) {
+          contextAdd = emit(builtin("context-add"), { context: contextSuggestion(input.place) });
+          actions.push(contextAdd);
+        }
+        contextAdd.keys.push(...gap.keys);
+        requires.push(contextAdd.id);
+      }
+    }
+    actions.push(emit(action, { keys: gap.keys, requires, context }));
   }
 
   // 2. Missing skill and agent dependencies. The scan runs every time: caching it is stored

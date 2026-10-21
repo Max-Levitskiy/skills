@@ -84,6 +84,10 @@
           "enum": ["global", "context", "repo", "user-repo", "local"],
           "description": "Advisory hint for which config layer this key is expected to live in."
         },
+        "personal": {
+          "type": "boolean",
+          "description": "The person's own answer rather than the team's: onboarding into a context writes it to the context's me file, and the team file refuses it."
+        },
         "default": {
           "description": "Default value used when the key is not set."
         },

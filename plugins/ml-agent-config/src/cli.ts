@@ -18,6 +18,7 @@ import {
   legacyFiles,
   adoptLegacy,
   contextOf,
+  credentialLeaves,
   honoured,
   loadLayers,
   parseLayer,
@@ -30,7 +31,7 @@ import {
   type Layer,
   type LoadedLayers,
 } from "./layers";
-import { declaredKeys, findDeclaration, listDeclarations, valueProblems, type FoundDeclaration } from "./declaration";
+import { declaredKeys, findDeclaration, isPersonalKey, listDeclarations, valueProblems, type FoundDeclaration } from "./declaration";
 import { effectiveConfig, unmetKeys, type Effective } from "./effective";
 import { buildPlan, guidePath } from "./actions";
 import { CredentialError, cacheVarValue, resolveCredential, type CredentialRef } from "./credentials";
@@ -327,7 +328,7 @@ function siblingProblems(name: string, found: FoundDeclaration, loaded: LoadedLa
 function start(parsed: ParsedArgs): number {
   const name = requireName(parsed);
   const harness = detectHarness();
-  const { found, repo, loaded, effective, layerProblems, chain } = resolve(name, parsed);
+  const { found, repo, loaded, effective, layerProblems, chain, place } = resolve(name, parsed);
   const plan = buildPlan({
     found,
     harness,
@@ -337,6 +338,8 @@ function start(parsed: ParsedArgs): number {
     userRepoLayer: readLayer(name, "user-repo", repo),
     legacy: legacyFiles(name, repo),
     from: parsed.from,
+    chain,
+    place,
   });
 
   const output: StartOutput = {
@@ -545,7 +548,8 @@ function write(parsed: ParsedArgs): number {
   const repo = repoContext(cwdOf(parsed));
   const found = findDeclaration(name, detectHarness(), parsed.from);
   // A context layer is written only for a context that exists, so a typo cannot start a stray one.
-  const named = contextOf(layer)?.context;
+  const target = contextOf(layer);
+  const named = target?.context;
   if (named !== undefined && !readContexts().defs.has(named)) {
     throw new ConfigError(`--layer ${layer} names context "${named}", which does not exist; create it with: agent-config context add ${named}`);
   }
@@ -560,6 +564,21 @@ function write(parsed: ParsedArgs): number {
   }
   if (typeof config !== "object" || config === null || Array.isArray(config)) {
     throw new ConfigError("write expects a JSON object — one layer, whole, not a fragment");
+  }
+
+  // A context's team file is shared with everyone the context matches, so the person's own answers
+  // and their credential references belong in its me file.
+  if (target && !target.me) {
+    const own =
+      declaredKeys(found.declaration).find(
+        ({ path, entry }) => isPersonalKey(path, entry) && ownValueAt(config, path) !== undefined,
+      )?.path ?? ("credentials" in config ? credentialLeaves(config)[0] : undefined);
+    if (own) {
+      throw new ConfigError(
+        `not written: ${own} is ${own.split(".")[0] === "credentials" ? "a credential" : "declared personal"}, and ${layer} is ` +
+          `the team file every place in context "${named}" shares; write it with --layer context:${named}:me`,
+      );
+    }
   }
 
   // Checked against the schemas the keys declare, so a value no consumer could read is never written.

@@ -275,7 +275,7 @@ export function honoured(config: ConfigObject, file: { trusted: boolean }): Conf
 }
 
 /** The leaf paths of `config`'s `credentials` subtree, `credentials.token.source` style. */
-function credentialLeaves(config: ConfigObject): string[] {
+export function credentialLeaves(config: ConfigObject): string[] {
   const keys: string[] = [];
   leafPaths(config.credentials, "credentials", keys);
   return keys;

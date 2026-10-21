@@ -28,7 +28,14 @@ export interface KeyEntry extends ValueSchema {
   description: string;
   /** Advisory only: onboarding recommends it with a reason, writing elsewhere is permitted. */
   layer?: Layer | "context";
+  /** The person's own answer, never the team's: a context team file refuses it. */
+  personal?: boolean;
   default?: ConfigValue;
+}
+
+/** The person's own answer, which a context keeps in its me file: a credential, or a key declared `personal`. */
+export function isPersonalKey(path: string, entry: KeyEntry | undefined): boolean {
+  return path.startsWith("credentials.") || entry?.personal === true;
 }
 
 export interface KeyGroup {
