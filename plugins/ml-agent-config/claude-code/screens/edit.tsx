@@ -38,9 +38,12 @@ export function edit(ctx: Ctx): RenderElement {
   // level that can hold the key there is nothing to pick, so it is only named.
   const others = layers.filter(layer => layer !== draft.layer)
   const saveTargets = others.filter(layer => canHold(setting, layer))
+  // An edit at a level that cannot hold the key (one set there by hand) has no pickable row of its
+  // own in the level list, so the list opens on the first row that can.
+  const focusRow = canHold(setting, draft.layer) ? draft.layer : [...layers].reverse().find(layer => canHold(setting, layer))
   const tools =
     saveTargets.length > 0
-      ? [<Button key="level" label={` ${levelInfo(draft.layer).short} ›`} plain onPress={() => act.go({ kind: 'levels' }, 'level', `level:${draft.layer}`)} />]
+      ? [<Button key="level" label={` ${levelInfo(draft.layer).short} ›`} plain onPress={() => act.go({ kind: 'levels' }, 'level', `level:${focusRow}`)} />]
       : [
           <Box key="level">
             <Text dimColor> {levelInfo(draft.layer).short}</Text>

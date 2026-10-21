@@ -26,6 +26,7 @@ import { readableReference } from './screens/onepassword'
 import type { Actions } from './screens/context'
 import { isObject, isPlan, listedComponents, onePasswordFields, onePasswordListing, pathLayer } from './shapes'
 import { EMPTY_PANEL, NO_ONE_PASSWORD } from './state'
+import { canHold } from './ui/levels'
 import { SOURCES, isReference, parseText, targetLayer, type Stored } from './values'
 
 export type { Plan } from './cli'
@@ -470,7 +471,8 @@ async function save($: EngineInterface, layer: string, path: string, value: Json
 async function openEdit($: EngineInterface, setting: Setting, canType: boolean): Promise<void> {
   const now = await read($, panel)
   const layers = layerNames(now)
-  const layer = layers.includes(now.show) ? now.show : targetLayer(setting, layers)
+  // A level shown that cannot hold the key (a team file, for a credential) is not where its edit starts.
+  const layer = layers.includes(now.show) && canHold(setting, now.show) ? now.show : targetLayer(setting, layers)
   const edit = editAt(setting, layer, layers, now.defs)
   await update($, panel, latest => ({ ...latest, edit }))
   await go($, { kind: 'edit' }, `setting:${setting.path}`, firstEdit({ ...now, edit }, canType))

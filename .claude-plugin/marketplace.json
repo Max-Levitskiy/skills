@@ -97,7 +97,7 @@
     {
       "name": "ml-agent-config",
       "source": "./plugins/ml-agent-config",
-      "description": "The Agent Config Standard (ACS v2) as a reusable skill: layered global/repo/local settings, and contexts: settings for a group of repositories matched by git remote or path, shared with a team or kept to yourself, credential references that keep secrets out of git, and a re-runnable onboarding flow. Other skills and subagents invoke it instead of restating the rules, and vendor its zero-dependency loader instead of copying their own. On Claude Code, /agent-config opens a settings pane, and 1Password is approved once per session.",
+      "description": "The Agent Config Standard (ACS v2) as a reusable skill: layered global/repo/local settings, contexts (settings for a group of repositories matched by git remote or path, shared with a team or kept to yourself), credential references that keep secrets out of git, and a re-runnable onboarding flow. Other skills and subagents invoke it instead of restating the rules, and vendor its zero-dependency loader instead of copying their own. On Claude Code, /agent-config opens a settings pane, and 1Password is approved once per session.",
       "version": "0.11.0",
       "license": "MIT",
       "author": {

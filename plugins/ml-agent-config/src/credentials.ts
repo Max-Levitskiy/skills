@@ -26,7 +26,7 @@ export interface CredentialRef {
   service?: string;
   command?: string;
   /**
-   * The session cache the standard has had since its first version: when this environment variable holds a non-empty value the resolver
+   * ACS v1's session cache: when this environment variable holds a non-empty value the resolver
    * uses it and never touches `source`. Inert for an agent — agent-run bash keeps no shell state
    * between calls (D4) — but it still works for a human at a terminal, so it is still honoured.
    */

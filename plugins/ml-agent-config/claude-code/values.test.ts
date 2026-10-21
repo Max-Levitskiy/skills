@@ -28,3 +28,9 @@ test('where the value is set now wins over the context', () => {
   expect(targetLayer(key({ layer: 'context', source: 'context:acme' }), CHAIN)).toBe('context:acme')
   expect(targetLayer(key({ layer: 'context', personal: true, source: 'local' }), CHAIN)).toBe('local')
 })
+
+test('a context without the file a key needs falls back to the next context out', () => {
+  const chain = ['global', 'context:acme', 'context:acme:me', 'context:acme-web', 'repo', 'user-repo', 'local']
+  expect(targetLayer(key({ layer: 'context', personal: true }), chain)).toBe('context:acme:me')
+  expect(targetLayer(key({ layer: 'context' }), chain)).toBe('context:acme-web')
+})
