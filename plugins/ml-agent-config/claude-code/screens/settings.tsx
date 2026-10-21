@@ -7,7 +7,7 @@ import type { Json, Setting } from '../../types'
 import type { Defs } from '../../src/key-schema'
 import { display } from '../tree'
 import { layerNames, selected } from '../panel'
-import { LEVELS, levelLabel, under } from '../ui/levels'
+import { levelInfo, levelLabel, under } from '../ui/levels'
 import { note, row, screen } from '../ui/screen'
 import type { Names } from '../values'
 import type { Ctx } from './context'
@@ -41,7 +41,7 @@ export function settings({ now, ui, Input, act }: Ctx): RenderElement {
   // takes no row of its own.
   const tools =
     !now.isLoading && layers.length > 1
-      ? [<Button key="show" label={` Show: ${now.show === 'effective' ? 'Effective' : LEVELS[now.show]!.short} ›`} plain dimColor onPress={() => act.go({ kind: 'show' }, 'show', `show:${now.show}`)} />]
+      ? [<Button key="show" label={` Show: ${now.show === 'effective' ? 'Effective' : levelInfo(now.show).short} ›`} plain dimColor onPress={() => act.go({ kind: 'show' }, 'show', `show:${now.show}`)} />]
       : []
   return screen(ui, { path: ['Components', component?.name ?? ''], onBack: () => act.back(), tools, message: now.message }, [
     now.isLoading && note(ui, 'Loading…'),

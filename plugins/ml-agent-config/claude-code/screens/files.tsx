@@ -3,13 +3,13 @@
 import type { RenderElement } from 'claude-code'
 
 import { selected } from '../panel'
-import { ORDER, levelLabel } from '../ui/levels'
+import { levelLabel } from '../ui/levels'
 import { note, screen } from '../ui/screen'
 import type { Ctx } from './context'
 
 export function files({ now, ui, act }: Ctx): RenderElement {
   const { Box, Text } = ui
-  const shown = ORDER.map(layer => now.layers.find(one => one.layer === layer)).filter(one => one !== undefined)
+  const shown = now.layers
   return screen(ui, { path: [selected(now)?.name ?? '', 'Files'], onBack: () => act.back(), message: now.message }, [
     ...shown.map(level => {
       const count = now.settings.filter(setting => setting.levels[level.layer] !== undefined).length

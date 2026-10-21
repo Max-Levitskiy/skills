@@ -6,7 +6,7 @@ import type { Json, Setting } from '../../types'
 import type { Defs } from '../../src/key-schema'
 import { display } from '../tree'
 import { editing, fileOf, layerNames, selected } from '../panel'
-import { LEVELS, levelStack } from '../ui/levels'
+import { canHold, levelInfo, levelStack } from '../ui/levels'
 import { note, row, screen } from '../ui/screen'
 import { lastPart, type Names } from '../values'
 import type { Ctx } from './context'
@@ -21,13 +21,13 @@ export function saveTo({ now, ui, act }: Ctx): RenderElement {
   if (!setting || !now.edit) return screen(ui, { path, onBack: () => act.back() }, [])
   const from = now.edit.layer
   return screen(ui, { path, onBack: () => act.back(), message: now.message }, [
-    note(ui, `Writes the value at the level you pick. ${LEVELS[from]?.label ?? from} stays as it is.`),
+    note(ui, `Writes the value at the level you pick. ${levelInfo(from).label} stays as it is.`),
     ...levelStack(setting, layerNames(now))
-      .filter(level => level.layer !== from)
+      .filter(level => level.layer !== from && canHold(setting, level.layer))
       .map(level =>
         row(ui, {
           key: `saveto:${level.layer}`,
-          label: `› ${LEVELS[level.layer]!.offer}`,
+          label: `› ${levelInfo(level.layer).offer}`,
           detail: `${fileOf(now, level.layer)} · ${holds(setting, level.value, now.names, now.defs)}`,
           onPress: () => act.saveTo(level.layer),
         }),

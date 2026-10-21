@@ -5,7 +5,7 @@
 import type { RenderElement } from 'claude-code'
 
 import { editing, layerNames, selected } from '../panel'
-import { LEVELS, ORDER, effect, openAbove, under } from '../ui/levels'
+import { canHold, effect, levelInfo, openAbove, under } from '../ui/levels'
 import { note, row, screen } from '../ui/screen'
 import { display, isTreeSetting } from '../tree'
 import { kindOf } from '../../src/key-schema'
@@ -36,13 +36,14 @@ export function edit(ctx: Ctx): RenderElement {
   const said = effect(setting, draft.layer, layers, now.names, now.defs)
   // The level sits on the title line, at the right; a press opens the level list. With one level
   // there is nothing to pick, so it is only named.
-  const others = ORDER.filter(layer => layers.includes(layer) && layer !== draft.layer)
+  const others = layers.filter(layer => layer !== draft.layer)
+  const saveTargets = others.filter(layer => canHold(setting, layer))
   const tools =
     others.length > 0
-      ? [<Button key="level" label={` ${LEVELS[draft.layer]!.short} ›`} plain onPress={() => act.go({ kind: 'levels' }, 'level', `level:${draft.layer}`)} />]
+      ? [<Button key="level" label={` ${levelInfo(draft.layer).short} ›`} plain onPress={() => act.go({ kind: 'levels' }, 'level', `level:${draft.layer}`)} />]
       : [
           <Box key="level">
-            <Text dimColor> {LEVELS[draft.layer]?.short ?? draft.layer}</Text>
+            <Text dimColor> {levelInfo(draft.layer).short}</Text>
           </Box>,
         ]
 
@@ -106,8 +107,8 @@ export function edit(ctx: Ctx): RenderElement {
     (choices || Input || setting.credential || isTree) && (
       <Box key="actions" marginTop={1}>
         <Button key="save" label="Save here" variant="primary" onPress={() => act.saveEdit()} />
-        {others.length > 0 && <Text> </Text>}
-        {others.length > 0 && <Button key="saveto" label="Save to…" onPress={() => act.go({ kind: 'saveto' }, 'saveto', `saveto:${others.at(-1)}`)} />}
+        {saveTargets.length > 0 && <Text> </Text>}
+        {saveTargets.length > 0 && <Button key="saveto" label="Save to…" onPress={() => act.go({ kind: 'saveto' }, 'saveto', `saveto:${saveTargets.at(-1)}`)} />}
       </Box>
     ),
     here !== undefined &&
@@ -134,7 +135,7 @@ export function edit(ctx: Ctx): RenderElement {
     ...overrides.map(layer =>
       row(ui, {
         key: `override:${layer}`,
-        label: `+ ${LEVELS[layer]!.offer}`,
+        label: `+ ${levelInfo(layer).offer}`,
         onPress: () => act.overrideAt(layer),
       }),
     ),

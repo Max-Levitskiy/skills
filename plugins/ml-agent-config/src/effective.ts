@@ -100,6 +100,7 @@ export function effectiveConfig(
       default: entry.default ?? null,
       schema: keySchema(entry),
       credential,
+      personal: entry.personal === true,
       group: group ? { when: group.when, action: group.action ?? DEFAULT_ONBOARD_ACTION, status } : null,
       required,
       value: value === undefined ? null : value,

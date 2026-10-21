@@ -5,7 +5,7 @@
 import type { Component, Edit, Json, Level, Panel, Screen, Setting, ValueSchema } from '../types'
 import { isObject } from './shapes'
 import { addKey, atKey, choicesAt, getAt, isStructuredKind, isTreeSetting, nodeAt, takesEntries, type At } from './tree'
-import { ORDER, levelLabel } from './ui/levels'
+import { levelLabel } from './ui/levels'
 import { SOURCES, choiceLabels, editText, isReference, rootChoices, valueAt, type Stored } from './values'
 import { enumOf, kindOf, same } from '../src/key-schema'
 
@@ -45,10 +45,10 @@ export function readDescribe(stdout: string, home: string | undefined, name: str
       (one): one is Omit<Setting, 'levels'> & { levels?: Setting['levels'] } =>
         isObject(one) && typeof one.path === 'string' && (one.levels === undefined || isObject(one.levels)),
     ),
-    // Only the four layers the pane knows: another name has no label, no order and no file to write.
+    // In describe's order, which is the merge order: global, any context's levels, then the repo's.
     layers: answer.layers.filter(
       (one): one is { layer: string; path: string | null; exists?: boolean } =>
-        isObject(one) && ORDER.includes(one.layer as string) && (one.path === null || typeof one.path === 'string'),
+        isObject(one) && typeof one.layer === 'string' && (one.path === null || typeof one.path === 'string'),
     ),
     repo: isObject(answer.repo) ? (answer.repo as { checkout: string | null }) : undefined,
     // A CLI before schemas sends none: every key is then typed by its value, as it was.
@@ -61,9 +61,10 @@ export function readDescribe(stdout: string, home: string | undefined, name: str
       : home && path.startsWith(`${home}/`)
         ? `~${path.slice(home.length)}`
         : path
+  const known = out.layers.map(one => one.layer)
   return {
     // Each field as the screens read it, whatever an out-of-sync CLI left out.
-    settings: out.keys.map(({ path, description, layer, default: fallback, value, source, credential, required, levels, schema }) => ({
+    settings: out.keys.map(({ path, description, layer, default: fallback, value, source, credential, personal, required, levels, schema }) => ({
       path,
       description: typeof description === 'string' ? description : '',
       layer: typeof layer === 'string' ? layer : null,
@@ -71,9 +72,10 @@ export function readDescribe(stdout: string, home: string | undefined, name: str
       value: value ?? null,
       source: typeof source === 'string' ? source : null,
       credential: credential === true,
+      personal: personal === true,
       required: required === true,
       schema: isObject(schema) ? (schema as ValueSchema) : null,
-      levels: Object.fromEntries(Object.entries(levels ?? {}).filter(([layer]) => ORDER.includes(layer))),
+      levels: Object.fromEntries(Object.entries(levels ?? {}).filter(([layer]) => known.includes(layer))),
     })),
     defs: out.defs,
     layers: out.layers.filter(one => one.path).map(one => ({ layer: one.layer, path: short(one.path!), exists: one.exists ?? false }) satisfies Level),
@@ -91,9 +93,9 @@ export function firstSetting(settings: readonly Setting[]): string {
  * level may hold only the fields it overrides: the levels up to this one are merged, and the
  * reference in effect stands in when they hold none.
  */
-export function referenceAt(setting: Setting, layer: string): Stored | undefined {
+export function referenceAt(setting: Setting, layer: string, layers: readonly string[]): Stored | undefined {
   let merged: Json | undefined
-  for (const one of ORDER.slice(0, ORDER.indexOf(layer) + 1)) {
+  for (const one of layers.slice(0, layers.indexOf(layer) + 1)) {
     const here = setting.levels[one]
     if (here === undefined) continue
     const isObject = (value: Json | undefined) => value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -107,9 +109,9 @@ export function referenceAt(setting: Setting, layer: string): Stored | undefined
  * The fields the levels under this one give a credential, merged key by key as the loader does, a
  * null dropping one. A reference saved here keeps any of them it does not set, unless it nulls them.
  */
-export function inheritedFields(setting: Setting, layer: string): string[] {
+export function inheritedFields(setting: Setting, layer: string, layers: readonly string[]): string[] {
   const fields = new Map<string, boolean>()
-  for (const one of ORDER.slice(0, ORDER.indexOf(layer))) {
+  for (const one of layers.slice(0, layers.indexOf(layer))) {
     const here = setting.levels[one]
     if (here === undefined) continue
     if (here === null || typeof here !== 'object' || Array.isArray(here)) {
@@ -132,10 +134,10 @@ function textOf(setting: Setting, from: Json, defs: Panel['defs']): string {
 }
 
 /** An edit at one level starts from what that level sets, else from the value in effect. */
-export function editAt(setting: Setting, layer: string, defs: Panel['defs']): Edit {
+export function editAt(setting: Setting, layer: string, layers: readonly string[], defs: Panel['defs']): Edit {
   const from = valueAt(setting, layer)
   // Only a credential holds a reference: a plain object with a `source` is a value like any other.
-  const reference = setting.credential ? referenceAt(setting, layer) : undefined
+  const reference = setting.credential ? referenceAt(setting, layer, layers) : undefined
   return {
     path: setting.path,
     layer,
@@ -154,8 +156,8 @@ export function editAt(setting: Setting, layer: string, defs: Panel['defs']): Ed
  * The edit pointed at another level. What was typed stays, so a value can be written wherever it
  * belongs; untouched, the edit shows what that level holds.
  */
-export function switchLevel(edit: Edit, setting: Setting, layer: string, defs: Panel['defs']): Edit {
-  return edit.isDirty ? { ...edit, layer } : editAt(setting, layer, defs)
+export function switchLevel(edit: Edit, setting: Setting, layer: string, layers: readonly string[], defs: Panel['defs']): Edit {
+  return edit.isDirty ? { ...edit, layer } : editAt(setting, layer, layers, defs)
 }
 
 /**

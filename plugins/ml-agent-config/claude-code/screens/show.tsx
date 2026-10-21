@@ -3,7 +3,7 @@
 import type { RenderElement } from 'claude-code'
 
 import { layerNames, selected } from '../panel'
-import { LEVELS, ORDER } from '../ui/levels'
+import { levelInfo } from '../ui/levels'
 import { row, screen } from '../ui/screen'
 import type { Ctx } from './context'
 
@@ -11,9 +11,10 @@ export function show({ now, ui, act }: Ctx): RenderElement {
   const layers = layerNames(now)
   const choices = [
     { value: 'effective', label: 'Effective', detail: 'the value in effect, and the level it comes from' },
-    ...ORDER.filter(layer => layers.includes(layer))
-      .reverse()
-      .map(layer => ({ value: layer, label: LEVELS[layer]!.label, detail: `what this level sets · ${LEVELS[layer]!.hint}` })),
+    ...[...layers].reverse().map(layer => {
+      const { label, hint } = levelInfo(layer)
+      return { value: layer, label, detail: `what this level sets · ${hint}` }
+    }),
   ]
   return screen(ui, { path: [selected(now)?.name ?? '', 'Show'], onBack: () => act.back() }, [
     ...choices.map(choice =>

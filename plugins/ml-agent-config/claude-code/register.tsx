@@ -20,7 +20,6 @@ import type { Component, Json, OnePassword, Panel, Screen, Setting, Unlock } fro
 import { HARNESS, OWN, blockedParent, firstLine, withValue, type Plan, type Reference } from './cli'
 import { PANE, editAt, editing, inheritedFields, referenceAt, firstEdit, firstKey, firstSetting, layerNames, readDescribe, savedAt, selected, switchLevel, top } from './panel'
 import { draw } from './screens'
-import { ORDER } from './ui/levels'
 import { emptyOf, has, kindOf } from '../src/key-schema'
 import { atKey, fold, getAt, isStructured, isTreeSetting, kindAt, mergedBelow, moveTexts, nameTaken, nodeAt, parseAs, pointer, renameAt, schemaAt, setAt, withRemovals, withoutPart } from './tree'
 import { readableReference } from './screens/onepassword'
@@ -472,7 +471,7 @@ async function openEdit($: EngineInterface, setting: Setting, canType: boolean):
   const now = await read($, panel)
   const layers = layerNames(now)
   const layer = layers.includes(now.show) ? now.show : targetLayer(setting, layers)
-  const edit = editAt(setting, layer, now.defs)
+  const edit = editAt(setting, layer, layers, now.defs)
   await update($, panel, latest => ({ ...latest, edit }))
   await go($, { kind: 'edit' }, `setting:${setting.path}`, firstEdit({ ...now, edit }, canType))
 }
@@ -480,7 +479,7 @@ async function openEdit($: EngineInterface, setting: Setting, canType: boolean):
 async function setLevel($: EngineInterface, layer: string): Promise<void> {
   const setting = editing(await read($, panel))
   if (!setting) return
-  await update($, panel, now => ({ ...now, message: null, edit: now.edit && switchLevel(now.edit, setting, layer, now.defs) }))
+  await update($, panel, now => ({ ...now, message: null, edit: now.edit && switchLevel(now.edit, setting, layer, layerNames(now), now.defs) }))
 }
 
 async function chooseSource($: EngineInterface, source: string): Promise<void> {
@@ -490,7 +489,7 @@ async function chooseSource($: EngineInterface, source: string): Promise<void> {
   // The source already picked: the fields typed so far stay.
   if (source === now.edit.source) return back($)
   // The source it had: its fields as stored. Another: empty fields.
-  const stored = editAt(setting, now.edit.layer, now.defs)
+  const stored = editAt(setting, now.edit.layer, layerNames(now), now.defs)
   const draft = stored.source === source ? stored.draft : {}
   await update($, panel, latest => ({ ...latest, edit: latest.edit && { ...latest.edit, source, draft, isDirty: true } }))
   await back($)
@@ -536,7 +535,8 @@ async function saveEdit($: EngineInterface, layer?: string, close = 1): Promise<
     // Nothing set reads as no value, which removes the key here, never as a null that blocks.
     const folded = fold(edit.value ?? undefined, edit.texts, setting.schema, now.defs, setting.path)
     if (folded.error) return refuse(folded.error)
-    const below = mergedBelow(ORDER.slice(0, ORDER.indexOf(at)).map(layer => setting.levels[layer]))
+    const layers = layerNames(now)
+    const below = mergedBelow(layers.slice(0, layers.indexOf(at)).map(layer => setting.levels[layer]))
     return saveHere($, withRemovals(folded.value, edit.like, below), at, closing)
   }
   if (!setting.credential) {
@@ -555,7 +555,7 @@ async function saveEdit($: EngineInterface, layer?: string, close = 1): Promise<
   const fields = SOURCES[edit.source]?.fields ?? []
   const missing = fields.filter(field => !edit.draft[field.name]?.trim())
   if (missing.length > 0) return refuse(`fill in ${missing.map(field => field.label).join(' and ')}`)
-  const before = referenceAt(setting, at)
+  const before = referenceAt(setting, at, layerNames(now))
   const base = before && before.source === edit.source ? before : { source: edit.source }
   const value: Stored = { ...base, source: edit.source }
   for (const field of fields) value[field.name] = edit.draft[field.name]!.trim()
@@ -566,7 +566,7 @@ async function saveEdit($: EngineInterface, layer?: string, close = 1): Promise<
   }
   // The loader merges a reference key by key, so a field a lower level gives it and this one does not
   // set would still apply: a cacheVar or account of another source. Null drops it.
-  for (const field of inheritedFields(setting, at)) if (value[field] === undefined) value[field] = null
+  for (const field of inheritedFields(setting, at, layerNames(now))) if (value[field] === undefined) value[field] = null
   return saveHere($, value, at, close)
 }
 

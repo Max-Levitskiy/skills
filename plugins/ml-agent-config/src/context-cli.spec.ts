@@ -141,6 +141,13 @@ describe("contexts through the CLI", () => {
     expect(d.keys.find((k: any) => k.path === "site").levels["context:acme:me"]).toBe("me");
   });
 
+  test("describe marks a key declared personal, so an editor offers it no team context level", () => {
+    const { run, repoDir } = sandbox();
+    const keys = run("describe", "demo", "--cwd", repoDir).json.keys;
+    expect(keys.find((k: any) => k.path === "email").personal).toBe(true);
+    expect(keys.find((k: any) => k.path === "site").personal).toBe(false);
+  });
+
   test("two unrelated matched contexts setting one key are reported", () => {
     const { run, putContextDef, putContext, repoDir } = sandbox();
     putContextDef("other", { match: [{ remote: "github.com/acme/**" }] }); putContext("other", "demo", { site: "x" });

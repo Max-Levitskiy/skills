@@ -1,24 +1,52 @@
-// The four config layers as a person reads them. The CLI's global, repo, user-repo and local, merged
-// in that order: a higher level overrides a lower one key by key, and the default sits under all.
+// The config layers as a person reads them, in the order `describe` lists them: global, any
+// context's team and me files, then repo, user-repo and local. A higher level overrides a lower one
+// key by key, and the default sits under all.
 
 import type { Json, Setting } from '../../types'
 import type { Names } from '../values'
 import type { Defs } from '../../src/key-schema'
 import { display } from '../tree'
 
-/** Each level's name, its chip, a hint, who a value there reaches, and how an override there is offered. */
-export const LEVELS: Record<string, { label: string; short: string; hint: string; audience: string; offer: string }> = {
+/** A level's name, its chip, a hint, who a value there reaches, and how an override there is offered. */
+export type LevelInfo = { label: string; short: string; hint: string; audience: string; offer: string }
+
+const FIXED: Record<string, LevelInfo> = {
   global: { label: 'Everywhere', short: 'Everywhere', hint: '~/.agents, every project', audience: 'in every project, for you', offer: 'Everywhere, in all my projects' },
   repo: { label: 'Project, shared', short: 'Project', hint: 'committed, the whole team', audience: 'for the whole team in this repo', offer: 'For the team in this repo' },
   'user-repo': { label: 'Project, just me', short: 'Me', hint: '~/.agents, this repo, only you', audience: 'for you in this repo', offer: 'Just for me in this repo' },
   local: { label: 'This checkout', short: 'Checkout', hint: 'gitignored, this folder only', audience: 'in this checkout only', offer: 'In this checkout only' },
 }
 
-export const ORDER = ['global', 'repo', 'user-repo', 'local']
+/** A context's team level: `context:<name>`, without the `:me` of its personal file. */
+function teamContext(layer: string): string | undefined {
+  return /^context:([^:]+)$/.exec(layer)?.[1]
+}
+
+export function levelInfo(layer: string): LevelInfo {
+  const fixed = FIXED[layer]
+  if (fixed) return fixed
+  const team = teamContext(layer)
+  if (team) {
+    return { label: `Project ${team}, shared`, short: team, hint: `~/.agents/contexts/${team}, synced to the team`, audience: `for the whole team in ${team}`, offer: `For the team in ${team}` }
+  }
+  const me = /^context:([^:]+):me$/.exec(layer)?.[1]
+  if (me) {
+    return { label: `Project ${me}, just me`, short: `${me} (me)`, hint: `~/.agents/contexts/${me}, only you`, audience: `for you in ${me}`, offer: `Just for me in ${me}` }
+  }
+  return { label: layer, short: layer, hint: '', audience: '', offer: layer }
+}
 
 export function levelLabel(layer: string | null): string {
   if (layer === 'default') return 'default'
-  return layer ? (LEVELS[layer]?.label ?? layer) : 'not set'
+  return layer ? levelInfo(layer).label : 'not set'
+}
+
+/**
+ * Whether a value of this setting may be written at this level. A context's team file is shared
+ * with everyone the context matches, so a credential or a key declared personal goes to its me file.
+ */
+export function canHold(setting: Setting, layer: string): boolean {
+  return !(teamContext(layer) && (setting.credential || setting.personal))
 }
 
 /** One level of one setting: what it sets, and whether that is the value in effect. */
@@ -26,20 +54,15 @@ export type LevelRow = { layer: string; label: string; hint: string; value: Json
 
 /** A setting across the levels this checkout has, top first, the one in effect marked. */
 export function levelStack(setting: Setting, layers: readonly string[]): LevelRow[] {
-  return ORDER.filter(layer => layers.includes(layer))
-    .reverse()
-    .map(layer => ({
-      layer,
-      label: LEVELS[layer]!.label,
-      hint: LEVELS[layer]!.hint,
-      value: setting.levels[layer],
-      isWinner: setting.source === layer,
-    }))
+  return [...layers].reverse().map(layer => {
+    const { label, hint } = levelInfo(layer)
+    return { layer, label, hint, value: setting.levels[layer], isWinner: setting.source === layer }
+  })
 }
 
 /** What shows through under a level: the next level down that sets the key, else the default. */
 export function under(setting: Setting, layer: string, layers: readonly string[]): { label: string; value: Json } | undefined {
-  const below = ORDER.slice(0, ORDER.indexOf(layer)).filter(one => layers.includes(one)).reverse()
+  const below = layers.slice(0, layers.indexOf(layer)).reverse()
   for (const one of below) {
     const value = setting.levels[one]
     if (value === undefined) continue
@@ -52,8 +75,10 @@ export function under(setting: Setting, layer: string, layers: readonly string[]
 
 /** The level above this one that sets the key, so what is saved here does not show. */
 export function over(setting: Setting, layer: string, layers: readonly string[]): string | undefined {
-  const above = ORDER.slice(ORDER.indexOf(layer) + 1).filter(one => layers.includes(one))
-  const top = above.reverse().find(one => setting.levels[one] !== undefined)
+  const top = layers
+    .slice(layers.indexOf(layer) + 1)
+    .reverse()
+    .find(one => setting.levels[one] !== undefined)
   return top && levelLabel(top)
 }
 
@@ -64,7 +89,7 @@ export function over(setting: Setting, layer: string, layers: readonly string[])
 export function effect(setting: Setting, layer: string, layers: readonly string[], names: Names, defs: Defs): string {
   const show = (value: Json) => display(setting, value, names, defs)
   const here = setting.levels[layer]
-  const audience = LEVELS[layer]?.audience ?? ''
+  const audience = levelInfo(layer).audience
   const above = over(setting, layer, layers)
   if (here === null) return `Blocks the levels under it ${audience}.`
   if (above) {
@@ -81,8 +106,8 @@ export function effect(setting: Setting, layer: string, layers: readonly string[
   return differs ? `Holds ${show(here)}, in effect ${audience}, over ${show(below.value)} from ${below.label}.` : ''
 }
 
-/** The levels above the one in effect that set nothing yet: where an override can be added. */
+/** The levels above the one in effect that set nothing yet and may hold it: where an override can be added. */
 export function openAbove(setting: Setting, layers: readonly string[]): string[] {
-  const from = setting.source && setting.source !== 'default' ? ORDER.indexOf(setting.source) : -1
-  return ORDER.filter((layer, index) => index > from && layers.includes(layer) && setting.levels[layer] === undefined)
+  const from = setting.source && setting.source !== 'default' ? layers.indexOf(setting.source) : -1
+  return layers.filter((layer, index) => index > from && setting.levels[layer] === undefined && canHold(setting, layer))
 }
