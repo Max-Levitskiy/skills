@@ -15,11 +15,12 @@ Read this when a `start` came back with `ready: false`.
             "registered": true, "alias": "skills" },
   "ready": false,
   "guide": "…/agent-config/docs/working-actions.md",
-  "config":     { "…merged over four layers, defaults applied, credential references verbatim…" },
+  "config":     { "…merged over every layer, defaults applied, credential references verbatim…" },
   "provenance": { "tracker.kind": "repo", "tracker.path": "default" },
   "actions":  [ { "id": "onboard", "path": "…/actions/onboard.md", "type": "prompt",
                   "command": null, "parallel": false, "requires": [],
                   "keys": ["credentials.apiKey", "workspace.subdomain"], "context": {} } ],
+  "contexts": [ { "name": "acme", "via": "remote", "entry": { "remote": "github.com/acme/**" } } ],
   "problems": [] }
 ```
 
@@ -35,6 +36,12 @@ Read this when a `start` came back with `ready: false`.
   separates it from `actions` — see [Problems](#problems).
 - **`repo.identity`** is `null` in a repository with no git origin and no minted id. The user-repo
   layer is unavailable there until the repository is registered.
+- **`contexts`** is the chain of contexts that apply here, outermost first, each with `via`: why it
+  is in the chain. `remote` and `path` carry the `entry` that matched; `parent` means a context
+  below it matched; `explicit` means `--context` named it. The last one is the innermost, where
+  onboarding writes. `load`, `describe` and `path` return the same field. Contexts are defined in
+  the standard, under *Contexts*; `agent-config context explain` prints the chain with the place it
+  was resolved for and the layer order it makes.
 
 Exit codes, for a script that cares: `0` a plan was produced (ready or not), `1` internal, `2` the
 declaration is missing or invalid or the name is ambiguous, `3` a credential is unresolvable
@@ -76,6 +83,27 @@ does, and what to do when it fails. Read it. `keys` carries the declared config 
 the action — five missing keys pointing at one onboarding action arrive as one action carrying all
 five, not five identical interviews. `context` carries whatever else that action's body needs: the
 dependency being installed, the layer being migrated, a marketplace URL.
+
+### Onboarding into a context
+
+A key whose declared `layer` is `context` belongs to whichever context applies here.
+
+- **A context applies.** The onboarding action for that key carries `context.layer`: the innermost
+  context's team layer, `context:<name>`, or its own layer, `context:<name>:me`, when any of the
+  action's keys is a credential or declared `personal`. Write the answers there with
+  `write --layer <that layer>`. Only an action whose keys all recommend `context` carries it; one
+  mixing layers leaves the choice to its body. `contexts` lists the outer contexts, which the user
+  may pick instead.
+- **None applies.** `agent-config:context-add` comes first, and every onboarding action waiting on
+  it `requires` it. Its `keys` are all the keys that wait, and its `context` is pre-filled from this
+  place: `suggestedName` (the remote's owner, or the folder's name), `remote` (the first remote
+  widened to its owner, `github.com/acme/**`; absent when there is no remote), `path` (the checkout
+  root, or the cwd outside git) and `alternative: "global"`. Its body says what to ask: create the
+  context with `agent-config context add`, or write the keys to global instead. Nothing is created
+  without the user's answer.
+
+Either way, re-run `start` afterwards. A created context matches from then on, so the onboarding
+action names its layer.
 
 ### When an action fails
 
@@ -122,6 +150,12 @@ A `problem` is reported, not worked. Each carries a `code` and a `message` writt
 | `legacy-config-path` | A pre-rename `.agents/skill-config/` file exists, and the same layer already has a `.agents/config/` file, which is the one read. The two are never merged: tell the user, and let them say which answers they meant. A v1 file whose layer has no v2 file is not a problem: `start` emits `agent-config:adopt` for it instead, ahead of onboarding. |
 | `dirty-checkout` | A registry write would land in a repository with uncommitted changes. |
 | `invalid-value` | A merged value breaks the JSON Schema its key declares (see [What a key holds](#what-a-key-holds)). It is said, not planned for: the component may still work, and only the person knows which value was meant. Show them the message, and fix it with `write` once they say what they meant. |
+| `untrusted-layer-key` | A file the user did not write here sets credential references: the repo layer, a context's team file, or a `config.local.json` git tracks. They were ignored; `path` names the file and `keys` the references. Tell the user, and set the credential in their global, user-repo, context `me` or untracked local layer. `adopt` reports it too, for the references it did not copy. |
+| `context-unparsable` | A `context.json`, `context.me.json` or `order.json` under `~/.agents/contexts/` cannot be read, or a directory there is not a valid context name. That context is left out; an unreadable `context.me.json` only loses its path filters. It becomes exit 2 only when a `parent`, `order.json`, `--context` or `write --layer` names the context. Show the user the file and the reason. |
+| `context-stray-path` | A context's team file holds a `path` filter, or its `context.me.json` a `remote` one. The filter is ignored. It belongs in the other file: a path is one machine's, and the team file is shared. |
+| `context-stray-dir` | A directory under `~/.agents/contexts/` has no `context.json`, so it is not a context. |
+| `sibling-contexts` | Two contexts that apply here, neither nested in the other, both set the key in `keys`. The one later in the chain wins. Ask the user whether one should be the other's `parent`, or the key should leave one of them. |
+| `cachevar-shared` | Two different credential references name the same `cacheVar` (`load` only). The variable is ignored for both, and each reference resolves from its source. Give each reference its own `cacheVar`. |
 
 ## Changing an answer that is already set
 
@@ -136,7 +170,8 @@ existing answer is a three-step protocol:
    the case where the answers are empty; editing is the same questionnaire, filled in. It also
    returns each user-side layer's `journal`: the previous contents of that file, newest first, so a
    bad edit can be put back.
-2. `agent-config write <name> --layer <layer>` — the whole layer as JSON on stdin. It **replaces**
+2. `agent-config write <name> --layer <layer>` — the whole layer as JSON on stdin, to `global`,
+   `context:<context>`, `context:<context>:me`, `repo`, `user-repo` or `local`. It **replaces**
    the layer, so read the current one first (`describe`, or `path --layer <layer>`) and write the
    merged whole. A partial write cannot express deleting a key. `write` stamps the schema version,
    saves the schema snapshot beside the file, gitignores the local layer, and journals the previous
@@ -164,6 +199,11 @@ agent-config load <name> --secrets credentials.apiKey 3>&1 1>/dev/null
   subagent must not open an interview" structural rather than a rule in prose: a subagent's whole
   surface is `load`, so it has nothing to work. Its failures are reports — exit 2 names the missing
   keys, exit 3 names the unresolvable reference and the fix, exit 4 names both schema versions.
+- `load` resolves the contexts for the directory it runs in, and returns them in `contexts`. A
+  skill that starts a subagent in another directory runs `start <name> --cwd <that directory>`
+  first, so the plan it works is for the contexts the subagent's `load` will resolve. Every
+  command that reads config takes `--cwd <dir>`, `--context <name>` (apply that context and its
+  parents too, as the innermost) and `--no-context` (apply no matched context).
 - On Claude Code the hooks module asks 1Password once per session. When a skill of a ready
   component expands, it runs one `load` for every `1password` reference, so the person approves
   once, and puts the secrets in `AGENT_CONFIG_SECRETS` on the harness process. Every later `load`

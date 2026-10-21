@@ -1,5 +1,7 @@
 # Agent Config Standard (ACS v2)
 
+Since 2.1: the [Contexts](#contexts) section and the [trust rule](#trust) for credential references. Component identifiers come in a later revision.
+
 How a skill or subagent stores per-user and per-project settings, and how it gets hold of secrets without ever committing one.
 
 Status: **active**. Applies to any skill, subagent, command, or hook in this marketplace that needs configuration. Canonical implementation: [`plugins/ml-agent-config`](../plugins/ml-agent-config) and its `agent-config` CLI. Every component declares its keys in an `agent-config.json` and reads its config through that CLI, as [`working-actions.md`](../plugins/ml-agent-config/docs/working-actions.md) describes: [`fellow`](../plugins/ml-workplace/skills/fellow) and [`atlassian`](../plugins/ml-workplace/skills/atlassian) (credential-backed), [`orchestrate`](../plugins/ml-subagents/skills/orchestrate) (a credential only for some trackers), [`herdr`](../plugins/ml-subagents/skills/herdr) (no credential at all — presets only), and [`grill-with-ui`](../plugins/ml-grilling/skills/grill-with-ui) (optional remote-mode settings).
@@ -14,22 +16,24 @@ None of that is specific to skills. A subagent calling the same API needs the sa
 
 ## Locations and precedence
 
-Four layers. Later layers override earlier ones.
+Four fixed layers, and two more for each [context](#contexts) that applies here. Later layers override earlier ones.
 
 | Layer | Path | Committed? | Holds |
 | --- | --- | --- | --- |
 | **global** | `~/.agents/config/<name>/config.json` | n/a (outside repo) | your defaults across every project |
+| **context** (`context:<context>`) | `~/.agents/contexts/<context>/<name>/config.json` | n/a (outside repo) | what everyone working for one organisation sets, in every repository of it: a site, issue prefixes |
+| **context me** (`context:<context>:me`) | `~/.agents/contexts/<context>/<name>/config.me.json` | n/a (outside repo) | your own answers in that context: your address, your credential references |
 | **repo** | `<repo>/.agents/config/<name>/config.json` | **yes** | settings the whole team shares |
 | **user-repo** | `~/.agents/config/<name>/user-repo/<repo identity>/config.json` | n/a (outside repo) | your settings for one repository, in every worktree of it |
 | **local** | `<repo>/.agents/config/<name>/config.local.json` | **no — gitignored** | per-checkout overrides, personal paths |
 
-`<repo>` is the git top level (`git rev-parse --show-toplevel`). The repo identity is the origin (`github.com/Owner/Name`), or an id minted by `agent-config repos register` for a repository with none. Outside a git repo, only the global layer applies — a component must still work in that case, since plenty of useful work happens in a scratch directory.
+`<repo>` is the git top level (`git rev-parse --show-toplevel`). The repo identity is the origin (`github.com/Owner/Name`), or an id minted by `agent-config repos register` for a repository with none. Outside a git repo the repo, user-repo and local layers do not exist: the global layer applies, with any context whose path filter matches. A component must still work with only the global layer, since plenty of useful work happens in a scratch directory.
 
 `<name>` names one tool — the skill name, or the name a skill and its subagent share. One namespace, deliberately: a skill and its subagent are the same tool wearing two hats, and they should read the same file. Forcing two configs would make the user answer the same questions twice and then keep both copies in sync by hand. Pick one name per tool and use it from every component that serves that tool. A plugin holding several tools uses several names (`ml-workplace` reads both `fellow` and `atlassian`), and a name never changes when its plugin is renamed or regrouped. Names are directory names, so different tools never collide.
 
 ### Merge semantics
 
-Deep merge, in order global → repo → user-repo → local:
+Deep merge, in layer order: `global → context (outermost first, nested inside) → repo → user-repo → local`; within one context the team file merges before `me`. Then:
 
 - Objects merge key by key.
 - Scalars and **arrays replace wholesale**. Arrays are configuration values, not accumulators; a user overriding `["a","b"]` with `["c"]` means `["c"]`, and any other rule makes it impossible to remove an inherited entry.
@@ -38,6 +42,126 @@ Deep merge, in order global → repo → user-repo → local:
 ### Why `.agents/` and not `.claude/`
 
 `.agents/` is tool-neutral. The same config should serve whatever agent runtime the user runs next year without a migration. It also keeps component config visibly separate from `.claude/`, which holds Claude Code's own machinery — mixing user data into a tool's config directory makes both harder to reason about.
+
+## Contexts
+
+*Since 2.1.*
+
+A context is a named group of places: every repository of one organisation, wherever it is cloned, and the folders that hold its work. What that organisation shares across its repositories (a tracker site, issue prefixes) is written once into its context, instead of once per repository or into repositories that belong to someone else. A context applies wherever one of its filters matches, and adds its two layers between `global` and `repo`.
+
+### The files
+
+Contexts are defined once, for every component, under `~/.agents/contexts/`:
+
+```
+~/.agents/contexts/order.json                         optional: the order of unrelated contexts
+~/.agents/contexts/<context>/context.json             the definition: id, parent, remote filters
+~/.agents/contexts/<context>/context.me.json          your path filters, for this machine only
+~/.agents/contexts/<context>/<name>/config.json       team values for component <name>
+~/.agents/contexts/<context>/<name>/config.me.json    your own values for <name>
+```
+
+The directory name is the context's name: one path segment, with no colon or backslash. The team file, `~/.agents/contexts/acme-web/context.json`:
+
+```json
+{ "schemaVersion": 1, "id": "ctx_9ab7bfbfa3da", "parent": "acme",
+  "match": [ { "remote": "github.com/acme/web-*" } ] }
+```
+
+and the me file beside it, `context.me.json`:
+
+```json
+{ "match": [ { "path": "~/git/acme/web/" } ] }
+```
+
+### Team files and me files
+
+A context is split in two because a remote is the same on every machine and a path is not: a colleague may keep the same organisation's work under `~/work/acme`.
+
+- `context.json` is the team file. It carries `schemaVersion`, an `id`, an optional `parent`, and `match` entries with `remote` only. A `path` entry in it is ignored and reported as `context-stray-path`, so a path from one machine never applies on another.
+- `context.me.json` is yours. Its `match` entries carry `path` only, and a `remote` entry in it is ignored and reported the same way.
+- A component's values split the same way. `<name>/config.json` holds what a colleague would also set. `<name>/config.me.json` holds what is yours: your address, your credential references, any key the declaration marks `personal: true`. `agent-config write` refuses a credential reference or a `personal` key in the team file. The `me` file merges after the team file.
+
+The team files are the ones to share with colleagues. The `me` files never are.
+
+### Matching
+
+A context matches when any entry in either of its files matches the current place: `match` entries are OR-ed.
+
+- A `remote` entry is tested against every configured remote URL of the checkout and of each enclosing git superproject, normalised to `host/path`: scheme, `git@`, user, port and `.git` stripped, host lower-cased, path case kept. Any remote counts, so a fork whose `upstream` points at the organisation is in its context.
+- A `path` entry is tested against the checkout root, the main worktree root and the cwd, each with `/` appended, in both symlinked and real form. A linked worktree kept elsewhere still matches through its main root, and a path match needs no git repository at all.
+
+The glob rules are git's:
+
+- `*` does not cross `/`, `**` does; `**/` is prepended unless the pattern starts with `~/`, `./` or `/`; a trailing `/` means `/**`; `~` expands; case-sensitive, `/i` suffix on the field name (`path/i`, `remote/i`) for insensitive.
+- The `**/` prefix, the trailing `/` and `~` apply to `path` patterns only. A `remote` pattern gets none of them, and must match the whole normalised remote.
+- `?` is one character other than `/`, and `[…]` is a character class, `[!…]` its negation.
+- A `./` pattern is kept literal. Every place is tested as an absolute path, so a `./` pattern never matches; start a path with `~/` or `/`, or with neither to match at any depth.
+
+So `gitlab.example.com/acme/*` matches `gitlab.example.com/acme/web` but not `gitlab.example.com/acme/platform/web`: an organisation with subgroups needs `gitlab.example.com/acme/**`. And `~/git/acme/` matches the directory `~/git/acme` itself and everything under it.
+
+### Order
+
+The layer order is `global → context (outermost first, nested inside) → repo → user-repo → local`; within one context the team file merges before `me`. The contexts in it, the chain, are ordered so:
+
+- `parent` names another context. A child applies after its parent, and inherits nothing except through that order. A child need not repeat its parent's filters: when it matches, its whole parent chain applies before it, even where the parents' own filters would not match.
+- Contexts with no parent come first in the order `order.json` lists them, a JSON array of context names; those it does not list follow alphabetically. With no `order.json`, all of them are alphabetical. Each is followed by its children in the chain, a parent always before its children, siblings alphabetically. A context applies once.
+- The **innermost** context is the last in the chain. Onboarding writes to it.
+- When two contexts in the chain, neither an ancestor of the other, both set a declared key, `start`, `load` and `describe` report `sibling-contexts`. The value still follows the order, but the shadowing is never silent. The expected case is a chain, not siblings.
+
+An **abstract** context has no usable filter in either file. It never matches on its own: it exists to be a `parent`, or to be named with `--context`.
+
+### On the command line
+
+Every command that reads config takes three flags:
+
+- `--cwd <dir>` resolves for that directory instead of the current one. A skill that starts a subagent elsewhere passes it, so it sees the chain the subagent's `load` will. A `--cwd` that is not a directory is refused.
+- `--context <name>` applies that context and its parent chain after the matched ones, matched or not, so it is the innermost and the write target. A context already in the chain keeps its place.
+- `--no-context` applies no matched context. It cannot be combined with `--context`.
+
+The contexts themselves have three commands:
+
+- `agent-config context list` — every context with its id, parent and filters, whether it applies here (`matched`), and the problems found in `~/.agents/contexts/`.
+- `agent-config context explain` — the place (the cwd, and the paths and remotes tested), the chain with why each context is in it (`via`: `remote` or `path` with the `entry` that matched, `parent`, or `explicit` for `--context`), and the layer order it makes.
+- `agent-config context add <name> [--parent <p>] [--remote <glob>]... [--path <glob>]...` — creates a context: a fresh `id`, the parent and the remote filters in `context.json`, the path filters in `context.me.json`. It is refused when the name is invalid or taken, or the parent is not a readable context.
+
+Values are written with `agent-config write <name> --layer context:<context>` for the team file and `--layer context:<context>:me` for yours. The context must exist.
+
+### When a definition is wrong
+
+- An unknown `parent`, a `parent` cycle, `order.json` naming an unknown context and `--context` naming none are config errors: every command that resolves the chain exits 2, naming it. Dropping it silently would change which file a key is written to.
+- An unparsable `context.json` leaves its context out and is reported as `context-unparsable`. It exits 2 only when something names that context: a `parent`, `order.json`, `--context` or `write --layer`. An unparsable `context.me.json` keeps its context without the path filters, and an unparsable `order.json` leaves the order alphabetical; both are reported the same way, as is a directory whose name is not a valid context name.
+- A directory under `~/.agents/contexts/` with no `context.json` is not a context, and is reported as `context-stray-dir`.
+- Every write goes to a temporary file that is then renamed into place, so a `load` running beside it never reads half a file.
+
+### Worked example
+
+Every repository of the `acme` organisation uses one tracker site. Its web repositories use their own issue prefix.
+
+```bash
+agent-config context add acme --remote 'github.com/acme/**' --path '~/git/acme/'
+agent-config context add acme-web --parent acme --remote 'github.com/acme/web-*'
+```
+
+`acme` now matches every repository under `github.com/acme/`, wherever it is cloned, and every folder under `~/git/acme/`, git or not. `acme-web` matches `web-app` and `web-site`, and brings `acme` with it. In a clone of `github.com/acme/web-app` at `~/git/acme/web-app`:
+
+```
+$ agent-config context explain
+{ "acs": 2,
+  "place": { "cwd": "/home/you/git/acme/web-app",
+             "paths": ["/home/you/git/acme/web-app/"],
+             "remotes": ["github.com/acme/web-app"] },
+  "chain": [ { "name": "acme", "via": "remote", "entry": { "remote": "github.com/acme/**" } },
+             { "name": "acme-web", "via": "remote", "entry": { "remote": "github.com/acme/web-*" } } ],
+  "layers": ["global", "context:acme", "context:acme:me", "context:acme-web", "context:acme-web:me",
+             "repo", "user-repo", "local"] }
+```
+
+A `tracker` component has `site` and `prefixes` written to `--layer context:acme`, a different `prefixes` to `--layer context:acme-web`, and the person's `email` to `--layer context:acme:me`. `agent-config load tracker` there takes the inner `prefixes`, and its provenance says where each value came from:
+
+```
+"provenance": { "site": "context:acme", "prefixes": "context:acme-web", "email": "context:acme:me" }
+```
 
 ## File format
 
@@ -111,6 +235,14 @@ One prompt for the session, none after it, and nothing downstream changes. It is
 
 Name it whatever a plain `env` source would use for the same secret. Then moving between the two is a `source` edit, not a rename, and the variable a user already exports for CI works as a cache here.
 
+Two different references can name one `cacheVar`: your own organisation's token in global, another's in a context, both `JIRA_TOKEN`. The variable may then hold either one's secret, so `load` ignores it for both, resolves the reference from its source, and reports `cachevar-shared` naming both.
+
+### Trust
+
+*Since 2.1.* A reference makes `load` run a command or read a variable or a file, so it is honoured only from a layer you wrote on this machine: `global`, `user-repo`, a context's `me` file, and `local` when it is your own. `local` is trusted only when its real path is inside the real checkout and `git ls-files --error-unmatch` exits 1, which is git saying it does not track the file. Any doubt makes it untrusted: a symlink between the checkout and the file, git missing or failing, any other exit. `repo` and a context's team file never carry an honoured credential reference. A tracked `config.local.json` arrived with the checkout, so it is untrusted like the repo layer.
+
+From an untrusted file the whole `credentials` subtree is dropped before the merge, and `start`, `load` and `describe` report `untrusted-layer-key` naming the file and the keys it set. `adopt` strips the credential references from a v1 local file that git tracks or cannot vouch for, and reports them the same way. A cloned repository, or a context file a colleague shared, can therefore never point a credential at a command of its own.
+
 ### Resolution rules
 
 - Resolve **lazily** — only when a call actually needs the secret. Listing config shouldn't shell out to a password manager and trigger a Touch ID prompt.
@@ -124,7 +256,7 @@ Config will be missing the first time, and that moment decides whether the tool 
 
 1. **Detect** missing or incomplete config before doing any work, and treat it as an expected state rather than an error. `agent-config start <name>` does this: `ready: false` with an action list is a plan, not a failure.
 2. **Ask**, don't assume. Walk the user through the questions that actually matter — where their credential lives, which account/workspace to use, what output to keep and where.
-3. **Offer the layer with a reason.** Most users don't know whether a setting belongs in global or repo. Recommend one and say why: identity and credentials usually global, project identity repo, personal paths local.
+3. **Offer the layer with a reason.** Most users don't know whether a setting belongs in global or repo. Recommend one and say why: identity and credentials usually global, what one organisation shares across its repositories its context, project identity repo, personal paths local.
 4. **Write the layer with `agent-config write`** and tell the user the exact path. Never with a file-writing tool: `write` refuses an inlined secret and a value the declared schema refuses, stamps the schema version, journals the previous contents, and gitignores the local layer. Doing that at write time is the only reliable moment; asking the user to remember is how secrets get committed.
 5. **Verify before declaring success** — the component's `verify` action resolves the credential and makes one real call. "Configured" should mean "working", not "file written".
 
@@ -138,7 +270,9 @@ A subagent reads config exactly as above — same paths, same merge, same refere
 
 **Treat credential failure as data.** A credential reference can require a human: Touch ID for the keychain, `op signin` for 1Password, an unlocked vault for a `command` source. A subagent cannot assume any of those prompts get answered, so it must not block on one indefinitely. On failure or timeout it returns the failing logical name, the source, and the fix as part of its result, and exits non-zero. A hang is the worst outcome available — the caller learns nothing and waits forever, whereas a reported failure lets the caller ask the human once and retry.
 
-`agent-config load` makes both structural: it never returns an action list, exits 2 naming the missing keys, and exits 3 naming the unresolvable reference and its fix. A subagent whose whole config surface is `load` has nothing to onboard with.
+`agent-config load` makes both structural: it never returns an action list, exits 2 naming the missing keys, and exits 3 naming the unresolvable reference and its fix. A subagent whose whole config surface is `load` has nothing to onboard with. Nor does it create a context: a key that recommends one, where none matches, is a missing key like any other.
+
+A skill that starts a subagent in another directory runs `agent-config start <name> --cwd <that directory>` first. It then works the plan for the contexts the subagent's `load` will resolve, not for its own.
 
 Both rules are testable the same way: run the subagent with no config file, and again with a deliberately broken credential reference. It must terminate promptly in both cases, naming what is missing, and must never emit a question.
 
@@ -166,7 +300,7 @@ Relative paths resolve from the repo root; `~` expands to home. Supporting both 
 
 There is no importable library. The `agent-config` CLI in [`plugins/ml-agent-config`](../plugins/ml-agent-config) is the only interface, which is what stops a credential resolver spreading by copy the way v1's vendored one did. A component:
 
-1. **Declares its keys** in `agent-config.json` — at the plugin root for a one-tool plugin, in `skills/<skill>/` for a plugin holding several. Each key has a description, a recommended layer, a default when it has one (a key with none is required), and JSON Schema for what it holds. Keys that only matter in some setups go in a `groups` entry with a `when` condition. The format is [`agent-config.schema.json`](../plugins/ml-agent-config/agent-config.schema.json).
+1. **Declares its keys** in `agent-config.json` — at the plugin root for a one-tool plugin, in `skills/<skill>/` for a plugin holding several. Each key has a description, a recommended layer, a default when it has one (a key with none is required), and JSON Schema for what it holds. A key's layer may be `context`, which recommends whichever context applies, and a key that is the person's own answer (an address) says `personal: true`, so a context's team file refuses it. Keys that only matter in some setups go in a `groups` entry with a `when` condition. The format is [`agent-config.schema.json`](../plugins/ml-agent-config/agent-config.schema.json).
 2. **Ships its actions** beside the declaration, in `actions/`: `onboard.md` (the questions, written for the agent) when any key is required, and `verify.md` (one real call).
 3. **Starts its skill with the five lines** from [`working-actions.md`](../plugins/ml-agent-config/docs/working-actions.md) — find the binary, `agent-config start <name>`, branch on `ready`.
 4. **Reads config in its scripts with `agent-config load <name> --from <skill dir>`**: config on stdout, requested secrets as one JSON object on fd 3, never on stdout, argv or disk. It writes with `agent-config write`, reading the layer first, since `write` replaces it.
@@ -186,7 +320,9 @@ The previous standard, Skill Config Standard v1, used `.agents/skill-config/<ski
 
 - [ ] Declares every key it reads in `agent-config.json`, with a description, layer, default where there is one, and JSON Schema for anything more than text
 - [ ] Reads config only through `agent-config load`, and writes only through `agent-config write`
-- [ ] Works with only the global layer (outside a git repo)
+- [ ] Works with only the global layer (outside a git repo, and where no context applies)
+- [ ] A credential reference is written only to a trusted layer
+- [ ] A `path` filter is never in the team file
 - [ ] A plugin's skill and subagent load the same `<name>`
 - [ ] No secret is ever written to a config file
 - [ ] Secrets arrive on fd 3 of `load`, and never reach argv, logs, stdout, or disk
