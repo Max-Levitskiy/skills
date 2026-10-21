@@ -1,15 +1,16 @@
 // Contexts: named groups of places, matched by git remote (the team file, `context.json`) or by
 // local path (the user's own file, `context.me.json`), and nestable through `parent`.
 //
-// This module reads the definitions under `~/.agents/contexts/`, matches them against a Place and
-// orders what matched into a chain, outermost first. Turning the chain into config layers is not
+// This module reads the definitions under `~/.agents/contexts/` and creates new ones, matches them
+// against a Place and orders what matched into a chain, outermost first. Turning the chain into config layers is not
 // done here.
 
 import { homedir } from "os";
 import { join } from "path";
 import { existsSync, readdirSync, readFileSync, statSync } from "fs";
+import { randomBytes } from "crypto";
 import { compileGlob } from "./glob";
-import { ConfigError, invalidContextName } from "./layers";
+import { ConfigError, invalidContextName, writeFileAtomic } from "./layers";
 import type { Place } from "./place";
 import type { Problem } from "./types";
 
@@ -191,6 +192,57 @@ function lookup(store: ContextStore, name: string, namedBy: string): ContextDef 
   const file = join(store.home, CONTEXTS_DIR, name, TEAM_FILE);
   const broken = store.problems.find((p) => p.code === "context-unparsable" && p.path === file);
   throw new ConfigError(`${namedBy}, which ${broken ? `is unusable: ${broken.message}` : "does not exist"}`);
+}
+
+export interface AddedContext {
+  dir: string;
+  id: string;
+  /** The `context.json` written. */
+  team: string;
+  /** The `context.me.json` written, or null when no path filter was given. */
+  me: string | null;
+}
+
+/**
+ * Create the context `name`: remote filters in the team file, with a fresh id and the parent, and
+ * path filters in the user's own file, written only when there are some. Refused when the name is
+ * not valid, the directory already exists, or `parent` is not a readable context.
+ */
+export function addContext(opts: {
+  name: string;
+  parent?: string;
+  remote?: string[];
+  path?: string[];
+  home?: string;
+}): AddedContext {
+  const home = opts.home ?? homedir();
+  const invalid = invalidContextName(opts.name);
+  if (invalid) throw new ConfigError(`"${opts.name}" is not a valid context name, because ${invalid}`);
+  const dir = join(home, CONTEXTS_DIR, opts.name);
+  if (existsSync(dir)) throw new ConfigError(`context "${opts.name}" already exists at ${dir}`);
+  if (opts.parent !== undefined) {
+    lookup(readContexts(home), opts.parent, `context "${opts.name}" names parent "${opts.parent}"`);
+  }
+
+  const id = `ctx_${randomBytes(6).toString("hex")}`;
+  const team = join(dir, TEAM_FILE);
+  const teamFile = {
+    schemaVersion: 1,
+    id,
+    ...(opts.parent !== undefined ? { parent: opts.parent } : {}),
+    match: (opts.remote ?? []).map((remote) => ({ remote })),
+  };
+  writeFileAtomic(team, `${JSON.stringify(teamFile, null, 2)}\n`);
+
+  const paths = opts.path ?? [];
+  const me = paths.length > 0 ? join(dir, ME_FILE) : null;
+  if (me) writeFileAtomic(me, `${JSON.stringify({ match: paths.map((path) => ({ path })) }, null, 2)}\n`);
+  return { dir, id, team, me };
+}
+
+/** Whether `ancestor` is on `name`'s parent line. Throws, as `resolveChain` does, on a broken line. */
+export function isAncestor(store: ContextStore, ancestor: string, name: string): boolean {
+  return lineage(store, name).slice(0, -1).some((def) => def.name === ancestor);
 }
 
 /** `name` and its ancestors, outermost first. Throws on an unknown parent or a cycle. */

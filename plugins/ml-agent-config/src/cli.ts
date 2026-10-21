@@ -9,7 +9,7 @@ import { join, resolve as absolute } from "path";
 import { detectHarness } from "./harness";
 import { repoContext, registerRepo, type RepoContext } from "./repo";
 import { placeOf, type Place } from "./place";
-import { readContexts, resolveChain, type ContextStore, type MatchedContext } from "./contexts";
+import { addContext, isAncestor, readContexts, resolveChain, type ContextStore, type MatchedContext } from "./contexts";
 import {
   ConfigError,
   LAYERS,
@@ -17,6 +17,7 @@ import {
   layerOrder,
   legacyFiles,
   adoptLegacy,
+  contextOf,
   loadLayers,
   parseLayer,
   readJournal,
@@ -28,7 +29,7 @@ import {
   type Layer,
   type LoadedLayers,
 } from "./layers";
-import { findDeclaration, listDeclarations, valueProblems, type FoundDeclaration } from "./declaration";
+import { declaredKeys, findDeclaration, listDeclarations, valueProblems, type FoundDeclaration } from "./declaration";
 import { effectiveConfig, unmetKeys, type Effective } from "./effective";
 import { buildPlan, guidePath } from "./actions";
 import { CredentialError, cacheVarValue, resolveCredential, type CredentialRef } from "./credentials";
@@ -92,6 +93,9 @@ const USAGE = `agent-config <command>
   context list                                    every context, and whether it applies here
   context explain                                 the place, the contexts that apply and why,
                                                   and the layers they make
+  context add <name> [--parent <p>] [--remote <glob>]... [--path <glob>]...
+                                                  create a context: remotes in its team file,
+                                                  paths in your own
 
 Where:  --cwd <dir>        the place to resolve for, instead of the current directory
         --context <name>   apply this context too (and its parents), matched or not
@@ -114,6 +118,9 @@ interface ParsedArgs {
   cwd?: string;
   context?: string;
   noContext: boolean;
+  parent?: string;
+  remotes: string[];
+  paths: string[];
   secrets: string[];
   requireReady: boolean;
   withReferences: boolean;
@@ -124,6 +131,8 @@ function parseArgs(argv: string[]): ParsedArgs {
     command: argv[0] ?? "",
     positionals: [],
     secrets: [],
+    remotes: [],
+    paths: [],
     requireReady: false,
     withReferences: false,
     noContext: false,
@@ -141,7 +150,7 @@ function parseArgs(argv: string[]): ParsedArgs {
     } else if (argument === "--no-context") {
       collecting = null;
       parsed.noContext = true;
-    } else if (["--from", "--layer", "--alias", "--account", "--vault", "--item", "--cwd", "--context"].includes(argument)) {
+    } else if (["--from", "--layer", "--alias", "--account", "--vault", "--item", "--cwd", "--context", "--parent", "--remote", "--path"].includes(argument)) {
       collecting = null;
       const value = argv[index + 1];
       if (!value || value.startsWith("--")) throw new ConfigError(`${argument} needs a value`);
@@ -154,6 +163,9 @@ function parseArgs(argv: string[]): ParsedArgs {
       if (argument === "--item") parsed.item = value;
       if (argument === "--cwd") parsed.cwd = value;
       if (argument === "--context") parsed.context = value;
+      if (argument === "--parent") parsed.parent = value;
+      if (argument === "--remote") parsed.remotes.push(value);
+      if (argument === "--path") parsed.paths.push(value);
     } else if (argument === "--secrets") {
       // Several keys in one call, so a script needing two secrets does not trigger two prompts.
       collecting = "secrets";
@@ -248,19 +260,52 @@ interface Resolved extends Located {
   found: FoundDeclaration;
   loaded: LoadedLayers;
   effective: Effective;
+  /** The store's problems, and every declared key two unrelated matched contexts both set. */
+  contextProblems: Problem[];
 }
 
 function resolve(name: string, parsed: ParsedArgs): Resolved {
   const located = locate(parsed);
   const found = findDeclaration(name, detectHarness(), parsed.from);
   const loaded = loadLayers(name, located.repo, located.chain);
-  return { ...located, found, loaded, effective: effectiveConfig(found.declaration, loaded) };
+  const contextProblems = [...located.store.problems, ...siblingProblems(name, found, loaded, located)];
+  return { ...located, found, loaded, effective: effectiveConfig(found.declaration, loaded), contextProblems };
+}
+
+/**
+ * A declared key set by two matched contexts where neither is nested in the other: the chain puts
+ * one after the other by `order.json` and name, so the winner is an accident of ordering, not of
+ * nesting. Reported once per pair and key; a context's team and me files count as its own.
+ */
+function siblingProblems(name: string, found: FoundDeclaration, loaded: LoadedLayers, located: Located): Problem[] {
+  const keys = declaredKeys(found.declaration).map((key) => key.path);
+  const setBy = located.chain.map((context) => {
+    const own = loaded.files
+      .filter((file) => file.exists && contextOf(file.layer)?.context === context.name)
+      .map((file) => readLayer(name, file.layer, located.repo) ?? {});
+    return { name: context.name, keys: new Set(keys.filter((key) => own.some((config) => ownValueAt(config, key) !== undefined))) };
+  });
+
+  const problems: Problem[] = [];
+  for (const [at, a] of setBy.entries()) {
+    for (const b of setBy.slice(at + 1)) {
+      if (isAncestor(located.store, a.name, b.name) || isAncestor(located.store, b.name, a.name)) continue;
+      for (const key of keys.filter((one) => a.keys.has(one) && b.keys.has(one))) {
+        problems.push({
+          code: "sibling-contexts",
+          keys: [key],
+          message: `contexts "${a.name}" and "${b.name}" both set ${key}; neither is nested in the other, so the one later in the order wins`,
+        });
+      }
+    }
+  }
+  return problems;
 }
 
 function start(parsed: ParsedArgs): number {
   const name = requireName(parsed);
   const harness = detectHarness();
-  const { found, repo, loaded, effective, store, chain } = resolve(name, parsed);
+  const { found, repo, loaded, effective, contextProblems, chain } = resolve(name, parsed);
   const plan = buildPlan({
     found,
     harness,
@@ -283,7 +328,7 @@ function start(parsed: ParsedArgs): number {
     provenance: effective.provenance,
     actions: plan.actions,
     contexts: chain,
-    problems: [...effective.problems, ...plan.problems, ...legacyProblems(name, repo), ...store.problems],
+    problems: [...effective.problems, ...plan.problems, ...legacyProblems(name, repo), ...contextProblems],
   };
   out(`${JSON.stringify(output, null, 2)}\n`);
 
@@ -303,8 +348,8 @@ function start(parsed: ParsedArgs): number {
  */
 function load(parsed: ParsedArgs): number {
   const name = requireName(parsed);
-  const { found, repo, loaded, effective, store, chain } = resolve(name, parsed);
-  const problems: Problem[] = [...effective.problems, ...legacyProblems(name, repo), ...store.problems];
+  const { found, repo, loaded, effective, contextProblems, chain } = resolve(name, parsed);
+  const problems: Problem[] = [...effective.problems, ...legacyProblems(name, repo), ...contextProblems];
 
   for (const file of loaded.files) {
     if (!file.exists || file.schemaVersion === null) continue;
@@ -417,6 +462,11 @@ function write(parsed: ParsedArgs): number {
   const layer = requireLayer(parsed.layer);
   const repo = repoContext(cwdOf(parsed));
   const found = findDeclaration(name, detectHarness(), parsed.from);
+  // A context layer is written only for a context that exists, so a typo cannot start a stray one.
+  const named = contextOf(layer)?.context;
+  if (named !== undefined && !readContexts().defs.has(named)) {
+    throw new ConfigError(`--layer ${layer} names context "${named}", which does not exist; create it with: agent-config context add ${named}`);
+  }
 
   const raw = readFileSync(0, "utf8").trim();
   if (!raw) throw new ConfigError("write expects the whole layer as JSON on stdin");
@@ -456,7 +506,7 @@ function write(parsed: ParsedArgs): number {
 function describe(parsed: ParsedArgs): number {
   const name = requireName(parsed);
   const harness = detectHarness();
-  const { found, repo, loaded, effective, store, chain } = resolve(name, parsed);
+  const { found, repo, loaded, effective, contextProblems, chain } = resolve(name, parsed);
   const own = loaded.files
     .filter((file) => file.exists)
     .map((file) => ({ layer: file.layer, config: readLayer(name, file.layer, repo) ?? {} }));
@@ -471,7 +521,7 @@ function describe(parsed: ParsedArgs): number {
     defs: found.declaration.schema?.$defs ?? {},
     layers: loaded.files.map((file) => ({ ...file, journal: readJournal(name, file.layer, repo) })),
     contexts: chain,
-    problems: [...effective.problems, ...legacyProblems(name, repo), ...store.problems],
+    problems: [...effective.problems, ...legacyProblems(name, repo), ...contextProblems],
   };
   out(`${JSON.stringify(output, null, 2)}\n`);
   return EXIT.ok;
@@ -514,11 +564,22 @@ function path(parsed: ParsedArgs): number {
   return EXIT.ok;
 }
 
-const CONTEXT_USAGE = `context list | explain [--cwd <dir>] [--context <name>] [--no-context]`;
+const CONTEXT_USAGE =
+  `context list | explain [--cwd <dir>] [--context <name>] [--no-context] | add <name> [--parent <p>] [--remote <glob>]... [--path <glob>]...`;
 
-/** `list`: every context and whether it applies here. `explain`: the place, the chain and its layers. */
+/**
+ * `list`: every context and whether it applies here. `explain`: the place, the chain and its layers.
+ * `add`: create a context.
+ */
 function context(parsed: ParsedArgs): number {
   const subcommand = parsed.positionals[0];
+  if (subcommand === "add") {
+    const name = parsed.positionals[1];
+    if (!name) throw new ConfigError(`context add needs a context name: ${CONTEXT_USAGE}`);
+    const { id, dir, team, me } = addContext({ name, parent: parsed.parent, remote: parsed.remotes, path: parsed.paths });
+    out(`${JSON.stringify({ acs: ACS_VERSION, name, id, dir, team, me }, null, 2)}\n`);
+    return EXIT.ok;
+  }
   if (subcommand !== "list" && subcommand !== "explain") {
     throw new ConfigError(`Unknown context subcommand ${JSON.stringify(subcommand ?? "")}: ${CONTEXT_USAGE}\n\n${USAGE}`);
   }

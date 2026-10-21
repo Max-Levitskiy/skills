@@ -47,7 +47,7 @@ export function invalidContextName(name: string): string | null {
  * The context a context layer names, and whether it is the `me` layer. Null for a fixed layer; a
  * malformed `context:` layer is a ConfigError, so it can never pass for a fixed layer.
  */
-function contextOf(layer: string): { context: string; me: boolean } | null {
+export function contextOf(layer: string): { context: string; me: boolean } | null {
   if (!layer.startsWith(CONTEXT_PREFIX)) return null;
   const rest = layer.slice(CONTEXT_PREFIX.length);
   const me = rest.endsWith(ME_SUFFIX);

@@ -1,9 +1,10 @@
 // Contexts through the CLI: the chain resolved for a place, merged between global and repo,
-// overridden with --context / --no-context, and explained by `context explain`.
+// overridden with --context / --no-context, explained by `context explain`, created by
+// `context add`, written with `write --layer context:…`, and unrelated ones setting one key reported.
 
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "child_process";
-import { mkdirSync, mkdtempSync, writeFileSync } from "fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 
@@ -44,14 +45,18 @@ function sandbox() {
   spawnSync("git", ["remote", "add", "origin", "https://github.com/acme/web-app"], { cwd: repoDir });
   putContextDef("acme", { match: [{ remote: "github.com/acme/**" }] });
 
-  const run = (...args: string[]) => {
+  const spawn = (args: string[], stdin?: string) => {
     const result = Bun.spawnSync([BIN, ...args, "--from", component], {
       env: { ...process.env, HOME: home, CLAUDE_CONFIG_DIR: join(home, ".claude"), CLAUDECODE: "1" },
       cwd: home,
+      stdin: stdin === undefined ? undefined : Buffer.from(stdin),
     });
     return { code: result.exitCode, json: JSON.parse(result.stdout.toString() || "null"), stderr: result.stderr.toString() };
   };
-  return { run, put, putContextDef, putContext, repoDir, home };
+  const run = (...args: string[]) => spawn(args);
+  /** `run`, with the last argument fed to the CLI on stdin. */
+  const runWithStdin = (...args: string[]) => spawn(args.slice(0, -1), args[args.length - 1]);
+  return { run, runWithStdin, put, putContextDef, putContext, repoDir, home };
 }
 
 describe("contexts through the CLI", () => {
@@ -92,5 +97,39 @@ describe("contexts through the CLI", () => {
     const r = run("load", "demo", "--cwd", join(home, "does", "not", "exist"));
     expect(r.code).toBe(2);
     expect(r.stderr).toContain("is not a directory");
+  });
+
+  test("context add writes remote to the team file and path to the me file, minting an id", () => {
+    const { run, home } = sandbox();
+    const r = run("context", "add", "beta", "--remote", "github.com/beta/**", "--path", "~/git/beta/");
+    expect(r.code).toBe(0);
+    const team = JSON.parse(readFileSync(join(home, ".agents/contexts/beta/context.json"), "utf8"));
+    const me = JSON.parse(readFileSync(join(home, ".agents/contexts/beta/context.me.json"), "utf8"));
+    expect(team.match).toEqual([{ remote: "github.com/beta/**" }]);
+    expect(team.id).toMatch(/^ctx_[0-9a-f]{12}$/);
+    expect(me.match).toEqual([{ path: "~/git/beta/" }]);
+  });
+
+  test("write --layer context:acme:me lands in the me file and shows in describe levels", () => {
+    const { run, runWithStdin, repoDir } = sandbox();
+    const r = runWithStdin("write", "demo", "--layer", "context:acme:me", JSON.stringify({ site: "me" }));
+    expect(r.code).toBe(0);
+    const d = run("describe", "demo", "--cwd", repoDir).json;
+    expect(d.keys.find((k: any) => k.path === "site").levels["context:acme:me"]).toBe("me");
+  });
+
+  test("two unrelated matched contexts setting one key are reported", () => {
+    const { run, putContextDef, putContext, repoDir } = sandbox();
+    putContextDef("other", { match: [{ remote: "github.com/acme/**" }] }); putContext("other", "demo", { site: "x" });
+    putContext("acme", "demo", { site: "me" }, "me");
+    const r = run("load", "demo", "--cwd", repoDir);
+    expect(r.json.problems.map((p: any) => p.code)).toContain("sibling-contexts");
+  });
+
+  test("write --layer naming a context that does not exist exits 2", () => {
+    const { runWithStdin } = sandbox();
+    const r = runWithStdin("write", "demo", "--layer", "context:nope", JSON.stringify({ site: "x" }));
+    expect(r.code).toBe(2);
+    expect(r.stderr).toContain('"nope"');
   });
 });
