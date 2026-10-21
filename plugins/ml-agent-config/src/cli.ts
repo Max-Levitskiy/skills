@@ -18,6 +18,7 @@ import {
   legacyFiles,
   adoptLegacy,
   contextOf,
+  honoured,
   loadLayers,
   parseLayer,
   readJournal,
@@ -260,16 +261,37 @@ interface Resolved extends Located {
   found: FoundDeclaration;
   loaded: LoadedLayers;
   effective: Effective;
-  /** The store's problems, and every declared key two unrelated matched contexts both set. */
-  contextProblems: Problem[];
+  /**
+   * The store's problems, every declared key two unrelated matched contexts both set, and every
+   * untrusted file whose credential references were ignored.
+   */
+  layerProblems: Problem[];
 }
 
 function resolve(name: string, parsed: ParsedArgs): Resolved {
   const located = locate(parsed);
   const found = findDeclaration(name, detectHarness(), parsed.from);
   const loaded = loadLayers(name, located.repo, located.chain);
-  const contextProblems = [...located.store.problems, ...siblingProblems(name, found, loaded, located)];
-  return { ...located, found, loaded, effective: effectiveConfig(found.declaration, loaded), contextProblems };
+  const layerProblems = [
+    ...located.store.problems,
+    ...siblingProblems(name, found, loaded, located),
+    ...untrustedProblems(loaded),
+  ];
+  return { ...located, found, loaded, effective: effectiveConfig(found.declaration, loaded), layerProblems };
+}
+
+/** One problem per untrusted file whose credential references the merge dropped. */
+function untrustedProblems(loaded: LoadedLayers): Problem[] {
+  return loaded.untrusted.map(({ layer, path, keys }) => ({
+    code: "untrusted-layer-key" as const,
+    layer,
+    path,
+    keys,
+    message:
+      `${path} sets ${keys.join(", ")}, and these credential references were ignored: the ${layer} layer is ` +
+      `not a file you wrote here, and a reference in it could run someone else's command. Set the credential ` +
+      `in your global, user-repo, context me or untracked local layer instead.`,
+  }));
 }
 
 /**
@@ -305,7 +327,7 @@ function siblingProblems(name: string, found: FoundDeclaration, loaded: LoadedLa
 function start(parsed: ParsedArgs): number {
   const name = requireName(parsed);
   const harness = detectHarness();
-  const { found, repo, loaded, effective, contextProblems, chain } = resolve(name, parsed);
+  const { found, repo, loaded, effective, layerProblems, chain } = resolve(name, parsed);
   const plan = buildPlan({
     found,
     harness,
@@ -328,7 +350,7 @@ function start(parsed: ParsedArgs): number {
     provenance: effective.provenance,
     actions: plan.actions,
     contexts: chain,
-    problems: [...effective.problems, ...plan.problems, ...legacyProblems(name, repo), ...contextProblems],
+    problems: [...effective.problems, ...plan.problems, ...legacyProblems(name, repo), ...layerProblems],
   };
   out(`${JSON.stringify(output, null, 2)}\n`);
 
@@ -341,6 +363,42 @@ function start(parsed: ParsedArgs): number {
 }
 
 /**
+ * Every `cacheVar` two different references claim among the trusted layers' own files. Whichever
+ * reference wins the merge, the variable may have been seeded from the other one, so a value in it
+ * cannot be taken as this reference's. One problem per variable, naming the first two claimants.
+ */
+function sharedCacheVars(name: string, loaded: LoadedLayers, repo: RepoContext): { vars: Set<string>; problems: Problem[] } {
+  const claims = new Map<string, { layer: Layer; key: string; reference: string }[]>();
+  for (const file of loaded.files.filter((one) => one.exists && one.trusted)) {
+    const credentials = readLayer(name, file.layer, repo)?.credentials;
+    if (typeof credentials !== "object" || credentials === null || Array.isArray(credentials)) continue;
+    for (const [key, value] of Object.entries(credentials)) {
+      const reference = value as unknown as CredentialRef | null;
+      if (typeof reference?.cacheVar !== "string" || !reference.cacheVar) continue;
+      const claim = { layer: file.layer, key: `credentials.${key}`, reference: cacheKey(reference) };
+      claims.set(reference.cacheVar, [...(claims.get(reference.cacheVar) ?? []), claim]);
+    }
+  }
+
+  const vars = new Set<string>();
+  const problems: Problem[] = [];
+  for (const [variable, [first, ...rest]] of claims) {
+    const other = rest.find((claim) => claim.reference !== first.reference);
+    if (!other) continue;
+    vars.add(variable);
+    problems.push({
+      code: "cachevar-shared",
+      keys: [...new Set([first.key, other.key])],
+      message:
+        `${first.key} in the ${first.layer} layer and ${other.key} in the ${other.layer} layer are different ` +
+        `references that both name cacheVar ${variable}, so its value could belong to either. It is skipped, and ` +
+        `the reference's source answers; give each reference a cacheVar of its own.`,
+    });
+  }
+  return { vars, problems };
+}
+
+/**
  * `load` is the consumer script's surface, and the mirror image of `start`: not-ready is a normal
  * answer there and a refusal here, because a script must not run on half-configured settings.
  * It never returns an action list, which is what makes "a subagent cannot onboard" structural
@@ -348,8 +406,14 @@ function start(parsed: ParsedArgs): number {
  */
 function load(parsed: ParsedArgs): number {
   const name = requireName(parsed);
-  const { found, repo, loaded, effective, contextProblems, chain } = resolve(name, parsed);
-  const problems: Problem[] = [...effective.problems, ...legacyProblems(name, repo), ...contextProblems];
+  const { found, repo, loaded, effective, layerProblems, chain } = resolve(name, parsed);
+  const sharedVars = sharedCacheVars(name, loaded, repo);
+  const problems: Problem[] = [
+    ...effective.problems,
+    ...legacyProblems(name, repo),
+    ...layerProblems,
+    ...sharedVars.problems,
+  ];
 
   for (const file of loaded.files) {
     if (!file.exists || file.schemaVersion === null) continue;
@@ -409,7 +473,12 @@ function load(parsed: ParsedArgs): number {
       report(`credentials.${logical} is not configured, so it cannot be resolved.\n`);
       return EXIT.config;
     }
-    const credential = entry as unknown as CredentialRef;
+    let credential = entry as unknown as CredentialRef;
+    if (credential.cacheVar && sharedVars.vars.has(credential.cacheVar)) {
+      const { cacheVar, ...rest } = credential;
+      void cacheVar;
+      credential = rest;
+    }
     references[key] = cacheVarValue(credential) ? null : cacheKey(credential);
     secrets[key] = resolveCredential(credential, logical, repo.checkout);
   }
@@ -506,10 +575,12 @@ function write(parsed: ParsedArgs): number {
 function describe(parsed: ParsedArgs): number {
   const name = requireName(parsed);
   const harness = detectHarness();
-  const { found, repo, loaded, effective, contextProblems, chain } = resolve(name, parsed);
+  const { found, repo, loaded, effective, layerProblems, chain } = resolve(name, parsed);
+  // An untrusted file's credentials are left out here too, so no level or source names a reference
+  // the merge ignored.
   const own = loaded.files
     .filter((file) => file.exists)
-    .map((file) => ({ layer: file.layer, config: readLayer(name, file.layer, repo) ?? {} }));
+    .map((file) => ({ layer: file.layer, config: honoured(readLayer(name, file.layer, repo) ?? {}, file) }));
 
   const output: DescribeOutput = {
     acs: ACS_VERSION,
@@ -521,7 +592,7 @@ function describe(parsed: ParsedArgs): number {
     defs: found.declaration.schema?.$defs ?? {},
     layers: loaded.files.map((file) => ({ ...file, journal: readJournal(name, file.layer, repo) })),
     contexts: chain,
-    problems: [...effective.problems, ...legacyProblems(name, repo), ...contextProblems],
+    problems: [...effective.problems, ...legacyProblems(name, repo), ...layerProblems],
   };
   out(`${JSON.stringify(output, null, 2)}\n`);
   return EXIT.ok;

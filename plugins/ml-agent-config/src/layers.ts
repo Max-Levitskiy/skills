@@ -12,12 +12,16 @@
 // Contexts add two layers per matched context between `global` and `repo`: the team file, then the
 // user's own `me` file, outermost context first. They live user-side under `~/.agents/contexts/`,
 // so they need no repository and nothing to gitignore.
+//
+// Contexts also bring the first file synced from other people, and the repo layer always was one.
+// A credential reference runs a command or reads a variable on `load`, so it is honoured only from
+// a layer the user wrote here; an untrusted file's `credentials` subtree is stripped before the merge.
 
 import { homedir } from "os";
 import { join } from "path";
 import { spawnSync } from "child_process";
 import { appendFileSync, existsSync, readFileSync, rmSync } from "fs";
-import { CONFIG_DIR, writeFileAtomic, type RepoContext } from "./repo";
+import { CONFIG_DIR, git, writeFileAtomic, type RepoContext } from "./repo";
 import { merge, type ConfigValue } from "./key-schema";
 import type { MatchedContext } from "./contexts";
 
@@ -95,6 +99,8 @@ export interface LayerFile {
   exists: boolean;
   /** The stamp inside the file, or null when the file is absent or carries none. */
   schemaVersion: number | null;
+  /** Whether its credential references are honoured: true only for a file the user wrote here. */
+  trusted: boolean;
 }
 
 function isPlainObject(value: ConfigValue | undefined): value is ConfigObject {
@@ -200,13 +206,31 @@ export interface LoadedLayers {
   /** Leaf dot-path -> the layer that last set it. Defaults are added later, as `default`. */
   provenance: Record<string, Layer>;
   files: LayerFile[];
+  /** Each untrusted file whose credential references were stripped, and the leaf paths stripped. */
+  untrusted: { layer: Layer; path: string; keys: string[] }[];
+}
+
+/**
+ * Whether a layer's credential references are honoured. The repo layer and a context's team file
+ * come from other people. `config.local.json` is the user's own only while git does not track it:
+ * a tracked one arrived with the checkout, like the repo layer.
+ */
+function isTrusted(layer: Layer, path: string | null, exists: boolean, checkout: string | null): boolean {
+  const context = contextOf(layer);
+  if (context) return context.me;
+  if (layer === "repo") return false;
+  if (layer !== "local" || !path || !exists || !checkout) return true;
+  if (git(["ls-files", "--error-unmatch", path], checkout) === null) return true;
+  return spawnSync("git", ["check-ignore", "-q", path], { cwd: checkout }).status === 0;
 }
 
 /** One entry per layer of `layerOrder(chain)`, in merge order. */
 export function layerFiles(name: string, repo: RepoContext, chain: MatchedContext[]): LayerFile[] {
   return layerOrder(chain).map((layer) => {
     const path = layerPath(name, layer, repo);
-    if (!path) return { layer, path: null, snapshot: null, exists: false, schemaVersion: null };
+    if (!path) {
+      return { layer, path: null, snapshot: null, exists: false, schemaVersion: null, trusted: isTrusted(layer, null, false, null) };
+    }
     const parsed = readConfigFile(path);
     const stamp = parsed?.[SCHEMA_VERSION_KEY];
     return {
@@ -215,8 +239,17 @@ export function layerFiles(name: string, repo: RepoContext, chain: MatchedContex
       snapshot: snapshotPath(path),
       exists: parsed !== null,
       schemaVersion: typeof stamp === "number" ? stamp : null,
+      trusted: isTrusted(layer, path, parsed !== null, repo.checkout),
     };
   });
+}
+
+/** A layer's contents as the merge takes them: an untrusted file without its `credentials` subtree. */
+export function honoured(config: ConfigObject, file: LayerFile): ConfigObject {
+  if (file.trusted || !isPlainObject(config) || !("credentials" in config)) return config;
+  const { credentials, ...rest } = config;
+  void credentials;
+  return rest;
 }
 
 /** Merge the layers in `layerOrder(chain)`, recording which layer each surviving leaf came from. */
@@ -224,11 +257,18 @@ export function loadLayers(name: string, repo: RepoContext, chain: MatchedContex
   let config: ConfigObject = {};
   const provenance: Record<string, Layer> = {};
   const files = layerFiles(name, repo, chain);
+  const untrusted: LoadedLayers["untrusted"] = [];
 
   for (const file of files) {
     if (!file.path || !file.exists) continue;
-    const parsed = readConfigFile(file.path);
-    if (!parsed) continue;
+    const raw = readConfigFile(file.path);
+    if (!raw) continue;
+    const parsed = honoured(raw, file);
+    if (parsed !== raw) {
+      const keys: string[] = [];
+      leafPaths(raw.credentials, "credentials", keys);
+      untrusted.push({ layer: file.layer, path: file.path, keys });
+    }
     const touched: string[] = [];
     leafPaths(parsed, "", touched);
     for (const path of touched) provenance[path] = file.layer;
@@ -239,7 +279,7 @@ export function loadLayers(name: string, repo: RepoContext, chain: MatchedContex
   for (const path of Object.keys(provenance)) {
     if (valueAt(config, path) === undefined) delete provenance[path];
   }
-  return { config, provenance, files };
+  return { config, provenance, files, untrusted };
 }
 
 /** One layer's own contents, unmerged — what an authored opt-out must be read from (D1). */
