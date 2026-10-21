@@ -123,6 +123,8 @@ export type Panel = {
   defs: Record<string, ValueSchema>
   /** The levels a value can be written to here, lowest first; the project levels need a repository. */
   layers: Level[]
+  /** The contexts that apply here, outermost first, and why each does. */
+  contexts: { name: string; via: 'remote' | 'path' | 'parent' | 'explicit' }[]
   /** What the settings screen shows: the merged value, or one level's own. */
   show: string
   edit: Edit | null

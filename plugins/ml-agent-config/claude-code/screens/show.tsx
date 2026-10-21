@@ -13,7 +13,7 @@ export function show({ now, ui, act }: Ctx): RenderElement {
     { value: 'effective', label: 'Effective', detail: 'the value in effect, and the level it comes from' },
     ...[...layers].reverse().map(layer => {
       const { label, hint } = levelInfo(layer)
-      return { value: layer, label, detail: `what this level sets · ${hint}` }
+      return { value: layer, label, detail: ['what this level sets', hint].filter(Boolean).join(' · ') }
     }),
   ]
   return screen(ui, { path: [selected(now)?.name ?? '', 'Show'], onBack: () => act.back() }, [

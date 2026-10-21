@@ -5,7 +5,7 @@
 import type { Component, Edit, Json, Level, Panel, Screen, Setting, ValueSchema } from '../types'
 import { isObject } from './shapes'
 import { addKey, atKey, choicesAt, getAt, isStructuredKind, isTreeSetting, nodeAt, takesEntries, type At } from './tree'
-import { levelLabel } from './ui/levels'
+import { canHold, levelLabel } from './ui/levels'
 import { SOURCES, choiceLabels, editText, isReference, rootChoices, valueAt, type Stored } from './values'
 import { enumOf, kindOf, same } from '../src/key-schema'
 
@@ -34,7 +34,7 @@ export function fileOf(now: Panel, layer: string): string {
 }
 
 /** `describe` as the screens read it: paths shortened to ~ and to the repository's root. */
-export function readDescribe(stdout: string, home: string | undefined, name: string): Pick<Panel, 'settings' | 'layers' | 'defs'> {
+export function readDescribe(stdout: string, home: string | undefined, name: string): Pick<Panel, 'settings' | 'layers' | 'contexts' | 'defs'> {
   const answer: unknown = JSON.parse(stdout)
   // An answer in another shape is no answer: the pane says describe failed, and stays usable.
   if (!isObject(answer) || !Array.isArray(answer.keys) || !Array.isArray(answer.layers)) throw new Error('it answered in another shape')
@@ -79,7 +79,18 @@ export function readDescribe(stdout: string, home: string | undefined, name: str
     })),
     defs: out.defs,
     layers: out.layers.filter(one => one.path).map(one => ({ layer: one.layer, path: short(one.path!), exists: one.exists ?? false }) satisfies Level),
+    contexts: readContexts(answer.contexts),
   }
+}
+
+const VIAS: readonly string[] = ['remote', 'path', 'parent', 'explicit']
+
+/** The contexts describe says apply here, outermost first; a CLI before contexts sends none. */
+function readContexts(contexts: unknown): Panel['contexts'] {
+  if (!Array.isArray(contexts)) return []
+  return contexts
+    .filter((one): one is Panel['contexts'][number] => isObject(one) && typeof one.name === 'string' && typeof one.via === 'string' && VIAS.includes(one.via))
+    .map(({ name, via }) => ({ name, via }))
 }
 
 /** The settings screen's first row, where the focus starts. */
@@ -196,10 +207,11 @@ export function firstEdit(now: Panel, canType: boolean): string | undefined {
   const edit = now.edit
   if (!setting || !edit) return undefined
   if (isTreeSetting(setting, now.defs)) return firstKey(now, [], canType)
-  const levels = now.layers.length
+  // The level button is pressable only when another level can hold the key.
+  const canPickLevel = now.layers.some(one => one.layer !== edit.layer && canHold(setting, one.layer))
   const choices = setting.credential ? null : rootChoices(setting, now.defs, edit.like)
   if (choices) return `value:${choices.includes(edit.text) ? edit.text : choices[0]}`
-  if (!canType) return levels > 1 ? 'level' : 'save'
+  if (!canType) return canPickLevel ? 'level' : 'save'
   if (!setting.credential) return 'value'
   if (edit.source === '1password') return 'pick'
   return `field:${SOURCES[edit.source]!.fields[0]!.name}`

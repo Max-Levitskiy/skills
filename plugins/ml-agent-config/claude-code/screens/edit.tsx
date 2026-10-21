@@ -34,12 +34,12 @@ export function edit(ctx: Ctx): RenderElement {
   const isText = setting.schema !== null && kindOf(setting.schema, now.defs) === 'string'
 
   const said = effect(setting, draft.layer, layers, now.names, now.defs)
-  // The level sits on the title line, at the right; a press opens the level list. With one level
-  // there is nothing to pick, so it is only named.
+  // The level sits on the title line, at the right; a press opens the level list. With no other
+  // level that can hold the key there is nothing to pick, so it is only named.
   const others = layers.filter(layer => layer !== draft.layer)
   const saveTargets = others.filter(layer => canHold(setting, layer))
   const tools =
-    others.length > 0
+    saveTargets.length > 0
       ? [<Button key="level" label={` ${levelInfo(draft.layer).short} ›`} plain onPress={() => act.go({ kind: 'levels' }, 'level', `level:${draft.layer}`)} />]
       : [
           <Box key="level">

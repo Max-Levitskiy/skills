@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { canHold, levelInfo, levelStack, openAbove } from "./levels";
+import { canHold, chainLine, effect, levelInfo, levelStack, openAbove } from "./levels";
 
 test("context levels are labelled by context and audience", () => {
   expect(levelInfo("context:acme").label).toBe("Project acme, shared");
@@ -24,4 +24,13 @@ test("a credential or a personal key is offered no team context level, and a cre
   expect(canHold(personal, "repo")).toBe(true);
   expect(canHold(credential, "local")).toBe(true);
   expect(openAbove(credential, layers)).toEqual(["global", "context:acme:me", "user-repo", "local"]);
+});
+test("the context chain reads outermost first, each with why it applies", () => {
+  expect(chainLine([{ name: "acme", via: "remote" }, { name: "acme-web", via: "parent" }])).toBe("acme (remote) › acme-web (parent)");
+  expect(chainLine([])).toBe("none apply here");
+});
+test("a level the pane does not know reads without a dangling separator", () => {
+  expect(levelInfo("workspace")).toMatchObject({ hint: "another level", audience: "at this level" });
+  const setting = { levels: {}, source: null, default: null, credential: false, personal: false, schema: null } as any;
+  expect(effect(setting, "workspace", ["global", "workspace"], {}, {})).toBe("Saving here sets it at this level.");
 });

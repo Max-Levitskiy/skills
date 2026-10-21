@@ -27,6 +27,7 @@ export const EMPTY_PANEL: Panel = {
   settings: [],
   defs: {},
   layers: [],
+  contexts: [],
   show: 'effective',
   edit: null,
   onePassword: NO_ONE_PASSWORD,

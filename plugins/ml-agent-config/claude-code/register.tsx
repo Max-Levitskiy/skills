@@ -372,14 +372,14 @@ async function components($: EngineInterface): Promise<Component[]> {
   return Promise.all(all.map(async one => ({ ...one, ready: (await start($, one.name, one.from))?.ready ?? null })))
 }
 
-async function describe($: EngineInterface, component: Component): Promise<Pick<Panel, 'settings' | 'defs' | 'layers' | 'message'>> {
+async function describe($: EngineInterface, component: Component): Promise<Pick<Panel, 'settings' | 'defs' | 'layers' | 'contexts' | 'message'>> {
   const from = component.from ? ['--from', component.from] : []
   try {
     const ran = await $.process.run([await bin($), 'describe', component.name, ...from], { env: HARNESS, timeoutMs: 15000 })
-    if (ran.exitCode !== 0) return { settings: [], defs: {}, layers: [], message: firstLine(ran.stderr) || 'describe failed' }
+    if (ran.exitCode !== 0) return { settings: [], defs: {}, layers: [], contexts: [], message: firstLine(ran.stderr) || 'describe failed' }
     return { ...readDescribe(ran.stdout, await $.env.get('HOME'), component.name), message: null }
   } catch (error) {
-    return { settings: [], defs: {}, layers: [], message: `describe failed: ${(error as Error).message}` }
+    return { settings: [], defs: {}, layers: [], contexts: [], message: `describe failed: ${(error as Error).message}` }
   }
 }
 
@@ -416,7 +416,7 @@ async function openComponent($: EngineInterface, name: string): Promise<void> {
   const component = (await read($, panel)).components.find(one => one.name === name)
   if (!component) return
   const mine = ++componentOpens
-  await update($, panel, now => ({ ...now, selected: name, settings: [], layers: [], show: 'effective', isLoading: true }))
+  await update($, panel, now => ({ ...now, selected: name, settings: [], layers: [], contexts: [], show: 'effective', isLoading: true }))
   await go($, { kind: 'settings' }, `component:${name}`)
   const detail = await describe($, component)
   // Opened again, this one or another, while it loaded: its answer is not that open's.

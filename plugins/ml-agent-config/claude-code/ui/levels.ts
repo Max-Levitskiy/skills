@@ -2,7 +2,7 @@
 // context's team and me files, then repo, user-repo and local. A higher level overrides a lower one
 // key by key, and the default sits under all.
 
-import type { Json, Setting } from '../../types'
+import type { Json, Panel, Setting } from '../../types'
 import type { Names } from '../values'
 import type { Defs } from '../../src/key-schema'
 import { display } from '../tree'
@@ -33,7 +33,12 @@ export function levelInfo(layer: string): LevelInfo {
   if (me) {
     return { label: `Project ${me}, just me`, short: `${me} (me)`, hint: `~/.agents/contexts/${me}, only you`, audience: `for you in ${me}`, offer: `Just for me in ${me}` }
   }
-  return { label: layer, short: layer, hint: '', audience: '', offer: layer }
+  return { label: layer, short: layer, hint: 'another level', audience: 'at this level', offer: layer }
+}
+
+/** The contexts that apply, outermost first, each with why: `acme (remote) › acme-web (parent)`. */
+export function chainLine(contexts: Panel['contexts']): string {
+  return contexts.length > 0 ? contexts.map(one => `${one.name} (${one.via})`).join(' › ') : 'none apply here'
 }
 
 export function levelLabel(layer: string | null): string {
@@ -91,7 +96,8 @@ export function over(setting: Setting, layer: string, layers: readonly string[])
 export function effect(setting: Setting, layer: string, layers: readonly string[], names: Names, defs: Defs): string {
   const show = (value: Json) => display(setting, value, names, defs)
   const here = setting.levels[layer]
-  const audience = levelInfo(layer).audience
+  // Each sentence ends on the audience; one left empty would read `sets it .`.
+  const audience = levelInfo(layer).audience || 'here'
   const above = over(setting, layer, layers)
   if (here === null) return `Blocks the levels under it ${audience}.`
   if (above) {

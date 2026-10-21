@@ -3,7 +3,7 @@
 import type { RenderElement } from 'claude-code'
 
 import { selected } from '../panel'
-import { levelLabel } from '../ui/levels'
+import { chainLine, levelLabel } from '../ui/levels'
 import { note, screen } from '../ui/screen'
 import type { Ctx } from './context'
 
@@ -11,6 +11,10 @@ export function files({ now, ui, act }: Ctx): RenderElement {
   const { Box, Text } = ui
   const shown = now.layers
   return screen(ui, { path: [selected(now)?.name ?? '', 'Files'], onBack: () => act.back(), message: now.message }, [
+    <Box key="contexts">
+      <Text>Contexts  </Text>
+      <Text dimColor={now.contexts.length === 0}>{chainLine(now.contexts)}</Text>
+    </Box>,
     ...shown.map(level => {
       const count = now.settings.filter(setting => setting.levels[level.layer] !== undefined).length
       return (

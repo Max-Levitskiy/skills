@@ -122,10 +122,18 @@ export function valueAt(setting: Setting, layer: string): Json {
 }
 
 // Where an edit lands unless the person picks another level: where the value is set now, else
-// where the declaration recommends, else global.
+// where the declaration recommends, else global. A key declared for `context` lands in the innermost
+// context that applies here: its me file for a credential or a personal key, else its team file.
 export function targetLayer(setting: Setting, layers: readonly string[]): string {
-  const wanted = [setting.source, setting.layer, 'global'].find(one => one && layers.includes(one))
+  const declared = setting.layer === 'context' ? innermostContext(setting, layers) : setting.layer
+  const wanted = [setting.source, declared, 'global'].find(one => one && layers.includes(one))
   return wanted ?? layers[0] ?? 'global'
+}
+
+function innermostContext(setting: Setting, layers: readonly string[]): string | undefined {
+  const name = layers.map(layer => /^context:([^:]+)(:me)?$/.exec(layer)?.[1]).findLast(Boolean)
+  if (!name) return undefined
+  return setting.credential || setting.personal ? `context:${name}:me` : `context:${name}`
 }
 
 /** A dotted key's last part, for a breadcrumb: credentials.apiKey is apiKey. */
