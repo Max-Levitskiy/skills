@@ -4,7 +4,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "child_process";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 
@@ -145,6 +145,16 @@ describe("contexts through the CLI", () => {
     expect(team.match).toEqual([{ remote: "github.com/beta/**" }]);
     expect(team.id).toMatch(/^ctx_[0-9a-f]{12}$/);
     expect(me.match).toEqual([{ path: "~/git/beta/" }]);
+  });
+
+  test("context add refuses the reserved name order.json and a hidden name", () => {
+    const { run, home } = sandbox();
+    const reserved = run("context", "add", "order.json");
+    expect(reserved.code).toBe(2);
+    expect(reserved.stderr).toContain("reserved");
+    expect(run("context", "add", ".hidden").code).toBe(2);
+    expect(existsSync(join(home, ".agents/contexts/order.json"))).toBe(false);
+    expect(run("context", "list").json.contexts.map((c: any) => c.name)).toEqual(["acme"]);
   });
 
   test("write --layer context:acme:me lands in the me file and shows in describe levels", () => {

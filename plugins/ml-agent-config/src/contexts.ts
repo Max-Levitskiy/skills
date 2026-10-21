@@ -151,7 +151,8 @@ function readOrder(file: string, problems: Problem[]): string[] {
 /**
  * Every context under `<home>/.agents/contexts/`. A context whose `context.json` cannot be read is
  * left out and reported as `context-unparsable`, as is a directory whose name is not a valid
- * context name; a directory with no `context.json` is reported as `context-stray-dir`.
+ * context name; a directory with no `context.json` is reported as `context-stray-dir`. A hidden
+ * entry is skipped silently.
  */
 export function readContexts(home: string = homedir()): ContextStore {
   const root = join(home, CONTEXTS_DIR);
@@ -159,6 +160,8 @@ export function readContexts(home: string = homedir()): ContextStore {
   if (!isDirectory(root)) return store;
 
   for (const name of readdirSync(root).sort()) {
+    // A hidden entry, such as `.git` when the store is a clone, is never a context and never a problem.
+    if (name.startsWith(".")) continue;
     const dir = join(root, name);
     if (!isDirectory(dir)) continue;
     const invalid = invalidContextName(name);

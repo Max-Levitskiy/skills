@@ -79,6 +79,15 @@ describe("contexts", () => {
     expect(resolveChain(store, place({ remotes: ["x/y"] }), {}).map(c => c.name)).toEqual(["ok"]);
   });
 
+  test("a dot-directory under contexts is skipped silently", () => {
+    const { h, put } = home();
+    mkdirSync(join(h, ".agents", "contexts", ".git"), { recursive: true });
+    put("ok", { match: [{ remote: "x/**" }] });
+    const store = readContexts(h);
+    expect(store.problems).toEqual([]);
+    expect([...store.defs.keys()]).toEqual(["ok"]);
+  });
+
   test("an unparsable context is skipped unless something names it", () => {
     const { h, put } = home();
     put("broken", "{ not json");

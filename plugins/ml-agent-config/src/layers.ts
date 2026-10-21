@@ -38,12 +38,15 @@ const ME_SUFFIX = ":me";
 
 /**
  * Why `name` cannot be a context name, or null when it can. A context name is one path segment
- * with no colon, so it stays inside `~/.agents/contexts/` and a `:me` suffix is never ambiguous.
+ * with no colon, so it stays inside `~/.agents/contexts/` and a `:me` suffix is never ambiguous. It
+ * is not `order.json`, which sits beside the contexts, and does not start with a dot, which hides it.
  */
 export function invalidContextName(name: string): string | null {
   if (name === "") return "it is empty";
   if (name === "." || name === "..") return `"${name}" is not a directory name`;
   if (/[:/\\]/.test(name)) return "it contains a colon, a slash or a backslash";
+  if (name === "order.json") return `"order.json" is reserved for the order of the contexts`;
+  if (name.startsWith(".")) return "it starts with a dot, which makes it hidden";
   return null;
 }
 

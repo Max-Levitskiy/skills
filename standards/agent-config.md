@@ -61,7 +61,7 @@ Contexts are defined once, for every component, under `~/.agents/contexts/`:
 ~/.agents/contexts/<context>/<name>/config.me.json    your own values for <name>
 ```
 
-The directory name is the context's name: one path segment, with no colon or backslash. The team file, `~/.agents/contexts/acme-web/context.json`:
+The directory name is the context's name: one path segment, with no colon or backslash, not `order.json` and not starting with a dot. The team file, `~/.agents/contexts/acme-web/context.json`:
 
 ```json
 { "schemaVersion": 1, "id": "ctx_9ab7bfbfa3da", "parent": "acme",
@@ -131,7 +131,7 @@ Values are written with `agent-config write <name> --layer context:<context>` fo
 
 - An unknown `parent`, a `parent` cycle, `order.json` naming an unknown context and `--context` naming none are config errors: every command that resolves the chain exits 2, naming it. Dropping it silently would change which file a key is written to.
 - An unparsable `context.json` leaves its context out and is reported as `context-unparsable`. It exits 2 only when something names that context: a `parent`, `order.json`, `--context` or `write --layer`. An unparsable `context.me.json` keeps its context without the path filters, and an unparsable `order.json` leaves the order alphabetical; both are reported the same way, as is a directory whose name is not a valid context name.
-- A directory under `~/.agents/contexts/` with no `context.json` is not a context, and is reported as `context-stray-dir`.
+- A directory under `~/.agents/contexts/` with no `context.json` is not a context, and is reported as `context-stray-dir`. A hidden entry there, such as `.git`, is skipped silently.
 - Every write goes to a temporary file that is then renamed into place, so a `load` running beside it never reads half a file.
 
 ### Worked example
