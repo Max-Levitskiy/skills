@@ -20,7 +20,13 @@ export interface Problem {
     | "schema-rolled-back"
     | "schema-behind"
     | "dirty-checkout"
-    | "invalid-value";
+    | "invalid-value"
+    | "context-unparsable"
+    | "untrusted-layer-key"
+    | "sibling-contexts"
+    | "context-stray-path"
+    | "context-stray-dir"
+    | "cachevar-shared";
   message: string;
   keys?: string[];
   layer?: Layer;
