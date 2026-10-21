@@ -44,7 +44,7 @@ interface Registry {
  * both normalise to `github.com/Owner/Name`. Only the host is lowercased — forge path segments are
  * case-sensitive on enough hosts that flattening them would merge two real repositories.
  */
-function normaliseOrigin(url: string): string | null {
+export function normaliseRemote(url: string): string | null {
   let rest = url.trim();
   if (!rest) return null;
   rest = rest.replace(/\.git$/, "").replace(/\/+$/, "");
@@ -58,7 +58,7 @@ function normaliseOrigin(url: string): string | null {
   return `${host.toLowerCase()}/${path.replace(/^\/+/, "")}`;
 }
 
-function git(args: string[], cwd: string): string | null {
+export function git(args: string[], cwd: string): string | null {
   const result = spawnSync("git", args, { cwd, encoding: "utf8" });
   if (result.error || result.status !== 0) return null;
   return result.stdout.trim() || null;
@@ -103,7 +103,7 @@ export function repoContext(cwd = process.cwd()): RepoContext {
   const root = commonDir ? dirname(commonDir) : checkout;
 
   const origin = git(["config", "--get", "remote.origin.url"], checkout);
-  const fromOrigin = origin ? normaliseOrigin(origin) : null;
+  const fromOrigin = origin ? normaliseRemote(origin) : null;
   const minted = fromOrigin ? null : mintedIdentity(checkout);
   const identity = fromOrigin ?? minted;
 
