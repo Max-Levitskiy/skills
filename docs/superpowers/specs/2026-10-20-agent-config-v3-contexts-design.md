@@ -62,7 +62,7 @@ every other.
 ## Anti-goals
 
 - A context that silently applies in the wrong place. Every `load` can say which contexts
-  matched and why (`agent-config context --explain`), and the `/agent-config` pane shows the
+  matched and why (`agent-config context explain`), and the `/agent-config` pane shows the
   chain.
 - A shared key that two providers define differently. Resolution fails loudly on a schema
   mismatch rather than picking one.
@@ -267,7 +267,7 @@ global → context (outermost first, nested inside) → repo → user-repo → l
   `load`, `start` and `context` take `--cwd` so a skill driving a subagent elsewhere
   resolves the same chain the subagent will.
 - An absent or empty `match` makes an **abstract** context: it never matches on its own,
-  and exists to be a `parent` or to be named with `--scope`.
+  and exists to be a `parent` or to be named with `--context`.
 - `parent` names another context. A child applies after its parent and inherits nothing by
   itself; inheritance is simply merge order. A child need not repeat its parent's `match`:
   it matches on its own terms, and when it does, its parent chain is applied before it even
@@ -275,10 +275,10 @@ global → context (outermost first, nested inside) → repo → user-repo → l
 - Order: first the chain roots, by `~/.agents/contexts/order.json` when present, else
   alphabetical; a parent always precedes its child; a context reachable twice applies once,
   at its first position. The **innermost** context is the last one in that order, and it is
-  the default write target. `--explain` prints the order. The expected case is a chain, not
+  the default write target. `context explain` prints the order. The expected case is a chain, not
   siblings. A `parent` naming no context is a config error (`load` exits 2), never silently
   dropped: dropping it would change which site a key gets written to. The same holds for
-  `order.json` naming an unknown context (`unknown-context`, exit 2). A directory under
+  `order.json` naming an unknown context (a `ConfigError`, exit 2). A directory under
   `~/.agents/contexts/` with no `context.json` is not a context; `context list` flags it.
 - Two matched contexts with no ancestor relation that both set a key for the component
   being loaded (a repo in two projects, each with its own `jira.prefixes`) are reported by
@@ -322,15 +322,16 @@ is `context`:
 **CLI.**
 
 - `agent-config context list` — defined contexts and which match here.
-- `agent-config context --explain` — the resolved chain for the cwd, each context with the
+- `agent-config context explain` — the resolved chain for the cwd, each context with the
   entry that matched it.
-- `agent-config context add <name> [--parent p] [--remote glob] [--path glob]` and
-  `context edit`; `write --layer context:<name>[:me]` for values.
+- `agent-config context add <name> [--parent p] [--remote glob] [--path glob]`. Values are
+  edited with `write --layer context:<name>[:me]` and the pane.
 - `path`, `start`, `load`, `describe` all learn the new layer; `layer` values in a key entry
   may say `context` to recommend it.
-- `load --context <name>` appends the named context and its parent chain after every
-  matched one, so it is the innermost and the write target; an abstract context is used
-  this way. `load --no-context` drops every matched context. A skill's own flags
+- `load --context <name>` applies the named context and its parent chain. The named context
+  becomes the innermost and the write target: appended after every matched one, or moved to
+  the end of the chain if it already matched, unless it is an ancestor of another matched
+  context, in which case it keeps its place. An abstract context is used this way. `load --no-context` drops every matched context. A skill's own flags
   (atlassian's `--scope` / `--no-scope`) map onto these two.
 
 ### 6. First providers
