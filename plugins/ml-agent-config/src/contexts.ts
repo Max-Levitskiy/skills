@@ -276,8 +276,9 @@ function matchOf(def: ContextDef, place: Place, home: string): MatchedContext | 
 /**
  * The contexts that apply to `place`, outermost first: each matched context's tree, from its root
  * down through the ancestors of whatever matched, roots in `order` then alphabetical, each context
- * once at its first position. `explicit` appends that context and its ancestors last; `none` drops
- * everything that matched.
+ * once at its first position. `explicit` makes that context the innermost: it is appended with its
+ * ancestors, or moved to the end when it already matched, unless it is an ancestor of another
+ * matched context, which keeps it in its place. `none` drops everything that matched.
  */
 export function resolveChain(
   store: ContextStore,
@@ -333,6 +334,12 @@ export function resolveChain(
     if (!emitted.has(opts.explicit)) {
       emitted.add(opts.explicit);
       chain.push({ name: opts.explicit, via: "explicit" });
+    } else {
+      // Already matched: it still becomes the innermost, moved to the end, unless a context after it
+      // descends from it. Its descendants always come after it, so it never has any to carry along.
+      const at = chain.findIndex((c) => c.name === opts.explicit);
+      const ancestor = chain.slice(at + 1).some((c) => lineages.get(c.name)!.some((def) => def.name === opts.explicit));
+      if (!ancestor) chain.push(...chain.splice(at, 1));
     }
   }
   return chain;

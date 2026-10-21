@@ -100,6 +100,20 @@ describe("contexts through the CLI", () => {
     expect(run("load", "demo", "--cwd", repoDir, "--context", "neo").json.provenance.site).toBe("context:neo");
   });
 
+  test("--context naming a matched sibling moves it to the end, as the innermost and the write target", () => {
+    const { run, putContextDef, putContext, repoDir, home } = sandbox();
+    putContextDef("other", { match: [{ remote: "github.com/acme/**" }] });
+    writeFileSync(join(home, ".agents", "contexts", "order.json"), JSON.stringify(["other", "acme"]));
+    putContext("other", "demo", { site: "other" }); putContext("acme", "demo", { site: "acme" });
+    expect(run("load", "demo", "--cwd", repoDir).json.contexts.map((c: any) => c.name)).toEqual(["other", "acme"]);
+    const r = run("load", "demo", "--cwd", repoDir, "--context", "other");
+    expect(r.json.contexts.map((c: any) => c.name)).toEqual(["acme", "other"]);
+    expect(r.json.provenance.site).toBe("context:other");
+    putContext("other", "demo", {}); putContext("acme", "demo", {});
+    const onboard = run("start", "demo", "--cwd", repoDir, "--context", "other").json.actions.find((a: any) => a.id === "onboard");
+    expect(onboard.context.layer).toBe("context:other");
+  });
+
   test("context explain names what matched and why", () => {
     const { run, repoDir } = sandbox();
     const r = run("context", "explain", "--cwd", repoDir);

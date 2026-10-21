@@ -116,7 +116,7 @@ An **abstract** context has no usable filter in either file. It never matches on
 Every command that reads config takes three flags:
 
 - `--cwd <dir>` resolves for that directory instead of the current one. A skill that starts a subagent elsewhere passes it, so it sees the chain the subagent's `load` will. A `--cwd` that is not a directory is refused.
-- `--context <name>` applies that context and its parent chain, matched or not. A context not yet in the chain is appended after the matched ones, so it becomes the innermost and the write target. One already in the chain keeps its place, and the innermost is unchanged: in an `acme-web` clone, `--context acme` leaves the chain `acme, acme-web`, because a parent always precedes its child.
+- `--context <name>` applies that context and its parent chain, matched or not. The named context becomes the innermost and the write target: it is appended after the matched ones, or moved to the end of the chain if it already matched. The exception is a context that is an ancestor of another matched context, which keeps its place: in an `acme-web` clone, `--context acme` leaves the chain `acme, acme-web`, because a parent always precedes its child.
 - `--no-context` applies no matched context. It cannot be combined with `--context`.
 
 The contexts themselves have three commands:

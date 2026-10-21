@@ -32,6 +32,21 @@ describe("contexts", () => {
     const chain = resolveChain(readContexts(h), place({ paths: [`${h}/git/web/`] }), {});
     expect(chain.map(c => [c.name, c.via])).toEqual([["acme", "parent"], ["acme-web", "path"]]);
   });
+  test("--context on a matched context moves it last, unless it is an ancestor of another match", () => {
+    const { h, put } = home();
+    put("acme", { match: [{ remote: "github.com/acme/**" }] });
+    put("acme-web", { parent: "acme", match: [{ remote: "github.com/acme/web-*" }] });
+    put("other", { match: [{ remote: "github.com/acme/**" }] });
+    writeFileSync(join(h, ".agents", "contexts", "order.json"), JSON.stringify(["other", "acme"]));
+    const at = place({ remotes: ["github.com/acme/web-app"] });
+    expect(resolveChain(readContexts(h), at, {}).map(c => c.name)).toEqual(["other", "acme", "acme-web"]);
+    expect(resolveChain(readContexts(h), at, { explicit: "other" }).map(c => [c.name, c.via])).toEqual([
+      ["acme", "remote"],
+      ["acme-web", "remote"],
+      ["other", "remote"],
+    ]);
+    expect(resolveChain(readContexts(h), at, { explicit: "acme" }).map(c => c.name)).toEqual(["other", "acme", "acme-web"]);
+  });
   test("an abstract context never matches but can be named", () => {
     const { h, put } = home();
     put("neo", {});

@@ -203,7 +203,9 @@ agent-config load <name> --secrets credentials.apiKey 3>&1 1>/dev/null
   skill that starts a subagent in another directory runs `start <name> --cwd <that directory>`
   first, so the plan it works is for the contexts the subagent's `load` will resolve. Every
   command that reads config takes `--cwd <dir>`, `--context <name>` (apply that context and its
-  parents too; it becomes the innermost unless it is already in the chain, where it keeps its place) and `--no-context` (apply no matched context).
+  parents too; it becomes the innermost and the write target, moving to the end of the chain if it
+  already matched, unless it is an ancestor of another matched context, in which case it keeps its
+  place) and `--no-context` (apply no matched context).
 - On Claude Code the hooks module asks 1Password once per session. When a skill of a ready
   component expands, it runs one `load` for every `1password` reference, so the person approves
   once, and puts the secrets in `AGENT_CONFIG_SECRETS` on the harness process. Every later `load`
