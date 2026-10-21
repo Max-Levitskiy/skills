@@ -57,15 +57,16 @@ function sandbox() {
    * a fourth pipe, so fd 3 is a file in the sandbox.
    */
   const fd3Path = join(root, "fd3");
-  const run = (...args: (string | { env: Record<string, string> })[]) => {
+  const run = (...args: (string | { env?: Record<string, string>; stdin?: string })[]) => {
     const last = args[args.length - 1];
-    const extra = typeof last === "object" ? last.env : {};
+    const extra = typeof last === "object" ? (last.env ?? {}) : {};
+    const stdin = typeof last === "object" && last.stdin !== undefined ? Buffer.from(last.stdin) : "ignore";
     const argv = args.filter((one): one is string => typeof one === "string");
     const fd = openSync(fd3Path, "w");
     const result = Bun.spawnSync([BIN, ...argv, "--from", component], {
       env: { ...process.env, HOME: home, CLAUDE_CONFIG_DIR: join(home, ".claude"), CLAUDECODE: "1", ...extra },
       cwd: home,
-      stdio: ["ignore", "pipe", "pipe", fd],
+      stdio: [stdin, "pipe", "pipe", fd],
     });
     closeSync(fd);
     const fd3 = readFileSync(fd3Path, "utf8");
@@ -93,6 +94,29 @@ describe("credential references and trust", () => {
     expect(d.problems.map((p: any) => p.code)).toContain("untrusted-layer-key");
     expect(d.layers.find((l: any) => l.layer === "repo").trusted).toBe(false);
     expect(d.keys.find((k: any) => k.path === "credentials.token")).toMatchObject({ levels: {}, source: null });
+  });
+
+  test("write refuses a credential reference for the repo layer", () => {
+    const { run, repoDir } = sandbox();
+    const stdin = JSON.stringify({ credentials: { token: { source: "env", var: "T" } } });
+    const r = run("write", "demo", "--layer", "repo", "--cwd", repoDir, { stdin });
+    expect(r.code).toBe(2);
+    expect(r.stderr).toContain("credentials.token");
+    expect(r.stderr).toContain("user-repo");
+    expect(existsSync(join(repoDir, ".agents", "config", "demo", "config.json"))).toBe(false);
+  });
+
+  test("write refuses a credential reference for a tracked config.local.json, not an untracked one", () => {
+    const { run, putLocalLayer, localPath, git, repoDir } = sandbox();
+    const stdin = JSON.stringify({ credentials: { token: { source: "env", var: "T" } } });
+    expect(run("write", "demo", "--layer", "local", "--cwd", repoDir, { stdin }).code).toBe(0); // new, so untracked
+    putLocalLayer({});
+    git(repoDir, "add", "-f", ".agents/config/demo/config.local.json");
+    const r = run("write", "demo", "--layer", "local", "--cwd", repoDir, { stdin });
+    expect(r.code).toBe(2);
+    expect(r.stderr).toContain("credentials.token");
+    expect(r.stderr).toContain("tracks");
+    expect(JSON.parse(readFileSync(localPath, "utf8"))).toEqual({});
   });
 
   test("a tracked config.local.json is treated as the repo layer", () => {

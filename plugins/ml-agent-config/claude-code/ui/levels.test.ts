@@ -11,7 +11,7 @@ test("the stack follows describe's order, top first", () => {
   expect(levelStack(setting, layers).map(r => r.layer)).toEqual([...layers].reverse());
   expect(levelStack(setting, layers).find(r => r.isWinner)!.layer).toBe("context:acme:me");
 });
-test("a credential or a personal key is offered no team context level", () => {
+test("a credential or a personal key is offered no team context level, and a credential no repo level", () => {
   const layers = ["global", "context:acme", "context:acme:me", "repo", "user-repo", "local"];
   const plain = { levels: {}, source: null, credential: false, personal: false } as any;
   const personal = { ...plain, personal: true };
@@ -20,5 +20,8 @@ test("a credential or a personal key is offered no team context level", () => {
   expect(openAbove(personal, layers)).toEqual(layers.filter(l => l !== "context:acme"));
   expect(canHold(credential, "context:acme")).toBe(false);
   expect(canHold(credential, "context:acme:me")).toBe(true);
-  expect(canHold(credential, "repo")).toBe(true);
+  expect(canHold(credential, "repo")).toBe(false);
+  expect(canHold(personal, "repo")).toBe(true);
+  expect(canHold(credential, "local")).toBe(true);
+  expect(openAbove(credential, layers)).toEqual(["global", "context:acme:me", "user-repo", "local"]);
 });

@@ -44,8 +44,10 @@ export function levelLabel(layer: string | null): string {
 /**
  * Whether a value of this setting may be written at this level. A context's team file is shared
  * with everyone the context matches, so a credential or a key declared personal goes to its me file.
+ * The repo layer is committed for the team, so it never holds a credential either.
  */
 export function canHold(setting: Setting, layer: string): boolean {
+  if (layer === 'repo' && setting.credential) return false
   return !(teamContext(layer) && (setting.credential || setting.personal))
 }
 

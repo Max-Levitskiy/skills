@@ -4,7 +4,7 @@
 // conflating them is what makes "not configured" look like a failure — so needing onboarding is
 // exit 0, and a caller that genuinely wants it fatal passes --require-ready.
 
-import { readFileSync, statSync, writeSync } from "fs";
+import { existsSync, readFileSync, statSync, writeSync } from "fs";
 import { join, resolve as absolute } from "path";
 import { detectHarness } from "./harness";
 import { repoContext, registerRepo, type RepoContext } from "./repo";
@@ -20,12 +20,14 @@ import {
   contextOf,
   credentialLeaves,
   honoured,
+  layerPath,
   loadLayers,
   parseLayer,
   readJournal,
   readLayer,
   writeLayer,
   ownValueAt,
+  untrackedIn,
   type ConfigObject,
   type ConfigValue,
   type Layer,
@@ -578,6 +580,20 @@ function write(parsed: ParsedArgs): number {
       throw new ConfigError(
         `not written: ${own} is ${own.split(".")[0] === "credentials" ? "a credential" : "declared personal"}, and ${layer} is ` +
           `the team file every place in context "${named}" shares; write it with --layer context:${named}:me`,
+      );
+    }
+  }
+
+  // A credential reference is honoured only from a layer the user wrote here, so one written to the
+  // repo layer or to a config.local.json git tracks would be stored and then ignored by `load`.
+  const credential = "credentials" in config ? credentialLeaves(config)[0] : undefined;
+  if (credential !== undefined && (layer === "repo" || layer === "local")) {
+    const path = layerPath(name, layer, repo);
+    const tracked = layer === "local" && path !== null && existsSync(path) && !untrackedIn(path, repo.checkout!);
+    if (layer === "repo" || tracked) {
+      throw new ConfigError(
+        `not written: ${credential} is a credential, and ${layer === "repo" ? "the repo layer is committed for the team" : `git tracks ${path}`}, ` +
+          `so load would not honour it; write it to a trusted layer: global, user-repo, context:<name>:me, or an untracked local`,
       );
     }
   }

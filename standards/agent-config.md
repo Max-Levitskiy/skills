@@ -243,6 +243,8 @@ Two different references can name one `cacheVar`: your own organisation's token 
 
 From an untrusted file the whole `credentials` subtree is dropped before the merge, and `start`, `load` and `describe` report `untrusted-layer-key` naming the file and the keys it set. `adopt` strips the credential references from a v1 local file that git tracks or cannot vouch for, and reports them the same way. A cloned repository, or a context file a colleague shared, can therefore never point a credential at a command of its own.
 
+`write` refuses a credential reference for `repo` and for a tracked local file. A reference already in a repo layer from before 2.1 is no longer honoured and should be moved to a trusted layer.
+
 ### Resolution rules
 
 - Resolve **lazily** — only when a call actually needs the secret. Listing config shouldn't shell out to a password manager and trigger a Touch ID prompt.
