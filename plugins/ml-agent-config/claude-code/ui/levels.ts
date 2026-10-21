@@ -27,7 +27,7 @@ export function levelInfo(layer: string): LevelInfo {
   if (fixed) return fixed
   const team = teamContext(layer)
   if (team) {
-    return { label: `Project ${team}, shared`, short: team, hint: `~/.agents/contexts/${team}, synced to the team`, audience: `for the whole team in ${team}`, offer: `For the team in ${team}` }
+    return { label: `Project ${team}, shared`, short: team, hint: `~/.agents/contexts/${team}, shared with the team`, audience: `for the whole team in ${team}`, offer: `For the team in ${team}` }
   }
   const me = /^context:([^:]+):me$/.exec(layer)?.[1]
   if (me) {
