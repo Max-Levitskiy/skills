@@ -1,4 +1,4 @@
-// The four config layers, their merge, and every write that touches disk.
+// The config layers, their merge, and every write that touches disk.
 //
 // D1 added `user-repo` between `repo` and `local`: one user's settings for one repository, held
 // user-side and keyed on repo identity, so they reach every worktree — which `config.local.json`,
@@ -8,16 +8,52 @@
 // shares its fate, because it is the input the next migration diffs against and a committed repo
 // layer must carry it to teammates. The edit journal is user-side and never committed, and skips
 // the repo layer, where `git log` already does the job with author and date.
+//
+// Contexts add two layers per matched context between `global` and `repo`: the team file, then the
+// user's own `me` file, outermost context first. They live user-side under `~/.agents/contexts/`,
+// so they need no repository and nothing to gitignore.
 
 import { homedir } from "os";
-import { join, dirname } from "path";
+import { join } from "path";
 import { spawnSync } from "child_process";
-import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "fs";
-import { CONFIG_DIR, type RepoContext } from "./repo";
+import { appendFileSync, existsSync, readFileSync, rmSync } from "fs";
+import { CONFIG_DIR, writeFileAtomic, type RepoContext } from "./repo";
 import { merge, type ConfigValue } from "./key-schema";
+import type { MatchedContext } from "./contexts";
 
-export type Layer = "global" | "repo" | "user-repo" | "local";
+export { writeFileAtomic };
+
+/** A matched context's team layer, or (with `:me`) the user's own layer for it. */
+export type ContextLayer = `context:${string}` | `context:${string}:me`;
+export type Layer = "global" | ContextLayer | "repo" | "user-repo" | "local";
+/** The fixed layers, for callers that list them. The merge order, contexts included, is `layerOrder`. */
 export const LAYERS: Layer[] = ["global", "repo", "user-repo", "local"];
+
+// A context name is one path segment, and the `:me` suffix is the only other colon.
+const CONTEXT_LAYER = /^context:([^:/\\]+)(:me)?$/;
+
+/** The context a context layer names, and whether it is the `me` layer; null for a fixed layer. */
+function contextOf(layer: string): { context: string; me: boolean } | null {
+  const match = CONTEXT_LAYER.exec(layer);
+  if (!match || match[1] === "." || match[1] === "..") return null;
+  return { context: match[1], me: match[2] !== undefined };
+}
+
+/** Each matched context's team layer then its `me` layer, in chain order (outermost first). */
+export function contextLayers(chain: MatchedContext[]): ContextLayer[] {
+  return chain.flatMap(({ name }): ContextLayer[] => [`context:${name}`, `context:${name}:me`]);
+}
+
+/** The merge order: global, the context layers, then repo, user-repo and local. */
+export function layerOrder(chain: MatchedContext[]): Layer[] {
+  return ["global", ...contextLayers(chain), "repo", "user-repo", "local"];
+}
+
+/** A `--layer` value as a Layer, or a ConfigError naming what is accepted. */
+export function parseLayer(value: string): Layer {
+  if (LAYERS.includes(value as Layer) || contextOf(value)) return value as Layer;
+  throw new ConfigError(`Unknown layer "${value}" (${LAYERS.join(", ")}, context:<name>, context:<name>:me)`);
+}
 
 /** The key each config file stamps its component's schema version into (D6). */
 export const SCHEMA_VERSION_KEY = "schemaVersion";
@@ -34,7 +70,7 @@ export type ConfigObject = { [key: string]: ConfigValue };
 
 export interface LayerFile {
   layer: Layer;
-  /** null when the layer cannot exist here — repo and local outside a repo, user-repo with no identity. */
+  /** null when the layer cannot exist here — repo and local outside a repo, user-repo with no identity. Never null for a context layer. */
   path: string | null;
   snapshot: string | null;
   exists: boolean;
@@ -49,10 +85,13 @@ function isPlainObject(value: ConfigValue | undefined): value is ConfigObject {
 /**
  * Where one layer's file sits. `user-repo` nests the repo identity as directories rather than
  * escaping it into one segment, so `github.com/Owner/Name` stays readable and cannot collide with
- * a minted `mint/<hex>` id.
+ * a minted `mint/<hex>` id. A context layer sits at `~/.agents/contexts/<context>/<name>/`, as
+ * `config.json` (team) or `config.me.json` (me).
  */
-export function layerPath(name: string, layer: Layer, repo: RepoContext): string | null {
-  const base = join(homedir(), CONFIG_DIR, name);
+export function layerPath(name: string, layer: Layer, repo: RepoContext, home: string = homedir()): string | null {
+  const context = contextOf(layer);
+  if (context) return join(home, ".agents", "contexts", context.context, name, context.me ? "config.me.json" : "config.json");
+  const base = join(home, CONFIG_DIR, name);
   if (layer === "global") return join(base, "config.json");
   if (layer === "user-repo") return repo.identity ? join(base, "user-repo", repo.identity, "config.json") : null;
   if (!repo.checkout) return null;
@@ -67,6 +106,8 @@ export function snapshotPath(configPath: string): string {
 
 function journalPath(name: string, layer: Layer, repo: RepoContext): string | null {
   const base = join(homedir(), ".agents", "journal", name);
+  const context = contextOf(layer);
+  if (context) return join(base, "context", context.context, context.me ? "me-journal.json" : "journal.json");
   if (layer === "global") return join(base, "global.json");
   if (layer === "user-repo") return repo.identity ? join(base, "user-repo", repo.identity, "journal.json") : null;
   // The repo layer is tracked by git, which journals it better than we can.
@@ -142,8 +183,9 @@ export interface LoadedLayers {
   files: LayerFile[];
 }
 
-export function layerFiles(name: string, repo: RepoContext): LayerFile[] {
-  return LAYERS.map((layer) => {
+/** One entry per layer of `layerOrder(chain)`, in merge order. */
+export function layerFiles(name: string, repo: RepoContext, chain: MatchedContext[]): LayerFile[] {
+  return layerOrder(chain).map((layer) => {
     const path = layerPath(name, layer, repo);
     if (!path) return { layer, path: null, snapshot: null, exists: false, schemaVersion: null };
     const parsed = readConfigFile(path);
@@ -158,11 +200,11 @@ export function layerFiles(name: string, repo: RepoContext): LayerFile[] {
   });
 }
 
-/** Merge the four layers in order, recording which layer each surviving leaf came from. */
-export function loadLayers(name: string, repo: RepoContext): LoadedLayers {
+/** Merge the layers in `layerOrder(chain)`, recording which layer each surviving leaf came from. */
+export function loadLayers(name: string, repo: RepoContext, chain: MatchedContext[]): LoadedLayers {
   let config: ConfigObject = {};
   const provenance: Record<string, Layer> = {};
-  const files = layerFiles(name, repo);
+  const files = layerFiles(name, repo, chain);
 
   for (const file of files) {
     if (!file.path || !file.exists) continue;
@@ -293,8 +335,7 @@ export function writeLayer(
 
   const previous = readConfigFile(path);
   const stamped: ConfigObject = { ...config, [SCHEMA_VERSION_KEY]: schema.version };
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, `${JSON.stringify(stamped, null, 2)}\n`);
+  writeFileAtomic(path, `${JSON.stringify(stamped, null, 2)}\n`);
 
   // No snapshot is better than a wrong one: a migration with none interviews the user (D6), while
   // one with the wrong schema would reinterpret the answers against a shape they never had.
@@ -303,7 +344,7 @@ export function writeLayer(
     rmSync(snapshot, { force: true });
     snapshot = null;
   } else {
-    writeFileSync(snapshot, `${JSON.stringify({ version: schema.version, schema: schema.declared }, null, 2)}\n`);
+    writeFileAtomic(snapshot, `${JSON.stringify({ version: schema.version, schema: schema.declared }, null, 2)}\n`);
   }
 
   const result: WriteResult = { layer, path, snapshot, schemaVersion: schema.version };
@@ -315,8 +356,7 @@ export function writeLayer(
       0,
       JOURNAL_DEPTH,
     );
-    mkdirSync(dirname(journal), { recursive: true });
-    writeFileSync(journal, `${JSON.stringify({ entries }, null, 2)}\n`);
+    writeFileAtomic(journal, `${JSON.stringify({ entries }, null, 2)}\n`);
     result.journal = { path: journal, depth: entries.length };
   }
   return result;

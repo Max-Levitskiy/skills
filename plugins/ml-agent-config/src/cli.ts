@@ -187,7 +187,7 @@ interface Resolved {
 function resolve(name: string, from: string | undefined): Resolved {
   const repo = repoContext();
   const found = findDeclaration(name, detectHarness(), from);
-  const loaded = loadLayers(name, repo);
+  const loaded = loadLayers(name, repo, []);
   return { found, repo, loaded, effective: effectiveConfig(found.declaration, loaded) };
 }
 
@@ -429,7 +429,7 @@ function path(parsed: ParsedArgs): number {
   const name = requireName(parsed);
   const repo = repoContext();
   const found = findDeclaration(name, detectHarness(), parsed.from);
-  const files = layerFiles(name, repo);
+  const files = layerFiles(name, repo, []);
   const wanted = parsed.layer ? requireLayer(parsed.layer) : null;
 
   const output: PathOutput = {

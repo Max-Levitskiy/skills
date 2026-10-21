@@ -7,15 +7,33 @@
 // worktrees are never registered, and registering from one registers the root.
 
 import { homedir } from "os";
-import { join, dirname, isAbsolute, resolve } from "path";
+import { basename, join, dirname, isAbsolute, resolve } from "path";
 import { spawnSync } from "child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "fs";
 import { randomBytes } from "crypto";
 
 export const CONFIG_DIR = ".agents/config";
 /** Pre-v2 location. v2 does not read it; retiring it is a one-off move action D5 owns. */
 export const LEGACY_CONFIG_DIR = ".agents/skill-config";
 const REGISTRY_PATH = join(homedir(), ".agents", "repos.json");
+
+/**
+ * Write a file whole or not at all: the text goes to a temp sibling in the same directory, then a
+ * rename swaps it in, so a crash or a concurrent reader never sees half a file. It lives here, not
+ * in layers.ts (which re-exports it), because layers.ts imports this module and the reverse import
+ * would be a cycle.
+ */
+export function writeFileAtomic(path: string, text: string): void {
+  mkdirSync(dirname(path), { recursive: true });
+  const temp = join(dirname(path), `.${basename(path)}.${process.pid}.${randomBytes(4).toString("hex")}.tmp`);
+  try {
+    writeFileSync(temp, text);
+    renameSync(temp, path);
+  } catch (error) {
+    rmSync(temp, { force: true });
+    throw error;
+  }
+}
 
 export interface RepoContext {
   /** `git rev-parse --show-toplevel` — this checkout. The repo and local layers live here. */
@@ -162,8 +180,7 @@ export function registerRepo(cwd: string, alias: string | null): RegisterResult 
       /* first write */
     }
     own.repo = { ...own.repo, id: identity };
-    mkdirSync(dirname(mintedInto), { recursive: true });
-    writeFileSync(mintedInto, `${JSON.stringify(own, null, 2)}\n`);
+    writeFileAtomic(mintedInto, `${JSON.stringify(own, null, 2)}\n`);
   }
 
   const registry = readRegistry();
@@ -178,8 +195,7 @@ export function registerRepo(cwd: string, alias: string | null): RegisterResult 
         : "added";
 
   registry.repos[identity] = { path: context.root, ...(resolvedAlias ? { alias: resolvedAlias } : {}) };
-  mkdirSync(dirname(REGISTRY_PATH), { recursive: true });
-  writeFileSync(REGISTRY_PATH, `${JSON.stringify(registry, null, 2)}\n`);
+  writeFileAtomic(REGISTRY_PATH, `${JSON.stringify(registry, null, 2)}\n`);
 
   return {
     identity,
