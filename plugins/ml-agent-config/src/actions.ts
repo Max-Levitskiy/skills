@@ -180,6 +180,8 @@ export interface PlanInput {
   chain: MatchedContext[];
   /** Where `start` runs, which pre-fills the context to create when none applies. */
   place: Place;
+  /** `--no-context`: a key recommending `context` goes to `global` instead, with no context-add. */
+  noContext: boolean;
 }
 
 const quote = (text: string) => `'${text.replace(/'/g, `'\\''`)}'`;
@@ -331,9 +333,9 @@ export function buildPlan(input: PlanInput): Plan {
   // 1. The component onboards its own config. Five missing keys pointing at one action produce one
   //    action carrying all five as context, not five identical interviews (D2). A gap whose keys
   //    all recommend `context` is written to the innermost matched context: its me file when any
-  //    key is the person's own or a credential, else its team file. With no context matched, one
-  //    context-add action comes first, however many gaps wait on it; a gap mixing layers is left
-  //    to the onboard action.
+  //    key is the person's own or a credential, else its team file. Under `--no-context` it goes to
+  //    `global`. With no context matched, one context-add action comes first, however many gaps
+  //    wait on it; a gap mixing layers is left to the onboard action.
   const entries = new Map(declaredKeys(found.declaration).map(({ path, entry }) => [path, entry]));
   const innermost = input.chain.at(-1);
   let contextAdd: EmittedAction | null = null;
@@ -351,6 +353,9 @@ export function buildPlan(input: PlanInput): Plan {
       if (innermost) {
         const me = gap.keys.some((key) => isPersonalKey(key, entries.get(key)));
         context.layer = `context:${innermost.name}${me ? ":me" : ""}`;
+      } else if (input.noContext) {
+        // The person turned contexts off, so offering to create one would loop: the alternative.
+        context.layer = "global";
       } else {
         if (!contextAdd) {
           contextAdd = emit(builtin("context-add"), { context: contextSuggestion(input.place) });

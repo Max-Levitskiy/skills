@@ -209,6 +209,15 @@ describe("contexts through the CLI", () => {
     expect(r.actions.find((a: any) => a.id === "personal").requires).toContain("agent-config:context-add");
   });
 
+  test("start --no-context plans no context-add and onboards a context key into global", () => {
+    const { run, repoDir } = sandbox();
+    const r = run("start", "demo", "--cwd", repoDir, "--no-context").json; // acme would match
+    expect(r.actions.map((a: any) => a.id)).not.toContain("agent-config:context-add");
+    const onboard = r.actions.find((a: any) => a.id === "onboard");
+    expect(onboard.context.layer).toBe("global");
+    expect(onboard.requires).not.toContain("agent-config:context-add");
+  });
+
   test("write refuses a credential or a personal key in a context team file", () => {
     const { runWithStdin } = sandbox();
     const credential = runWithStdin("write", "demo", "--layer", "context:acme", JSON.stringify({ credentials: { token: { source: "env", var: "T" } } }));

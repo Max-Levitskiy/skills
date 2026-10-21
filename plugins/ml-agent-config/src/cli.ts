@@ -340,6 +340,7 @@ function start(parsed: ParsedArgs): number {
     from: parsed.from,
     chain,
     place,
+    noContext: parsed.noContext,
   });
 
   const output: StartOutput = {

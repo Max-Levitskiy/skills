@@ -100,7 +100,8 @@ A key whose declared `layer` is `context` belongs to whichever context applies h
   widened to its owner, `github.com/acme/**`; absent when there is no remote), `path` (the checkout
   root, or the cwd outside git) and `alternative: "global"`. Its body says what to ask: create the
   context with `agent-config context add`, or write the keys to global instead. Nothing is created
-  without the user's answer.
+  without the user's answer. Under `start --no-context` no `context-add` is planned, and the
+  onboarding action's `context.layer` is `global`.
 
 Either way, re-run `start` afterwards. A created context matches from then on, so the onboarding
 action names its layer.
