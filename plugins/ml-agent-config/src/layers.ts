@@ -29,14 +29,32 @@ export type Layer = "global" | ContextLayer | "repo" | "user-repo" | "local";
 /** The fixed layers, for callers that list them. The merge order, contexts included, is `layerOrder`. */
 export const LAYERS: Layer[] = ["global", "repo", "user-repo", "local"];
 
-// A context name is one path segment, and the `:me` suffix is the only other colon.
-const CONTEXT_LAYER = /^context:([^:/\\]+)(:me)?$/;
+const CONTEXT_PREFIX = "context:";
+const ME_SUFFIX = ":me";
 
-/** The context a context layer names, and whether it is the `me` layer; null for a fixed layer. */
+/**
+ * Why `name` cannot be a context name, or null when it can. A context name is one path segment
+ * with no colon, so it stays inside `~/.agents/contexts/` and a `:me` suffix is never ambiguous.
+ */
+export function invalidContextName(name: string): string | null {
+  if (name === "") return "it is empty";
+  if (name === "." || name === "..") return `"${name}" is not a directory name`;
+  if (/[:/\\]/.test(name)) return "it contains a colon, a slash or a backslash";
+  return null;
+}
+
+/**
+ * The context a context layer names, and whether it is the `me` layer. Null for a fixed layer; a
+ * malformed `context:` layer is a ConfigError, so it can never pass for a fixed layer.
+ */
 function contextOf(layer: string): { context: string; me: boolean } | null {
-  const match = CONTEXT_LAYER.exec(layer);
-  if (!match || match[1] === "." || match[1] === "..") return null;
-  return { context: match[1], me: match[2] !== undefined };
+  if (!layer.startsWith(CONTEXT_PREFIX)) return null;
+  const rest = layer.slice(CONTEXT_PREFIX.length);
+  const me = rest.endsWith(ME_SUFFIX);
+  const context = me ? rest.slice(0, -ME_SUFFIX.length) : rest;
+  const invalid = invalidContextName(context);
+  if (invalid) throw new ConfigError(`Layer "${layer}" does not name a valid context, because ${invalid}`);
+  return { context, me };
 }
 
 /** Each matched context's team layer then its `me` layer, in chain order (outermost first). */
@@ -52,6 +70,7 @@ export function layerOrder(chain: MatchedContext[]): Layer[] {
 /** A `--layer` value as a Layer, or a ConfigError naming what is accepted. */
 export function parseLayer(value: string): Layer {
   if (LAYERS.includes(value as Layer) || contextOf(value)) return value as Layer;
+  // contextOf has already thrown for a malformed `context:` value.
   throw new ConfigError(`Unknown layer "${value}" (${LAYERS.join(", ")}, context:<name>, context:<name>:me)`);
 }
 

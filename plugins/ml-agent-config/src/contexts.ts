@@ -9,7 +9,7 @@ import { homedir } from "os";
 import { join } from "path";
 import { existsSync, readdirSync, readFileSync, statSync } from "fs";
 import { compileGlob } from "./glob";
-import { ConfigError } from "./layers";
+import { ConfigError, invalidContextName } from "./layers";
 import type { Place } from "./place";
 import type { Problem } from "./types";
 
@@ -149,8 +149,8 @@ function readOrder(file: string, problems: Problem[]): string[] {
 
 /**
  * Every context under `<home>/.agents/contexts/`. A context whose `context.json` cannot be read is
- * left out and reported as `context-unparsable`; a directory with no `context.json` is reported as
- * `context-stray-dir`.
+ * left out and reported as `context-unparsable`, as is a directory whose name is not a valid
+ * context name; a directory with no `context.json` is reported as `context-stray-dir`.
  */
 export function readContexts(home: string = homedir()): ContextStore {
   const root = join(home, CONTEXTS_DIR);
@@ -160,6 +160,15 @@ export function readContexts(home: string = homedir()): ContextStore {
   for (const name of readdirSync(root).sort()) {
     const dir = join(root, name);
     if (!isDirectory(dir)) continue;
+    const invalid = invalidContextName(name);
+    if (invalid) {
+      store.problems.push({
+        code: "context-unparsable",
+        message: `${dir} is not a valid context name, because ${invalid}; it is ignored`,
+        path: dir,
+      });
+      continue;
+    }
     if (!existsSync(join(dir, TEAM_FILE))) {
       store.problems.push({
         code: "context-stray-dir",

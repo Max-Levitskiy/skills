@@ -52,6 +52,18 @@ describe("contexts", () => {
     put("b", { parent: "a" });
     expect(() => resolveChain(readContexts(h), place({ remotes: ["x/y"] }), {})).toThrow(/cycle/);
   });
+  test("a directory whose name cannot be a context name is reported and skipped", () => {
+    const { h, put } = home();
+    put("foo:me", { match: [{ remote: "x/**" }] });
+    put("ok", { match: [{ remote: "x/**" }] });
+    const store = readContexts(h);
+    const problem = store.problems.find(p => p.path?.endsWith("foo:me"));
+    expect(problem?.code).toBe("context-unparsable");
+    expect(problem?.message).toMatch(/not a valid context name.*colon/);
+    expect([...store.defs.keys()]).toEqual(["ok"]);
+    expect(resolveChain(store, place({ remotes: ["x/y"] }), {}).map(c => c.name)).toEqual(["ok"]);
+  });
+
   test("an unparsable context is skipped unless something names it", () => {
     const { h, put } = home();
     put("broken", "{ not json");

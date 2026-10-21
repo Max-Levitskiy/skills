@@ -19,7 +19,9 @@ const REGISTRY_PATH = join(homedir(), ".agents", "repos.json");
 
 /**
  * Write a file whole or not at all: the text goes to a temp sibling in the same directory, then a
- * rename swaps it in, so a crash or a concurrent reader never sees half a file. It lives here, not
+ * rename swaps it in, so a crash or a concurrent reader never sees half a file. The rename replaces
+ * the path itself: a symlink there becomes a regular file, and the file gets default permissions.
+ * It lives here, not
  * in layers.ts (which re-exports it), because layers.ts imports this module and the reverse import
  * would be a cycle.
  */
