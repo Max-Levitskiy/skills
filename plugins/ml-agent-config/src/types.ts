@@ -5,6 +5,8 @@ import type { ConfigObject, ConfigValue, Layer } from "./layers";
 import type { Harness } from "./harness";
 import type { WhenMatcher } from "./declaration";
 import type { Defs, ValueSchema } from "./key-schema";
+import type { MatchedContext, MatchEntry } from "./contexts";
+import type { Place } from "./place";
 
 export const ACS_VERSION = 2;
 
@@ -66,6 +68,8 @@ export interface StartOutput {
   config: ConfigObject;
   provenance: Record<string, Layer | "default">;
   actions: EmittedAction[];
+  /** The contexts that apply here, outermost first, each with why. */
+  contexts: MatchedContext[];
   problems: Problem[];
 }
 
@@ -74,14 +78,15 @@ export interface LoadOutput {
   name: string;
   config: ConfigObject;
   provenance: Record<string, Layer | "default">;
+  contexts: MatchedContext[];
   problems: Problem[];
 }
 
 export interface DescribedKey {
   path: string;
   description: string;
-  /** Advisory: where onboarding recommends writing it. */
-  layer: Layer | null;
+  /** Advisory: where onboarding recommends writing it; `context` is whichever context applies. */
+  layer: Layer | "context" | null;
   default: ConfigValue | null;
   /** What the key holds, as JSON Schema; null when the declaration leaves it to the default. */
   schema: ValueSchema | null;
@@ -118,6 +123,7 @@ export interface DescribeOutput {
     /** Successive earlier contents, newest first. Absent for the repo layer, which git journals. */
     journal: { at: string; config: ConfigObject }[];
   }[];
+  contexts: MatchedContext[];
   problems: Problem[];
 }
 
@@ -144,4 +150,28 @@ export interface PathOutput {
     exists: boolean;
     schemaVersion: number | null;
   }[];
+  contexts: MatchedContext[];
+}
+
+export interface ContextListOutput {
+  acs: typeof ACS_VERSION;
+  /** Every readable context, by name; `matched` when it is in the chain for this place. */
+  contexts: {
+    name: string;
+    id: string | null;
+    parent: string | null;
+    abstract: boolean;
+    team: MatchEntry[];
+    me: MatchEntry[];
+    matched: boolean;
+  }[];
+  problems: Problem[];
+}
+
+export interface ContextExplainOutput {
+  acs: typeof ACS_VERSION;
+  place: Place;
+  chain: MatchedContext[];
+  /** The merge order the chain makes. */
+  layers: Layer[];
 }

@@ -27,7 +27,7 @@ export type WhenMatcher = string | Record<string, Scalar | Scalar[]>;
 export interface KeyEntry extends ValueSchema {
   description: string;
   /** Advisory only: onboarding recommends it with a reason, writing elsewhere is permitted. */
-  layer?: Layer;
+  layer?: Layer | "context";
   default?: ConfigValue;
 }
 

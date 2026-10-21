@@ -5,16 +5,20 @@
 // exit 0, and a caller that genuinely wants it fatal passes --require-ready.
 
 import { readFileSync, writeSync } from "fs";
-import { join } from "path";
+import { join, resolve as absolute } from "path";
 import { detectHarness } from "./harness";
 import { repoContext, registerRepo, type RepoContext } from "./repo";
+import { placeOf, type Place } from "./place";
+import { readContexts, resolveChain, type ContextStore, type MatchedContext } from "./contexts";
 import {
   ConfigError,
   LAYERS,
   layerFiles,
+  layerOrder,
   legacyFiles,
   adoptLegacy,
   loadLayers,
+  parseLayer,
   readJournal,
   readLayer,
   writeLayer,
@@ -32,6 +36,8 @@ import { cacheKey } from "./secret-cache";
 import * as onePassword from "./onepassword";
 import {
   ACS_VERSION,
+  type ContextListOutput,
+  type ContextExplainOutput,
   type DescribedKey,
   type DescribeOutput,
   type ListOutput,
@@ -83,8 +89,18 @@ const USAGE = `agent-config <command>
                                                   items with no --vault lists every vault, and with
                                                   no --account every account
   repos register [--alias <alias>]                add this repository to the repo registry
+  context list                                    every context, and whether it applies here
+  context explain                                 the place, the contexts that apply and why,
+                                                  and the layers they make
 
-Layers: ${LAYERS.join(", ")}. Output is JSON only — rendering for a human is the agent's job.`;
+Where:  --cwd <dir>        the place to resolve for, instead of the current directory
+        --context <name>   apply this context too (and its parents), matched or not
+        --no-context       apply no matched context
+Every command that reads config takes them.
+
+Layers: global, context:<name>, context:<name>:me, repo, user-repo, local — one context:<name>
+pair per context that applies, outermost first. Output is JSON only — rendering for a human is the
+agent's job.`;
 
 interface ParsedArgs {
   command: string;
@@ -95,13 +111,23 @@ interface ParsedArgs {
   account?: string;
   vault?: string;
   item?: string;
+  cwd?: string;
+  context?: string;
+  noContext: boolean;
   secrets: string[];
   requireReady: boolean;
   withReferences: boolean;
 }
 
 function parseArgs(argv: string[]): ParsedArgs {
-  const parsed: ParsedArgs = { command: argv[0] ?? "", positionals: [], secrets: [], requireReady: false, withReferences: false };
+  const parsed: ParsedArgs = {
+    command: argv[0] ?? "",
+    positionals: [],
+    secrets: [],
+    requireReady: false,
+    withReferences: false,
+    noContext: false,
+  };
   let collecting: "secrets" | null = null;
 
   for (let index = 1; index < argv.length; index += 1) {
@@ -112,7 +138,10 @@ function parseArgs(argv: string[]): ParsedArgs {
     } else if (argument === "--with-references") {
       collecting = null;
       parsed.withReferences = true;
-    } else if (["--from", "--layer", "--alias", "--account", "--vault", "--item"].includes(argument)) {
+    } else if (argument === "--no-context") {
+      collecting = null;
+      parsed.noContext = true;
+    } else if (["--from", "--layer", "--alias", "--account", "--vault", "--item", "--cwd", "--context"].includes(argument)) {
       collecting = null;
       const value = argv[index + 1];
       if (!value || value.startsWith("--")) throw new ConfigError(`${argument} needs a value`);
@@ -123,6 +152,8 @@ function parseArgs(argv: string[]): ParsedArgs {
       if (argument === "--account") parsed.account = value;
       if (argument === "--vault") parsed.vault = value;
       if (argument === "--item") parsed.item = value;
+      if (argument === "--cwd") parsed.cwd = value;
+      if (argument === "--context") parsed.context = value;
     } else if (argument === "--secrets") {
       // Several keys in one call, so a script needing two secrets does not trigger two prompts.
       collecting = "secrets";
@@ -134,6 +165,9 @@ function parseArgs(argv: string[]): ParsedArgs {
       parsed.positionals.push(argument);
     }
   }
+  if (parsed.context !== undefined && parsed.noContext) {
+    throw new ConfigError("--context and --no-context cannot be combined: one adds a context, the other drops them all");
+  }
   return parsed;
 }
 
@@ -144,9 +178,8 @@ function requireName(parsed: ParsedArgs): string {
 }
 
 function requireLayer(value: string | undefined): Layer {
-  if (!value) throw new ConfigError(`--layer is required (${LAYERS.join(", ")})`);
-  if (!LAYERS.includes(value as Layer)) throw new ConfigError(`Unknown layer "${value}" (${LAYERS.join(", ")})`);
-  return value as Layer;
+  if (!value) throw new ConfigError(`--layer is required (${LAYERS.join(", ")}, context:<name>, context:<name>:me)`);
+  return parseLayer(value);
 }
 
 function repoReport(repo: RepoContext): RepoReport {
@@ -177,24 +210,44 @@ function legacyProblems(name: string, repo: RepoContext): Problem[] {
     }));
 }
 
-interface Resolved {
-  found: FoundDeclaration;
+/** Where the command runs, and the contexts that apply there: the one place the chain is resolved. */
+interface Located {
   repo: RepoContext;
+  place: Place;
+  store: ContextStore;
+  chain: MatchedContext[];
+}
+
+/** The directory the command runs for: `--cwd`, made absolute so path filters can match it, else the current one. */
+function cwdOf(parsed: ParsedArgs): string {
+  return parsed.cwd ? absolute(parsed.cwd) : process.cwd();
+}
+
+function locate(parsed: ParsedArgs): Located {
+  const cwd = cwdOf(parsed);
+  const place = placeOf(cwd);
+  const store = readContexts();
+  const chain = resolveChain(store, place, { explicit: parsed.context, none: parsed.noContext });
+  return { repo: repoContext(cwd), place, store, chain };
+}
+
+interface Resolved extends Located {
+  found: FoundDeclaration;
   loaded: LoadedLayers;
   effective: Effective;
 }
 
-function resolve(name: string, from: string | undefined): Resolved {
-  const repo = repoContext();
-  const found = findDeclaration(name, detectHarness(), from);
-  const loaded = loadLayers(name, repo, []);
-  return { found, repo, loaded, effective: effectiveConfig(found.declaration, loaded) };
+function resolve(name: string, parsed: ParsedArgs): Resolved {
+  const located = locate(parsed);
+  const found = findDeclaration(name, detectHarness(), parsed.from);
+  const loaded = loadLayers(name, located.repo, located.chain);
+  return { ...located, found, loaded, effective: effectiveConfig(found.declaration, loaded) };
 }
 
 function start(parsed: ParsedArgs): number {
   const name = requireName(parsed);
   const harness = detectHarness();
-  const { found, repo, loaded, effective } = resolve(name, parsed.from);
+  const { found, repo, loaded, effective, store, chain } = resolve(name, parsed);
   const plan = buildPlan({
     found,
     harness,
@@ -216,7 +269,8 @@ function start(parsed: ParsedArgs): number {
     config: effective.config,
     provenance: effective.provenance,
     actions: plan.actions,
-    problems: [...effective.problems, ...plan.problems, ...legacyProblems(name, repo)],
+    contexts: chain,
+    problems: [...effective.problems, ...plan.problems, ...legacyProblems(name, repo), ...store.problems],
   };
   out(`${JSON.stringify(output, null, 2)}\n`);
 
@@ -236,8 +290,8 @@ function start(parsed: ParsedArgs): number {
  */
 function load(parsed: ParsedArgs): number {
   const name = requireName(parsed);
-  const { found, repo, loaded, effective } = resolve(name, parsed.from);
-  const problems: Problem[] = [...effective.problems, ...legacyProblems(name, repo)];
+  const { found, repo, loaded, effective, store, chain } = resolve(name, parsed);
+  const problems: Problem[] = [...effective.problems, ...legacyProblems(name, repo), ...store.problems];
 
   for (const file of loaded.files) {
     if (!file.exists || file.schemaVersion === null) continue;
@@ -274,6 +328,7 @@ function load(parsed: ParsedArgs): number {
     name,
     config: effective.config,
     provenance: effective.provenance,
+    contexts: chain,
     problems,
   };
   out(`${JSON.stringify(output, null, 2)}\n`);
@@ -320,7 +375,7 @@ function load(parsed: ParsedArgs): number {
  */
 function adopt(parsed: ParsedArgs): number {
   const name = requireName(parsed);
-  const repo = repoContext();
+  const repo = repoContext(cwdOf(parsed));
   const found = findDeclaration(name, detectHarness(), parsed.from);
   const schema = { version: found.schemaVersion, declared: found.declaration.schema ?? {} };
 
@@ -347,7 +402,7 @@ function adopt(parsed: ParsedArgs): number {
 function write(parsed: ParsedArgs): number {
   const name = requireName(parsed);
   const layer = requireLayer(parsed.layer);
-  const repo = repoContext();
+  const repo = repoContext(cwdOf(parsed));
   const found = findDeclaration(name, detectHarness(), parsed.from);
 
   const raw = readFileSync(0, "utf8").trim();
@@ -388,7 +443,7 @@ function write(parsed: ParsedArgs): number {
 function describe(parsed: ParsedArgs): number {
   const name = requireName(parsed);
   const harness = detectHarness();
-  const { found, repo, loaded, effective } = resolve(name, parsed.from);
+  const { found, repo, loaded, effective, store, chain } = resolve(name, parsed);
   const own = loaded.files
     .filter((file) => file.exists)
     .map((file) => ({ layer: file.layer, config: readLayer(name, file.layer, repo) ?? {} }));
@@ -402,7 +457,8 @@ function describe(parsed: ParsedArgs): number {
     keys: effective.keys.map((key) => withLevels(key, own)),
     defs: found.declaration.schema?.$defs ?? {},
     layers: loaded.files.map((file) => ({ ...file, journal: readJournal(name, file.layer, repo) })),
-    problems: [...effective.problems, ...legacyProblems(name, repo)],
+    contexts: chain,
+    problems: [...effective.problems, ...legacyProblems(name, repo), ...store.problems],
   };
   out(`${JSON.stringify(output, null, 2)}\n`);
   return EXIT.ok;
@@ -420,16 +476,17 @@ export function withLevels(key: DescribedKey, own: { layer: Layer; config: Confi
     const value = ownValueAt(config, key.path);
     if (value !== undefined) levels[layer] = value;
   }
-  const top = [...LAYERS].reverse().find((layer) => layer in levels);
+  // `own` is in merge order, so the last layer that sets the key is the one that wins.
+  const top = own.map(({ layer }) => layer).reverse().find((layer) => layer in levels);
   const source = top === undefined ? (key.source ?? null) : levels[top] !== null ? top : key.source === "default" ? "default" : null;
   return { ...key, levels, source };
 }
 
 function path(parsed: ParsedArgs): number {
   const name = requireName(parsed);
-  const repo = repoContext();
+  const { repo, chain } = locate(parsed);
   const found = findDeclaration(name, detectHarness(), parsed.from);
-  const files = layerFiles(name, repo, []);
+  const files = layerFiles(name, repo, chain);
   const wanted = parsed.layer ? requireLayer(parsed.layer) : null;
 
   const output: PathOutput = {
@@ -438,7 +495,31 @@ function path(parsed: ParsedArgs): number {
     declaration: found.path,
     agentConfig: { root: join(import.meta.dir, ".."), bin: join(import.meta.dir, "..", "bin", "agent-config") },
     layers: wanted ? files.filter((file) => file.layer === wanted) : files,
+    contexts: chain,
   };
+  out(`${JSON.stringify(output, null, 2)}\n`);
+  return EXIT.ok;
+}
+
+const CONTEXT_USAGE = `context list | explain [--cwd <dir>] [--context <name>] [--no-context]`;
+
+/** `list`: every context and whether it applies here. `explain`: the place, the chain and its layers. */
+function context(parsed: ParsedArgs): number {
+  const subcommand = parsed.positionals[0];
+  if (subcommand !== "list" && subcommand !== "explain") {
+    throw new ConfigError(`Unknown context subcommand ${JSON.stringify(subcommand ?? "")}: ${CONTEXT_USAGE}\n\n${USAGE}`);
+  }
+  const { place, store, chain } = locate(parsed);
+  let output: ContextListOutput | ContextExplainOutput;
+  if (subcommand === "list") {
+    const applied = new Set(chain.map((one) => one.name));
+    const contexts = [...store.defs.values()]
+      .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+      .map(({ name, id, parent, abstract, team, me }) => ({ name, id, parent, abstract, team, me, matched: applied.has(name) }));
+    output = { acs: ACS_VERSION, contexts, problems: store.problems };
+  } else {
+    output = { acs: ACS_VERSION, place, chain, layers: layerOrder(chain) };
+  }
   out(`${JSON.stringify(output, null, 2)}\n`);
   return EXIT.ok;
 }
@@ -474,7 +555,7 @@ function repos(parsed: ParsedArgs): number {
       `Unknown repos subcommand ${JSON.stringify(subcommand ?? "")}. Only "register" exists so far.`,
     );
   }
-  const result = registerRepo(process.cwd(), parsed.alias ?? null);
+  const result = registerRepo(cwdOf(parsed), parsed.alias ?? null);
   out(`${JSON.stringify({ acs: ACS_VERSION, ...result }, null, 2)}\n`);
   return EXIT.ok;
 }
@@ -508,6 +589,8 @@ export function main(argv: string[]): number {
         return browseOnePassword(parsed);
       case "repos":
         return repos(parsed);
+      case "context":
+        return context(parsed);
       case "":
       case "help":
       case "--help":

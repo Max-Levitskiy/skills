@@ -81,7 +81,7 @@
         },
         "layer": {
           "type": "string",
-          "enum": ["global", "repo", "user-repo", "local"],
+          "enum": ["global", "context", "repo", "user-repo", "local"],
           "description": "Advisory hint for which config layer this key is expected to live in."
         },
         "default": {
