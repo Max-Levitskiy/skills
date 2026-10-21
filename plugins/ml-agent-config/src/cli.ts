@@ -4,7 +4,7 @@
 // conflating them is what makes "not configured" look like a failure — so needing onboarding is
 // exit 0, and a caller that genuinely wants it fatal passes --require-ready.
 
-import { readFileSync, writeSync } from "fs";
+import { readFileSync, statSync, writeSync } from "fs";
 import { join, resolve as absolute } from "path";
 import { detectHarness } from "./harness";
 import { repoContext, registerRepo, type RepoContext } from "./repo";
@@ -218,9 +218,22 @@ interface Located {
   chain: MatchedContext[];
 }
 
-/** The directory the command runs for: `--cwd`, made absolute so path filters can match it, else the current one. */
+/**
+ * The directory the command runs for: `--cwd`, made absolute so path filters can match it, else the
+ * current one. A `--cwd` that is not a directory is refused: git would resolve it as no repo and no
+ * remotes, and `load` would answer confidently with neither repo nor context layers.
+ */
 function cwdOf(parsed: ParsedArgs): string {
-  return parsed.cwd ? absolute(parsed.cwd) : process.cwd();
+  if (!parsed.cwd) return process.cwd();
+  const dir = absolute(parsed.cwd);
+  let isDirectory = false;
+  try {
+    isDirectory = statSync(dir).isDirectory();
+  } catch {
+    /* missing or unreadable: not a directory we can resolve */
+  }
+  if (!isDirectory) throw new ConfigError(`--cwd ${dir} is not a directory`);
+  return dir;
 }
 
 function locate(parsed: ParsedArgs): Located {

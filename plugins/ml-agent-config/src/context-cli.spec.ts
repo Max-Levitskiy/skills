@@ -81,6 +81,16 @@ describe("contexts through the CLI", () => {
 
   test("--context with an unknown name exits 2", () => {
     const { run } = sandbox();
-    expect(run("load", "demo", "--context", "nope").code).toBe(2);
+    const r = run("load", "demo", "--context", "nope");
+    expect(r.code).toBe(2);
+    expect(r.stderr).toContain('"nope"');
+  });
+
+  test("--cwd that is not a directory exits 2 instead of resolving an empty place", () => {
+    const { run, put, home } = sandbox();
+    put("global", { site: "mine" });
+    const r = run("load", "demo", "--cwd", join(home, "does", "not", "exist"));
+    expect(r.code).toBe(2);
+    expect(r.stderr).toContain("is not a directory");
   });
 });
