@@ -4,7 +4,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "child_process";
-import { closeSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, writeFileSync } from "fs";
+import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 
@@ -49,6 +49,8 @@ function sandbox() {
   const localPath = join(repoDir, ".agents", "config", "demo", "config.local.json");
   const putLocalLayer = (config: object) => writeJson(localPath, config);
   const dropLocalLayer = () => rmSync(localPath);
+  const putLegacyLocal = (config: object) =>
+    writeJson(join(repoDir, ".agents", "skill-config", "demo", "config.local.json"), config);
 
   /**
    * The CLI, with fd 3 parsed into `fd3` when it was written. Bun's spawnSync returns no output for
@@ -74,7 +76,7 @@ function sandbox() {
       fd3: fd3 ? JSON.parse(fd3) : null,
     };
   };
-  return { run, putGlobal, putContext, putRepoLayer, putLocalLayer, dropLocalLayer, git, repoDir, home };
+  return { run, putGlobal, putContext, putRepoLayer, putLocalLayer, dropLocalLayer, putLegacyLocal, writeJson, localPath, git, repoDir, home };
 }
 
 describe("credential references and trust", () => {
@@ -98,6 +100,51 @@ describe("credential references and trust", () => {
     putLocalLayer({ credentials: { token: { source: "command", command: "echo pwned" } } });
     git(repoDir, "add", "-f", ".agents/config/demo/config.local.json");
     expect(run("start", "demo", "--cwd", repoDir).json.problems.map((p: any) => p.code)).toContain("untrusted-layer-key");
+    const r = run("load", "demo", "--cwd", repoDir, "--secrets", "token");
+    expect(r.code).toBe(2);
+    expect(r.fd3).toBeNull();
+  });
+
+  test("a config.local.json reached through a committed symlink is untrusted", () => {
+    const { run, writeJson, git, repoDir } = sandbox();
+    // git does not follow the symlink, so it calls the path untracked though the file is committed.
+    writeJson(join(repoDir, "evil", "demo", "config.local.json"), {
+      credentials: { token: { source: "command", command: "echo pwned" } },
+    });
+    mkdirSync(join(repoDir, ".agents"), { recursive: true });
+    symlinkSync(join("..", "evil"), join(repoDir, ".agents", "config"));
+    git(repoDir, "add", "-f", "evil", ".agents");
+    const r = run("load", "demo", "--cwd", repoDir, "--secrets", "token");
+    expect(r.code).toBe(2);
+    expect(r.fd3).toBeNull();
+    const problem = run("start", "demo", "--cwd", repoDir).json.problems.find((p: any) => p.code === "untrusted-layer-key");
+    expect(problem).toMatchObject({ layer: "local" });
+  });
+
+  test("a config.local.json git cannot vouch for is untrusted", () => {
+    const { run, putLocalLayer, repoDir } = sandbox();
+    putLocalLayer({ credentials: { token: { source: "env", var: "T" } } });
+    writeFileSync(join(repoDir, ".git", "index"), "not an index");
+    const d = run("describe", "demo", "--cwd", repoDir).json;
+    expect(d.layers.find((l: any) => l.layer === "local").trusted).toBe(false);
+    expect(d.problems.map((p: any) => p.code)).toContain("untrusted-layer-key");
+  });
+
+  test("adopting a tracked v1 config.local.json leaves its credentials behind and says so", () => {
+    const { run, putLegacyLocal, localPath, git, repoDir } = sandbox();
+    putLegacyLocal({ credentials: { token: { source: "command", command: "echo pwned" } }, note: "kept" });
+    git(repoDir, "add", "-f", ".agents/skill-config/demo/config.local.json");
+    const adopted = run("adopt", "demo", "--cwd", repoDir);
+    expect(adopted.code).toBe(0);
+    expect(adopted.json.problems).toMatchObject([{ code: "untrusted-layer-key", layer: "local", keys: ["credentials.token.source", "credentials.token.command"] }]);
+    expect(adopted.stderr).toContain("credentials.token.command");
+    expect(existsSync(localPath)).toBe(true);
+    const written = JSON.parse(readFileSync(localPath, "utf8"));
+    expect(written.credentials).toBeUndefined();
+    expect(written.note).toBe("kept");
+    const r = run("load", "demo", "--cwd", repoDir, "--secrets", "token");
+    expect(r.code).toBe(2);
+    expect(r.fd3).toBeNull();
   });
 
   test("an untracked config.local.json and a context me file are trusted", () => {

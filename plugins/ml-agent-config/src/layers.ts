@@ -18,10 +18,10 @@
 // a layer the user wrote here; an untrusted file's `credentials` subtree is stripped before the merge.
 
 import { homedir } from "os";
-import { join } from "path";
+import { join, relative } from "path";
 import { spawnSync } from "child_process";
-import { appendFileSync, existsSync, readFileSync, rmSync } from "fs";
-import { CONFIG_DIR, git, writeFileAtomic, type RepoContext } from "./repo";
+import { appendFileSync, existsSync, readFileSync, realpathSync, rmSync } from "fs";
+import { CONFIG_DIR, writeFileAtomic, type RepoContext } from "./repo";
 import { merge, type ConfigValue } from "./key-schema";
 import type { MatchedContext } from "./contexts";
 
@@ -211,6 +211,29 @@ export interface LoadedLayers {
 }
 
 /**
+ * Whether the file at `path`, inside `checkout`, is one git does not track, and so the user's own.
+ * It fails closed: anything that leaves the answer in doubt is false. A symlink between the checkout
+ * and the file is refused outright, because git does not follow one and would call a committed file
+ * behind it untracked. Only `ls-files` exit 1 ("did not match") means untracked; exit 0 is tracked,
+ * and any other exit (no repo, an unreadable index, `safe.directory`) or a spawn error is doubt.
+ * `check-ignore` adds nothing: git never reports a tracked path as ignored.
+ */
+export function untrackedIn(path: string, checkout: string): boolean {
+  let real: string;
+  let root: string;
+  try {
+    real = realpathSync(path);
+    root = realpathSync(checkout);
+  } catch {
+    return false;
+  }
+  const inside = relative(checkout, path);
+  if (inside === "" || inside.startsWith("..") || join(root, inside) !== real) return false;
+  const listed = spawnSync("git", ["--literal-pathspecs", "ls-files", "--error-unmatch", "--", inside], { cwd: root });
+  return !listed.error && listed.status === 1;
+}
+
+/**
  * Whether a layer's credential references are honoured. The repo layer and a context's team file
  * come from other people. `config.local.json` is the user's own only while git does not track it:
  * a tracked one arrived with the checkout, like the repo layer.
@@ -220,8 +243,7 @@ function isTrusted(layer: Layer, path: string | null, exists: boolean, checkout:
   if (context) return context.me;
   if (layer === "repo") return false;
   if (layer !== "local" || !path || !exists || !checkout) return true;
-  if (git(["ls-files", "--error-unmatch", path], checkout) === null) return true;
-  return spawnSync("git", ["check-ignore", "-q", path], { cwd: checkout }).status === 0;
+  return untrackedIn(path, checkout);
 }
 
 /** One entry per layer of `layerOrder(chain)`, in merge order. */
@@ -245,11 +267,18 @@ export function layerFiles(name: string, repo: RepoContext, chain: MatchedContex
 }
 
 /** A layer's contents as the merge takes them: an untrusted file without its `credentials` subtree. */
-export function honoured(config: ConfigObject, file: LayerFile): ConfigObject {
+export function honoured(config: ConfigObject, file: { trusted: boolean }): ConfigObject {
   if (file.trusted || !isPlainObject(config) || !("credentials" in config)) return config;
   const { credentials, ...rest } = config;
   void credentials;
   return rest;
+}
+
+/** The leaf paths of `config`'s `credentials` subtree, `credentials.token.source` style. */
+function credentialLeaves(config: ConfigObject): string[] {
+  const keys: string[] = [];
+  leafPaths(config.credentials, "credentials", keys);
+  return keys;
 }
 
 /** Merge the layers in `layerOrder(chain)`, recording which layer each surviving leaf came from. */
@@ -264,11 +293,7 @@ export function loadLayers(name: string, repo: RepoContext, chain: MatchedContex
     const raw = readConfigFile(file.path);
     if (!raw) continue;
     const parsed = honoured(raw, file);
-    if (parsed !== raw) {
-      const keys: string[] = [];
-      leafPaths(raw.credentials, "credentials", keys);
-      untrusted.push({ layer: file.layer, path: file.path, keys });
-    }
+    if (parsed !== raw) untrusted.push({ layer: file.layer, path: file.path, keys: credentialLeaves(raw) });
     const touched: string[] = [];
     leafPaths(parsed, "", touched);
     for (const path of touched) provenance[path] = file.layer;
@@ -430,6 +455,11 @@ export interface LegacyFile {
   current: string;
   /** True when the current file does not exist, so the old answers can be copied over unchanged. */
   adoptable: boolean;
+  /**
+   * False for a local file git tracks, or cannot vouch for. Adopting its credential references into
+   * the v2 local layer, which is gitignored and so trusted, would launder a teammate's command.
+   */
+  trusted: boolean;
 }
 
 /**
@@ -451,7 +481,8 @@ export function legacyFiles(name: string, repo: RepoContext): LegacyFile[] {
     .filter(({ path }) => existsSync(path))
     .map(({ layer, path }) => {
       const current = layerPath(name, layer, repo)!;
-      return { layer, path, current, adoptable: !existsSync(current) };
+      const trusted = layer !== "local" || untrackedIn(path, repo.checkout!);
+      return { layer, path, current, adoptable: !existsSync(current), trusted };
     });
 }
 
@@ -465,7 +496,12 @@ export const LEGACY_SCHEMA_VERSION = 1;
  * component's schema has moved past 1, the next `start` emits a migration for this layer, and with
  * no snapshot that migration asks the user rather than guessing.
  */
-export function adoptLegacy(name: string, file: LegacyFile, schema: { version: number; declared: unknown }, repo: RepoContext): WriteResult {
+export interface AdoptResult extends WriteResult {
+  /** The credential leaf paths left behind because the v1 file was untrusted. */
+  stripped: string[];
+}
+
+export function adoptLegacy(name: string, file: LegacyFile, schema: { version: number; declared: unknown }, repo: RepoContext): AdoptResult {
   const parsed = readConfigFile(file.path);
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
     throw new ConfigError(`${file.path} does not hold a JSON object, so there is nothing to adopt`);
@@ -473,12 +509,8 @@ export function adoptLegacy(name: string, file: LegacyFile, schema: { version: n
   // SCS v1 stamped its own format version here; it means nothing to v2.
   const { version, ...answers } = parsed;
   void version;
+  const kept = honoured(answers, file);
   const known = schema.version === LEGACY_SCHEMA_VERSION;
-  return writeLayer(
-    name,
-    file.layer,
-    answers,
-    known ? schema : { version: LEGACY_SCHEMA_VERSION },
-    repo,
-  );
+  const result = writeLayer(name, file.layer, kept, known ? schema : { version: LEGACY_SCHEMA_VERSION }, repo);
+  return { ...result, stripped: kept === answers ? [] : credentialLeaves(answers) };
 }

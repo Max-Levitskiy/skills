@@ -509,6 +509,7 @@ function adopt(parsed: ParsedArgs): number {
   const adopted: Record<string, ConfigValue>[] = [];
   const kept: Record<string, ConfigValue>[] = [];
   const failed: Record<string, ConfigValue>[] = [];
+  const problems: Problem[] = [];
   for (const file of legacyFiles(name, repo)) {
     if (!file.adoptable) {
       kept.push({ layer: file.layer, from: file.path, current: file.current });
@@ -517,12 +518,24 @@ function adopt(parsed: ParsedArgs): number {
     try {
       const result = adoptLegacy(name, file, schema, repo);
       adopted.push({ layer: file.layer, from: file.path, path: result.path, schemaVersion: result.schemaVersion });
+      if (result.stripped.length > 0) {
+        problems.push({
+          code: "untrusted-layer-key",
+          layer: file.layer,
+          path: file.path,
+          keys: result.stripped,
+          message:
+            `${file.path} sets ${result.stripped.join(", ")}, and these credential references were not adopted: git ` +
+            `tracks the file, so it is not one you wrote here. Set the credential in your own layer instead.`,
+        });
+      }
     } catch (error) {
       failed.push({ layer: file.layer, from: file.path, error: (error as Error).message });
     }
   }
-  out(`${JSON.stringify({ acs: ACS_VERSION, name, adopted, kept, failed }, null, 2)}\n`);
+  out(`${JSON.stringify({ acs: ACS_VERSION, name, adopted, kept, failed, problems }, null, 2)}\n`);
   for (const one of failed) report(`${one.from}: ${one.error}\n`);
+  for (const one of problems) report(`${one.message}\n`);
   return failed.length > 0 ? EXIT.config : EXIT.ok;
 }
 
