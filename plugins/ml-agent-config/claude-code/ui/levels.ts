@@ -67,6 +67,66 @@ export function levelStack(setting: Setting, layers: readonly string[]): LevelRo
   })
 }
 
+/** Why a level cannot hold this key: the repo's file is committed, a context's team file is shared. */
+export function refusal(layer: string): string {
+  return layer === 'repo' ? 'committed: not for a credential' : 'team file: not for a credential or personal key'
+}
+
+/** One step of a setting's path, top first: what the level sets, and what that does to the value in effect. */
+export type ChainRow = LevelRow & { canHold: boolean; state: 'wins' | 'overridden' | 'hidden' | 'blocks' | 'unset'; by?: string }
+
+/**
+ * A setting across the levels, top first, each step saying what became of its value: in effect,
+ * overridden by a level above, hidden under a block, or blocking the levels under it.
+ */
+export function chainRows(setting: Setting, layers: readonly string[]): ChainRow[] {
+  let block: string | undefined
+  return levelStack(setting, layers).map(level => {
+    const base = { ...level, canHold: canHold(setting, level.layer) }
+    if (level.value === undefined) return { ...base, state: 'unset' as const }
+    if (level.value === null) {
+      const row = block ? { ...base, state: 'hidden' as const, by: block } : { ...base, state: 'blocks' as const }
+      block ??= level.label
+      return row
+    }
+    if (level.isWinner) return { ...base, state: 'wins' as const }
+    if (block) return { ...base, state: 'hidden' as const, by: block }
+    return { ...base, state: 'overridden' as const, by: levelLabel(setting.source) }
+  })
+}
+
+/** What a step's value came to, for its line: `wins`, `overridden by Everywhere`. Empty where nothing is set. */
+export function chainState(row: ChainRow): string {
+  if (row.state === 'wins') return 'wins'
+  if (row.state === 'overridden') return `overridden by ${row.by}`
+  if (row.state === 'hidden') return `hidden by the block at ${row.by}`
+  if (row.state === 'blocks') return 'hides the levels under it'
+  return ''
+}
+
+/**
+ * The value in effect and every value it overrides, top first: `acme · Project, just me ← beta
+ * (Everywhere) ← gamma (default)`. A block ends the path; the default shows when it differs.
+ */
+export function pathLine(setting: Setting, layers: readonly string[], names: Names, defs: Defs): string {
+  const show = (value: Json) => display(setting, value, names, defs)
+  if (setting.value === null) return ''
+  const steps = [`${show(setting.value)} · ${levelLabel(setting.source)}`]
+  if (!setting.source || setting.source === 'default') return steps[0]!
+  let isBlocked = false
+  for (const layer of layers.slice(0, layers.indexOf(setting.source)).reverse()) {
+    const value = setting.levels[layer]
+    if (value === undefined) continue
+    if (value === null) {
+      isBlocked = true
+      break
+    }
+    steps.push(`${show(value)} (${levelLabel(layer)})`)
+  }
+  if (!isBlocked && setting.default !== null && show(setting.default) !== show(setting.value)) steps.push(`${show(setting.default)} (default)`)
+  return steps.join(' ← ')
+}
+
 /** What shows through under a level: the next level down that sets the key, else the default. */
 export function under(setting: Setting, layer: string, layers: readonly string[]): { label: string; value: Json } | undefined {
   const below = layers.slice(0, layers.indexOf(layer)).reverse()
@@ -112,10 +172,4 @@ export function effect(setting: Setting, layer: string, layers: readonly string[
   // Over a lower value only when it differs: "on, over on from the default" says nothing.
   const differs = below && show(below.value) !== show(here)
   return differs ? `Holds ${show(here)}, in effect ${audience}, over ${show(below.value)} from ${below.label}.` : ''
-}
-
-/** The levels above the one in effect that set nothing yet and may hold it: where an override can be added. */
-export function openAbove(setting: Setting, layers: readonly string[]): string[] {
-  const from = setting.source && setting.source !== 'default' ? layers.indexOf(setting.source) : -1
-  return layers.filter((layer, index) => index > from && setting.levels[layer] === undefined && canHold(setting, layer))
 }

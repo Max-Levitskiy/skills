@@ -59,7 +59,7 @@ export type Level = { layer: string; path: string; exists: boolean }
 
 /** One screen of the pane. The pane draws the top of the stack; Back pops it. */
 export type Screen = {
-  kind: 'components' | 'settings' | 'show' | 'edit' | 'node' | 'levels' | 'saveto' | 'files' | 'source' | 'onepassword' | 'filter' | 'fields'
+  kind: 'components' | 'settings' | 'show' | 'edit' | 'node' | 'files' | 'source' | 'onepassword' | 'filter' | 'fields'
   /** A node screen's part of the value being edited: property, entry name or item index, outermost first. */
   at?: string[]
   /** A filter screen's subject. */

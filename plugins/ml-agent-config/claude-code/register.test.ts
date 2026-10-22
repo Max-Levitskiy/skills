@@ -612,23 +612,21 @@ test("agent-config's own on/off flag is picked on its edit screen and saved ther
   await ui.unmount()
 })
 
-test('outside a repository the one level is said, not offered as a switch', async ($, on) => {
+test('outside a repository the one level is said, with no chain to pick from', async ($, on) => {
   const w = world(on)
   w.layers = ['global']
   w.subdomain = { value: 'acme', source: 'global', levels: { global: 'acme' } }
   const ui = await open($)
   await ui.press({ key: 'component:demo' })
   await ui.press({ key: 'setting:workspace.subdomain' })
-  // Named on the title line, not a button; no level list and no Save to.
-  expect(await text(ui, 'level')).toContain('Everywhere')
-  expect(await text(ui, 'level')).not.toContain('›')
-  expect(await ui.find({ key: 'levels' })).toBeUndefined()
-  expect(await ui.find({ key: 'saveto' })).toBeUndefined()
+  // Named on the save button; no chain of levels to pick from.
+  expect(await text(ui, 'save')).toContain('Save to Everywhere')
+  expect(await ui.find({ key: 'chain' })).toBeUndefined()
   expect(await text(ui, 'where')).toContain('The only level outside a git repo')
   await ui.unmount()
 })
 
-test('an edit writes at the level switched to on top, and goes back with a message', async ($, on) => {
+test('an edit writes at the level picked in its chain, and goes back saying what it overrides', async ($, on) => {
   const w = world(on)
   w.layer = '{"workspace":{"subdomain":"acme","team":"x"}}'
   const ui = await open($)
@@ -636,12 +634,13 @@ test('an edit writes at the level switched to on top, and goes back with a messa
   await ui.press({ key: 'setting:workspace.subdomain' })
   // Set now in the repo layer, so the edit starts there; the plain case adds no line under the title.
   expect(await ui.find({ key: 'where' })).toBeUndefined()
-  // The level on the title line opens the level list: typed text stays when the level changes.
-  expect(await text(ui, 'level')).toContain('Project ›')
+  // Every level is a step of the chain on the edit screen: typed text stays when the level changes.
+  expect(await text(ui, 'level:repo')).toContain('◉ Project, shared  acme  wins')
+  expect(await text(ui, 'save')).toContain('Save to Project, shared')
   await ui.input({ key: 'value', text: 'beta', kind: 'change' })
-  await ui.press({ key: 'level' })
   await ui.press({ key: 'level:local' })
-  expect(await text(ui, 'level')).toContain('Checkout ›')
+  expect(await text(ui, 'level:local')).toContain('◉ This checkout')
+  expect(await text(ui, 'save')).toContain('Save to This checkout')
   expect(await text(ui, 'where')).toContain('Saving here overrides Project, shared (acme) in this checkout only.')
   await ui.input({ key: 'value', text: 'beta' })
   expect(w.runs.find(argv => argv[1] === 'write')).toEqual(['/ac/bin/agent-config', 'write', 'demo', '--layer', 'local'])
@@ -649,7 +648,7 @@ test('an edit writes at the level switched to on top, and goes back with a messa
   // Saved: back on the settings, saying where.
   expect(await ui.find({ key: 'value' })).toBeUndefined()
   expect(await text(ui, 'row:setting:workspace.subdomain')).toBeDefined()
-  expect(JSON.stringify(await ui.find({}))).toContain('Saved workspace.subdomain in This checkout.')
+  expect(JSON.stringify(await ui.find({}))).toContain('Saved workspace.subdomain in This checkout: it overrides acme from Project, shared.')
   await ui.unmount()
 })
 
@@ -771,41 +770,39 @@ test('a CLI that prints garbage leaves the pane usable, never loading forever', 
   await ui.unmount()
 })
 
-test('Save to writes the typed value at another level and leaves the edit level as it was', async ($, on) => {
+test('a step picked after typing writes the typed value there and leaves the other levels as they were', async ($, on) => {
   const w = world(on)
   w.layer = '{"workspace":{"subdomain":"acme"}}'
   const ui = await open($)
   await ui.press({ key: 'component:demo' })
   await ui.press({ key: 'setting:workspace.subdomain' })
   await ui.input({ key: 'value', text: 'mine', kind: 'change' })
-  await ui.press({ key: 'saveto' })
-  // Top first, the edit's own level left out, each with its file and what it would replace.
-  expect(await ui.find({ key: 'saveto:repo' })).toBeUndefined()
-  expect(await text(ui, 'row:saveto:user-repo')).toContain('~/user-repo.json · not set there now')
-  await ui.press({ key: 'saveto:user-repo' })
+  await ui.press({ key: 'level:user-repo' })
+  expect(await text(ui, 'value')).toContain('mine')
+  await ui.press({ key: 'save' })
   expect(w.runs.find(argv => argv[1] === 'write')).toEqual(['/ac/bin/agent-config', 'write', 'demo', '--layer', 'user-repo'])
   expect(JSON.parse(w.writes.at(-1)!)).toEqual({ workspace: { subdomain: 'mine' } })
-  // Both screens close: back on the settings, saying where.
+  // Back on the settings, saying where, and that Project, just me now sits over the team's value.
   expect(await text(ui, 'row:setting:workspace.subdomain')).toBeDefined()
-  expect(JSON.stringify(await ui.find({}))).toContain('Saved workspace.subdomain in Project, just me.')
+  expect(JSON.stringify(await ui.find({}))).toContain('Saved workspace.subdomain in Project, just me: it overrides acme from Project, shared.')
   await ui.unmount()
 })
 
-test('a value set Everywhere offers overrides for the team, for me, and for this checkout', async ($, on) => {
+test('a value set Everywhere offers every level above it as a step to override at', async ($, on) => {
   const w = world(on)
   w.layer = '{}'
   w.subdomain = { value: 'acme', source: 'global', levels: { global: 'acme' } }
   const ui = await open($)
   await ui.press({ key: 'component:demo' })
   await ui.press({ key: 'setting:workspace.subdomain' })
-  expect(await text(ui, 'row:override:repo')).toContain('For the team in this repo')
-  expect(await ui.find({ key: 'override:user-repo' })).toBeDefined()
-  expect(await ui.find({ key: 'override:local' })).toBeDefined()
+  expect(await text(ui, 'level:global')).toContain('◉ Everywhere  acme  wins')
+  expect(await text(ui, 'level:repo')).toContain('○ Project, shared  not set')
+  expect(await ui.find({ key: 'level:user-repo' })).toBeDefined()
+  expect(await ui.find({ key: 'level:local' })).toBeDefined()
 
   // For the team: the edit moves to the shared project level, starting from the value now.
-  await ui.press({ key: 'override:repo' })
+  await ui.press({ key: 'level:repo' })
   expect(await text(ui, 'where')).toContain('Saving here overrides Everywhere (acme) for the whole team in this repo.')
-  expect(await ui.find({ key: 'override:repo' })).toBeUndefined()
   expect(await text(ui, 'value')).toContain('acme')
   await ui.input({ key: 'value', text: 'team' })
   expect(w.runs.filter(argv => argv[1] === 'write').at(-1)).toEqual(['/ac/bin/agent-config', 'write', 'demo', '--layer', 'repo'])
@@ -819,15 +816,13 @@ test('Remove here drops the key from one level; Block inherited writes null ther
   w.subdomain = { value: 'beta', source: 'local', levels: { repo: 'acme', local: 'beta' } }
   const ui = await open($)
   await ui.press({ key: 'component:demo' })
-  expect(await text(ui, 'row:setting:workspace.subdomain')).toContain('beta · This checkout, overrides acme')
+  expect(await text(ui, 'row:setting:workspace.subdomain')).toContain('beta · This checkout ← acme (Project, shared)')
   await ui.press({ key: 'setting:workspace.subdomain' })
-  // The level button opens every level, compared, and a pick there points the edit at it.
-  await ui.press({ key: 'level' })
-  expect(await text(ui, 'row:level:local')).toContain('beta  wins')
-  expect(await text(ui, 'row:level:repo')).toContain('acme')
+  // The chain compares every level, and a pick there points the edit at it.
+  expect(await text(ui, 'level:local')).toContain('beta  wins')
+  expect(await text(ui, 'level:repo')).toContain('acme  overridden by This checkout')
   await ui.press({ key: 'level:repo' })
   expect(await text(ui, 'where')).toContain('Holds acme, but This checkout overrides it.')
-  await ui.press({ key: 'level' })
   await ui.press({ key: 'level:local' })
   expect(await text(ui, 'row:remove')).toContain('Remove here (back to acme)')
   await ui.press({ key: 'remove' })
@@ -913,7 +908,6 @@ test('what was typed keeps its type when the edit moves to a level holding anoth
   await ui.press({ key: 'show:repo' })
   await ui.press({ key: 'setting:workspace.subdomain' })
   await ui.input({ key: 'value', text: '[2]', kind: 'change' })
-  await ui.press({ key: 'level' })
   await ui.press({ key: 'level:local' })
   await ui.press({ key: 'save' })
   expect(JSON.parse(w.writes.at(-1)!).workspace.subdomain).toEqual([2])
@@ -981,7 +975,7 @@ test('the mobile pane has no fields, and still saves an on/off key', async ($, o
   await ui.press({ key: 'component:demo' })
   await ui.press({ key: 'setting:workspace.subdomain' })
   expect(await ui.find({ key: 'value' })).toBeUndefined()
-  expect(JSON.stringify(await ui.find({ key: 'level' }))).toContain('Project ›')
+  expect(JSON.stringify(await ui.find({ key: 'level:repo' }))).toContain('◉ Project, shared')
   await ui.press({ key: 'back' })
   await ui.press({ key: 'back' })
   await ui.press({ key: 'component:agent-config' })
@@ -1047,7 +1041,6 @@ test('a credential saved over a lower level of another source drops the fields t
   const ui = await open($)
   await ui.press({ key: 'component:demo' })
   await ui.press({ key: 'setting:credentials.apiKey' })
-  await ui.press({ key: 'level' })
   await ui.press({ key: 'level:local' })
   await ui.press({ key: 'source' })
   await ui.press({ key: 'source:env' })
@@ -1358,7 +1351,6 @@ test('a project inherited from a level below, removed at a higher one, is writte
   const ui = await open($)
   await ui.press({ key: 'component:demo' })
   await ui.press({ key: 'setting:team' })
-  await ui.press({ key: 'level' })
   await ui.press({ key: 'level:repo' })
   await ui.press({ key: 'at:beta' })
   await ui.press({ key: 'remove' })
@@ -1472,7 +1464,6 @@ test('a text key typed empty saves empty text, which overrides a lower level', a
   const ui = await open($)
   await ui.press({ key: 'component:demo' })
   await ui.press({ key: 'setting:scope' })
-  await ui.press({ key: 'level' })
   await ui.press({ key: 'level:repo' })
   await ui.input({ key: 'value', text: '' })
   expect(JSON.parse(w.writes.at(-1)!).scope).toBe('')

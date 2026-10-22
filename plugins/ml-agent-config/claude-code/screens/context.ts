@@ -12,18 +12,12 @@ export type Actions = {
   setup: (name: string) => Promise<void>
   setShow: (show: string) => Promise<void>
   openEdit: (setting: Setting) => Promise<void>
-  /** Point the edit at another level, staying on the edit screen. */
+  /** Point the edit at another level, keeping what was typed. */
   setLevel: (layer: string) => Promise<void>
-  /** Point the edit at an empty level above the one in effect, focused on the value. */
-  overrideAt: (layer: string) => Promise<void>
-  /** The same from the levels screen, which then closes. */
-  chooseLevel: (layer: string) => Promise<void>
   chooseSource: (source: string) => Promise<void>
   typeText: (text: string) => Promise<void>
   typeField: (field: string, text: string) => Promise<void>
   saveEdit: () => Promise<void>
-  /** Save the value at another level, leaving the edit's own level as it is. */
-  saveTo: (layer: string) => Promise<void>
   removeHere: () => Promise<void>
   blockHere: () => Promise<void>
   turnPage: (list: string, offset: number, focus: string) => Promise<void>

@@ -497,39 +497,41 @@ async function chooseSource($: EngineInterface, source: string): Promise<void> {
   await back($)
 }
 
-// Saved, the screens it took close: the edit, and the level list when the value went elsewhere.
-async function saveHere($: EngineInterface, value: Json | undefined, layer?: string, close = 1): Promise<void> {
+// Saved, the screens it took close: the edit, and a part's screens when saved from one.
+async function saveHere($: EngineInterface, value: Json | undefined, close = 1): Promise<void> {
   const now = await read($, panel)
   const edit = now.edit
   if (!edit) return
   const moved = moves
-  const at = layer ?? edit.layer
+  const at = edit.layer
   if (await save($, at, edit.path, value)) return
   // The person went elsewhere, or edited on, while it saved: the screen is not this save's to close.
   const later = await read($, panel)
   const isSameScreen = moved === moves && JSON.stringify(later.edit) === JSON.stringify(edit)
-  if (isSameScreen) await back($, close, { message: savedAt(edit.path, at, value) })
+  if (isSameScreen) {
+    const setting = editing(now)
+    await back($, close, { message: setting ? savedAt(setting, at, value, layerNames(now), now.names, now.defs) : `Saved ${edit.path}.` })
+  }
 }
 
 // A plain value is read as its type; a credential keeps its other fields (an account, a cacheVar)
 // while its source stays the same, and is saved once every field of its source is filled in.
-async function saveEdit($: EngineInterface, layer?: string, close = 1): Promise<void> {
+async function saveEdit($: EngineInterface): Promise<void> {
   const now = await read($, panel)
   const setting = editing(now)
   const edit = now.edit
   if (!setting || !edit) return
-  const at = layer ?? edit.layer
+  const at = edit.layer
   // Saved from a part's screen, those screens close too, back to the settings.
   const parts = now.stack.length - 1 - now.stack.findLastIndex(one => one.kind === 'edit')
-  const closing = top(now).kind === 'node' ? parts + 1 : close
+  const closing = top(now).kind === 'node' ? parts + 1 : 1
   // Refused, the screen says why, so the value can be fixed where it was typed.
   const refuse = async (why: string) => {
-    if (close > 1) return back($, close - 1, { message: `Not saved: ${why}` })
     await update($, panel, latest => ({ ...latest, message: `Not saved: ${why}` }))
   }
   const isTree = isTreeSetting(setting, now.defs)
   // A block stays until something is typed or picked: the value shown is only the one under it.
-  if (!edit.isDirty && at === edit.layer && setting.levels[at] === null) {
+  if (!edit.isDirty && setting.levels[at] === null) {
     const replace = isTree ? 'change a field' : 'type or pick a value'
     return refuse(`this level blocks the ones under it; ${replace} to replace the block, or Remove here`)
   }
@@ -539,7 +541,7 @@ async function saveEdit($: EngineInterface, layer?: string, close = 1): Promise<
     if (folded.error) return refuse(folded.error)
     const layers = layerNames(now)
     const below = mergedBelow(layers.slice(0, layers.indexOf(at)).map(layer => setting.levels[layer]))
-    return saveHere($, withRemovals(folded.value, edit.like, below), at, closing)
+    return saveHere($, withRemovals(folded.value, edit.like, below), closing)
   }
   if (!setting.credential) {
     // Typed as its schema says, else as the value the edit started from, which stays with what was
@@ -552,7 +554,7 @@ async function saveEdit($: EngineInterface, layer?: string, close = 1): Promise<
         ? parseAs(edit.text, setting.schema, edit.like, now.defs)
         : parseText(edit.text, edit.like)
     if (parsed.error) return refuse(parsed.error)
-    return saveHere($, parsed.value, at, close)
+    return saveHere($, parsed.value)
   }
   const fields = SOURCES[edit.source]?.fields ?? []
   const missing = fields.filter(field => !edit.draft[field.name]?.trim())
@@ -569,7 +571,7 @@ async function saveEdit($: EngineInterface, layer?: string, close = 1): Promise<
   // The loader merges a reference key by key, so a field a lower level gives it and this one does not
   // set would still apply: a cacheVar or account of another source. Null drops it.
   for (const field of inheritedFields(setting, at, layerNames(now))) if (value[field] === undefined) value[field] = null
-  return saveHere($, value, at, close)
+  return saveHere($, value)
 }
 
 // 1Password, through `agent-config 1password`, which prints names and op:// addresses only.
@@ -665,7 +667,7 @@ async function pickField($: EngineInterface, picked: string): Promise<void> {
       isDirty: true,
     },
   }))
-  await back($, 2, { message: `Picked ${reference}. Press Save here to keep it.`, focus: 'save' })
+  await back($, 2, { message: `Picked ${reference}. Press Save to keep it.`, focus: 'save' })
 }
 
 function withoutAccount(draft: Record<string, string>): Record<string, string> {
@@ -673,7 +675,7 @@ function withoutAccount(draft: Record<string, string>): Record<string, string> {
   return rest
 }
 
-// A structured key's parts. Each change lands in the edit's draft; Save here writes the whole value.
+// A structured key's parts. Each change lands in the edit's draft; Save writes the whole value.
 
 /** A draft value with every part removed reads as nothing set. */
 const asDraft = (value: Json | undefined): Json => value ?? null
@@ -749,7 +751,7 @@ async function removePart($: EngineInterface, at: string[]): Promise<void> {
     texts: withoutPart(edit.texts, at, isItem),
     names: withoutPart(edit.names, at, isItem),
   }))
-  await back($, 1, { message: `Removed ${at.at(-1)}. Save here to keep it.`, focus: parent.length === 0 ? undefined : atKey(parent) })
+  await back($, 1, { message: `Removed ${at.at(-1)}. Save to keep it.`, focus: parent.length === 0 ? undefined : atKey(parent) })
 }
 
 /** The presses, bound to this engine, for the screens to call. */
@@ -766,14 +768,6 @@ function actions($: EngineInterface, canType: boolean): Actions {
     },
     openEdit: setting => openEdit($, setting, canType),
     setLevel: layer => setLevel($, layer),
-    overrideAt: async layer => {
-      await setLevel($, layer)
-      await refocus($, firstEdit(await read($, panel), canType))
-    },
-    chooseLevel: async layer => {
-      await setLevel($, layer)
-      await back($)
-    },
     chooseSource: source => chooseSource($, source),
     typeText: async text => {
       await update($, panel, now => ({ ...now, edit: now.edit && { ...now.edit, text, isDirty: true } }))
@@ -782,7 +776,6 @@ function actions($: EngineInterface, canType: boolean): Actions {
       await update($, panel, now => ({ ...now, edit: now.edit && { ...now.edit, draft: { ...now.edit.draft, [field]: text }, isDirty: true } }))
     },
     saveEdit: () => saveEdit($),
-    saveTo: layer => saveEdit($, layer, 2),
     removeHere: () => saveHere($, undefined),
     blockHere: () => saveHere($, null),
     turnPage: async (list, offset, focus) => {
