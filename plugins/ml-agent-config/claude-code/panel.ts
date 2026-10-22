@@ -2,7 +2,7 @@
 // edit starts, and `describe` turned into settings. Nothing here calls the engine; the presses that
 // do are in register.tsx, since the engine follows `$` only within the file that declares it.
 
-import type { Component, Edit, Json, Level, Panel, Screen, Setting, ValueSchema } from '../types'
+import type { Component, Edit, Here, Json, Level, NewContext, Panel, Screen, Setting, ValueSchema } from '../types'
 import { isObject } from './shapes'
 import { addKey, atKey, choicesAt, display, getAt, isStructuredKind, isTreeSetting, nodeAt, takesEntries, type At } from './tree'
 import { levelLabel, over, under } from './ui/levels'
@@ -34,7 +34,7 @@ export function fileOf(now: Panel, layer: string): string {
 }
 
 /** `describe` as the screens read it: paths shortened to ~ and to the repository's root. */
-export function readDescribe(stdout: string, home: string | undefined, name: string): Pick<Panel, 'settings' | 'layers' | 'contexts' | 'defs'> {
+export function readDescribe(stdout: string, home: string | undefined, name: string): Pick<Panel, 'settings' | 'layers' | 'contexts' | 'defs' | 'here'> {
   const answer: unknown = JSON.parse(stdout)
   // An answer in another shape is no answer: the pane says describe failed, and stays usable.
   if (!isObject(answer) || !Array.isArray(answer.keys) || !Array.isArray(answer.layers)) throw new Error('it answered in another shape')
@@ -50,7 +50,7 @@ export function readDescribe(stdout: string, home: string | undefined, name: str
       (one): one is { layer: string; path: string | null; exists?: boolean } =>
         isObject(one) && typeof one.layer === 'string' && (one.path === null || typeof one.path === 'string'),
     ),
-    repo: isObject(answer.repo) ? (answer.repo as { checkout: string | null }) : undefined,
+    repo: isObject(answer.repo) ? (answer.repo as { checkout: string | null; root?: string | null }) : undefined,
     // A CLI before schemas sends none: every key is then typed by its value, as it was.
     defs: isObject(answer.defs) ? (answer.defs as Panel['defs']) : {},
   }
@@ -80,7 +80,29 @@ export function readDescribe(stdout: string, home: string | undefined, name: str
     defs: out.defs,
     layers: out.layers.filter(one => one.path).map(one => ({ layer: one.layer, path: short(one.path!), exists: one.exists ?? false }) satisfies Level),
     contexts: readContexts(answer.contexts),
+    here: readHere(answer.place, out.repo?.root ?? null, home ?? null),
   }
+}
+
+/** Where describe ran; a CLI before it said so sends no place. */
+function readHere(place: unknown, root: string | null, home: string | null): Here | null {
+  if (!isObject(place) || typeof place.cwd !== 'string' || !Array.isArray(place.remotes)) return null
+  const remotes = place.remotes.filter((one): one is string => typeof one === 'string')
+  return { cwd: place.cwd, root: typeof root === 'string' ? root : null, remotes, home }
+}
+
+/**
+ * A new context as first offered: named for the folder that holds this repo (or for this folder,
+ * outside one), matching every folder under it, and every repo beside this one on its remote.
+ */
+export function suggestContext(here: Here): NewContext {
+  const dir = (here.root ? here.root.replace(/\/[^/]+\/?$/, '') : here.cwd.replace(/\/$/, '')) || '/'
+  const shown = here.home && (dir === here.home || dir.startsWith(`${here.home}/`)) ? `~${dir.slice(here.home.length)}` : dir
+  const folder = dir.split('/').filter(Boolean).at(-1) ?? ''
+  // A context name holds no `:`, `/` or `\`, and does not start with a dot.
+  const name = folder.replace(/[:\\]/g, '-').replace(/^\.+/, '')
+  const owner = here.remotes[0]?.split('/').slice(0, -1) ?? []
+  return { name, path: shown.endsWith('/') ? shown : `${shown}/`, remote: owner.length >= 2 ? `${owner.join('/')}/**` : '' }
 }
 
 const VIAS: readonly string[] = ['remote', 'path', 'parent', 'explicit']

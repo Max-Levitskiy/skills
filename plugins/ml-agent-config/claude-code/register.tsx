@@ -18,7 +18,7 @@ import type { EngineInterface, Register } from 'claude-code'
 import { cacheKey, parseCache } from '../src/secret-cache'
 import type { Component, Json, OnePassword, Panel, Screen, Setting, Unlock } from '../types'
 import { HARNESS, OWN, blockedParent, firstLine, withValue, type Plan, type Reference } from './cli'
-import { PANE, editAt, editing, inheritedFields, referenceAt, firstEdit, firstKey, firstSetting, layerNames, readDescribe, savedAt, selected, switchLevel, top } from './panel'
+import { PANE, editAt, editing, inheritedFields, referenceAt, firstEdit, firstKey, firstSetting, layerNames, readDescribe, savedAt, selected, suggestContext, switchLevel, top } from './panel'
 import { draw } from './screens'
 import { emptyOf, has, kindOf } from '../src/key-schema'
 import { atKey, fold, getAt, isStructured, isTreeSetting, kindAt, mergedBelow, moveTexts, nameTaken, nodeAt, parseAs, pointer, renameAt, schemaAt, setAt, withRemovals, withoutPart } from './tree'
@@ -26,7 +26,7 @@ import { readableReference } from './screens/onepassword'
 import type { Actions } from './screens/context'
 import { isObject, isPlan, listedComponents, onePasswordFields, onePasswordListing, pathLayer } from './shapes'
 import { EMPTY_PANEL, NO_ONE_PASSWORD } from './state'
-import { canHold } from './ui/levels'
+import { canHold, levelLabel } from './ui/levels'
 import { SOURCES, isReference, parseText, targetLayer, type Stored } from './values'
 
 export type { Plan } from './cli'
@@ -373,14 +373,14 @@ async function components($: EngineInterface): Promise<Component[]> {
   return Promise.all(all.map(async one => ({ ...one, ready: (await start($, one.name, one.from))?.ready ?? null })))
 }
 
-async function describe($: EngineInterface, component: Component): Promise<Pick<Panel, 'settings' | 'defs' | 'layers' | 'contexts' | 'message'>> {
+async function describe($: EngineInterface, component: Component): Promise<Pick<Panel, 'settings' | 'defs' | 'layers' | 'contexts' | 'here' | 'message'>> {
   const from = component.from ? ['--from', component.from] : []
   try {
     const ran = await $.process.run([await bin($), 'describe', component.name, ...from], { env: HARNESS, timeoutMs: 15000 })
-    if (ran.exitCode !== 0) return { settings: [], defs: {}, layers: [], contexts: [], message: firstLine(ran.stderr) || 'describe failed' }
+    if (ran.exitCode !== 0) return { settings: [], defs: {}, layers: [], contexts: [], here: null, message: firstLine(ran.stderr) || 'describe failed' }
     return { ...readDescribe(ran.stdout, await $.env.get('HOME'), component.name), message: null }
   } catch (error) {
-    return { settings: [], defs: {}, layers: [], contexts: [], message: `describe failed: ${(error as Error).message}` }
+    return { settings: [], defs: {}, layers: [], contexts: [], here: null, message: `describe failed: ${(error as Error).message}` }
   }
 }
 
@@ -417,7 +417,7 @@ async function openComponent($: EngineInterface, name: string): Promise<void> {
   const component = (await read($, panel)).components.find(one => one.name === name)
   if (!component) return
   const mine = ++componentOpens
-  await update($, panel, now => ({ ...now, selected: name, settings: [], layers: [], contexts: [], show: 'effective', isLoading: true }))
+  await update($, panel, now => ({ ...now, selected: name, settings: [], layers: [], contexts: [], here: null, newContext: null, show: 'effective', isLoading: true }))
   await go($, { kind: 'settings' }, `component:${name}`)
   const detail = await describe($, component)
   // Opened again, this one or another, while it loaded: its answer is not that open's.
@@ -465,6 +465,47 @@ async function save($: EngineInterface, layer: string, path: string, value: Json
     return { ...latest, ...detail, components, message: failed ? `Not saved: ${failed}` : detail.message }
   })
   return failed
+}
+
+/** The new-context screen, filled in with what this place suggests. */
+async function openNewContext($: EngineInterface): Promise<void> {
+  const here = (await read($, panel)).here
+  if (!here) return
+  const newContext = suggestContext(here)
+  await update($, panel, now => ({ ...now, newContext }))
+  await go($, { kind: 'newcontext' }, 'newcontext', 'name')
+}
+
+/**
+ * `agent-config context add`, then the component read again, so the new context's levels show. An
+ * edit open moves to the new context's level that can hold its key; one the context does not match
+ * here stays where it was, and the message says so.
+ */
+async function createContext($: EngineInterface): Promise<void> {
+  const now = await read($, panel)
+  const component = selected(now)
+  const draft = now.newContext
+  if (!component || !draft) return
+  const [name, path, remote] = [draft.name.trim(), draft.path.trim(), draft.remote.trim()]
+  const refuse = (why: string) => update($, panel, latest => ({ ...latest, message: `Not created: ${why}` }))
+  if (!name) return refuse('give it a name')
+  if (!path && !remote) return refuse('give it folders or a remote to match, or it applies nowhere')
+  const argv = [await bin($), 'context', 'add', name, ...(path ? ['--path', path] : []), ...(remote ? ['--remote', remote] : [])]
+  const ran = await $.process.run(argv, { env: HARNESS, timeoutMs: 15000 })
+  if (ran.exitCode !== 0) return refuse(firstLine(ran.stderr) || 'context add failed')
+  const detail = await describe($, component)
+  const applies = detail.contexts.some(one => one.name === name)
+  let moved: string | undefined
+  await update($, panel, latest => {
+    if (latest.selected !== component.name) return { ...latest, newContext: null }
+    const next = { ...latest, ...detail, newContext: null }
+    const setting = editing(next)
+    const layers = layerNames(next)
+    moved = setting && [`context:${name}`, `context:${name}:me`].find(layer => layers.includes(layer) && canHold(setting, layer))
+    return { ...next, edit: next.edit && setting && moved ? switchLevel(next.edit, setting, moved, layers, next.defs) : next.edit }
+  })
+  const where = moved ? ` Editing at ${levelLabel(moved)}.` : ''
+  await back($, 1, { message: applies ? `Created context ${name}.${where}` : `Created context ${name}, but it does not match here.` })
 }
 
 /** An on/off key flips in place: at the level shown, or where it lives now. */
@@ -768,6 +809,11 @@ function actions($: EngineInterface, canType: boolean): Actions {
     },
     openEdit: setting => openEdit($, setting, canType),
     setLevel: layer => setLevel($, layer),
+    openNewContext: () => openNewContext($),
+    typeNewContext: async (field, text) => {
+      await update($, panel, now => ({ ...now, newContext: now.newContext && { ...now.newContext, [field]: text } }))
+    },
+    createContext: () => createContext($),
     chooseSource: source => chooseSource($, source),
     typeText: async text => {
       await update($, panel, now => ({ ...now, edit: now.edit && { ...now.edit, text, isDirty: true } }))

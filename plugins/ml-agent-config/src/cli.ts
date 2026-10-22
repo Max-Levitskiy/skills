@@ -624,7 +624,7 @@ function write(parsed: ParsedArgs): number {
 function describe(parsed: ParsedArgs): number {
   const name = requireName(parsed);
   const harness = detectHarness();
-  const { found, repo, loaded, effective, layerProblems, chain } = resolve(name, parsed);
+  const { found, repo, loaded, effective, layerProblems, chain, place } = resolve(name, parsed);
   // An untrusted file's credentials are left out here too, so no level or source names a reference
   // the merge ignored.
   const own = loaded.files
@@ -641,6 +641,7 @@ function describe(parsed: ParsedArgs): number {
     defs: found.declaration.schema?.$defs ?? {},
     layers: loaded.files.map((file) => ({ ...file, journal: readJournal(name, file.layer, repo) })),
     contexts: chain,
+    place,
     problems: [...effective.problems, ...legacyProblems(name, repo), ...layerProblems],
   };
   out(`${JSON.stringify(output, null, 2)}\n`);

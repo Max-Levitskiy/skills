@@ -165,6 +165,19 @@ describe("contexts through the CLI", () => {
     expect(d.keys.find((k: any) => k.path === "site").levels["context:acme:me"]).toBe("me");
   });
 
+  test("outside a repository a path context still applies, and describe reports the place", () => {
+    const { run, put, home } = sandbox();
+    put("global", { site: "mine" });
+    const folder = join(home, "git", "beta");
+    mkdirSync(join(folder, "notes"), { recursive: true });
+    expect(run("context", "add", "beta", "--path", "~/git/beta/").code).toBe(0);
+    const d = run("describe", "demo", "--cwd", join(folder, "notes")).json;
+    expect(d.contexts.map((c: any) => c.name)).toEqual(["beta"]);
+    expect(d.layers.map((l: any) => l.layer)).toContain("context:beta:me");
+    expect(d.place.cwd).toBe(join(folder, "notes"));
+    expect(d.place.remotes).toEqual([]);
+  });
+
   test("describe marks a key declared personal, so an editor offers it no team context level", () => {
     const { run, repoDir } = sandbox();
     const keys = run("describe", "demo", "--cwd", repoDir).json.keys;

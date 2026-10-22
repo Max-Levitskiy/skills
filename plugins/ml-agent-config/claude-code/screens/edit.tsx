@@ -6,7 +6,7 @@ import type { RenderElement } from 'claude-code'
 
 import type { Json } from '../../types'
 
-import { editing, layerNames, selected } from '../panel'
+import { editing, layerNames, selected, suggestContext } from '../panel'
 import { chainRows, chainState, effect, levelInfo, refusal, under } from '../ui/levels'
 import { note, row, screen } from '../ui/screen'
 import { display, isTreeSetting } from '../tree'
@@ -65,9 +65,16 @@ export function edit(ctx: Ctx): RenderElement {
     (said || layers.length === 1) && (
       <Box key="where" flexDirection="column" marginBottom={1}>
         {said ? <Text dimColor>{said}</Text> : null}
-        {layers.length === 1 && <Text dimColor>The only level outside a git repo. Open Claude Code in one for the project levels.</Text>}
+        {layers.length === 1 && <Text dimColor>No repo or context applies here, so only Everywhere. A context sets values for every repo and folder it matches.</Text>}
       </Box>
     ),
+    now.here &&
+      row(ui, {
+        key: 'newcontext',
+        label: '+ New context…',
+        detail: `values for a set of repos and folders, such as everything under ${suggestContext(now.here).path}`,
+        onPress: () => act.openNewContext(),
+      }),
     ...(isTree ? nodeBody(ctx, []) : []),
     choices && (
       <Box key="choices">

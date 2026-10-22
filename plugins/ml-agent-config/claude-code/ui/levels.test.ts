@@ -3,8 +3,8 @@ import { canHold, chainLine, chainRows, chainState, effect, levelInfo, levelStac
 import { savedAt } from "../panel";
 
 test("context levels are labelled by context and audience", () => {
-  expect(levelInfo("context:acme").label).toBe("Project acme, shared");
-  expect(levelInfo("context:acme:me").label).toBe("Project acme, just me");
+  expect(levelInfo("context:acme").label).toBe("Context acme, shared");
+  expect(levelInfo("context:acme:me").label).toBe("Context acme, just me");
 });
 test("the stack follows describe's order, top first", () => {
   const layers = ["global", "context:acme", "context:acme:me", "repo", "user-repo", "local"];
@@ -44,17 +44,17 @@ test("each step of the chain says what became of its value", () => {
   const setting = plainKey({ global: "beta", "user-repo": "acme" }, "user-repo", "acme");
   const rows = chainRows(setting, LAYERS);
   expect(rows.map(r => r.layer)).toEqual(["local", "user-repo", "repo", "global"]);
-  expect(rows.map(chainState)).toEqual(["", "wins", "", "overridden by Project, just me"]);
+  expect(rows.map(chainState)).toEqual(["", "wins", "", "overridden by Repo, just me"]);
 });
 test("a block hides the steps under it, and a team level for a credential is shown but not offered", () => {
   const setting = plainKey({ global: "beta", repo: null }, "default", "gamma", { default: "gamma" });
-  expect(chainRows(setting, LAYERS).map(chainState)).toEqual(["", "", "hides the levels under it", "hidden by the block at Project, shared"]);
+  expect(chainRows(setting, LAYERS).map(chainState)).toEqual(["", "", "hides the levels under it", "hidden by the block at Repo, shared"]);
   const credential = plainKey({}, null, null, { credential: true });
   expect(chainRows(credential, LAYERS).filter(r => !r.canHold).map(r => r.layer)).toEqual(["repo"]);
 });
 test("the path line lists the value in effect and every value it overrides, top first", () => {
   expect(pathLine(plainKey({ global: "beta", "user-repo": "acme" }, "user-repo", "acme"), LAYERS, {}, {})).toBe(
-    "acme · Project, just me ← beta (Everywhere)",
+    "acme · Repo, just me ← beta (Everywhere)",
   );
   expect(pathLine(plainKey({ global: "beta" }, "global", "beta", { default: "gamma" }), LAYERS, {}, {})).toBe("beta · Everywhere ← gamma (default)");
   expect(pathLine(plainKey({}, "default", "gamma", { default: "gamma" }), LAYERS, {}, {})).toBe("gamma · default");
@@ -62,10 +62,10 @@ test("the path line lists the value in effect and every value it overrides, top 
 });
 test("the saved message says what the save does to the value in effect", () => {
   const setting = plainKey({ global: "beta", local: "delta" }, "local", "delta");
-  expect(savedAt(setting, "user-repo", "acme", LAYERS, {}, {})).toBe("Saved site.url in Project, just me, but This checkout overrides it.");
+  expect(savedAt(setting, "user-repo", "acme", LAYERS, {}, {})).toBe("Saved site.url in Repo, just me, but This checkout overrides it.");
   const open = plainKey({ global: "beta" }, "global", "beta");
-  expect(savedAt(open, "user-repo", "acme", LAYERS, {}, {})).toBe("Saved site.url in Project, just me: it overrides beta from Everywhere.");
+  expect(savedAt(open, "user-repo", "acme", LAYERS, {}, {})).toBe("Saved site.url in Repo, just me: it overrides beta from Everywhere.");
   expect(savedAt(plainKey({ global: "beta", "user-repo": "acme" }, "user-repo", "acme"), "user-repo", undefined, LAYERS, {}, {})).toBe(
-    "Removed site.url from Project, just me: beta from Everywhere applies now.",
+    "Removed site.url from Repo, just me: beta from Everywhere applies now.",
   );
 });

@@ -126,6 +126,8 @@ export interface DescribeOutput {
     journal: { at: string; config: ConfigObject }[];
   }[];
   contexts: MatchedContext[];
+  /** Where this ran: what a context's filters match, and what a new context is suggested from. */
+  place: Place;
   problems: Problem[];
 }
 

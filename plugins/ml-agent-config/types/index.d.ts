@@ -57,9 +57,15 @@ export type Setting = {
 /** A level this checkout has: its file, shortened for reading, and whether the file exists. */
 export type Level = { layer: string; path: string; exists: boolean }
 
+/** Where the pane runs, as describe reports it: what a new context is suggested from. Absolute paths. */
+export type Here = { cwd: string; root: string | null; remotes: string[]; home: string | null }
+
+/** A context being created: its name and the filters it gets, each left empty to go without. */
+export type NewContext = { name: string; path: string; remote: string }
+
 /** One screen of the pane. The pane draws the top of the stack; Back pops it. */
 export type Screen = {
-  kind: 'components' | 'settings' | 'show' | 'edit' | 'node' | 'files' | 'source' | 'onepassword' | 'filter' | 'fields'
+  kind: 'components' | 'settings' | 'show' | 'edit' | 'node' | 'files' | 'newcontext' | 'source' | 'onepassword' | 'filter' | 'fields'
   /** A node screen's part of the value being edited: property, entry name or item index, outermost first. */
   at?: string[]
   /** A filter screen's subject. */
@@ -125,6 +131,9 @@ export type Panel = {
   layers: Level[]
   /** The contexts that apply here, outermost first, and why each does. */
   contexts: { name: string; via: 'remote' | 'path' | 'parent' | 'explicit' }[]
+  /** Where the pane runs; null from a CLI that does not say. */
+  here: Here | null
+  newContext: NewContext | null
   /** What the settings screen shows: the merged value, or one level's own. */
   show: string
   edit: Edit | null

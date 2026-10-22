@@ -14,6 +14,10 @@ export type Actions = {
   openEdit: (setting: Setting) => Promise<void>
   /** Point the edit at another level, keeping what was typed. */
   setLevel: (layer: string) => Promise<void>
+  /** A context for the repos and folders around this one, filled in from where the pane runs. */
+  openNewContext: () => Promise<void>
+  typeNewContext: (field: 'name' | 'path' | 'remote', text: string) => Promise<void>
+  createContext: () => Promise<void>
   chooseSource: (source: string) => Promise<void>
   typeText: (text: string) => Promise<void>
   typeField: (field: string, text: string) => Promise<void>

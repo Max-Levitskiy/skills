@@ -79,6 +79,12 @@ type World = {
   failing?: string
   /** 1Password lists one account instead of two. */
   oneAccount: boolean
+  /** Where `describe` says it ran, as a CLI with contexts reports it. */
+  place?: { cwd: string; paths: string[]; remotes: string[] }
+  /** The contexts `describe` says apply, outermost first. */
+  contexts?: { name: string; via: string }[]
+  /** Each `context add`'s arguments, after `add`. */
+  contextAdds?: string[][]
   /** What every `start` prints instead of a plan: exit 2 for a broken layer file, or not JSON at all. */
   broken: 'invalid' | 'garbled' | 'shapeless' | 'null-entry' | 'other-name' | null
 }
@@ -158,7 +164,17 @@ function world(on: On, loadExit = 0): World {
               { ...SETTING, path: 'credentials.apiKey', description: 'API key', credential: true, value: w.apiKey, source: w.apiKeyLevels ? 'local' : 'global', levels: w.apiKeyLevels ?? { global: w.apiKey } },
               { ...SETTING, path: 'workspace.subdomain', description: 'Subdomain', layer: 'repo', value: w.subdomain.value, source: w.subdomain.source, levels: w.subdomain.levels },
             ]
-      return ran(0, JSON.stringify({ name: w.describedName ?? e.argv[2], keys, layers: w.layers.map(layer => ({ layer, path: `/home/me/${layer}.json`, exists: true })), repo: { checkout: null } }))
+      const place = w.place ? { place: w.place } : {}
+      return ran(0, JSON.stringify({ name: w.describedName ?? e.argv[2], keys, layers: w.layers.map(layer => ({ layer, path: `/home/me/${layer}.json`, exists: true })), repo: { checkout: null }, contexts: w.contexts ?? [], ...place }))
+    }
+    if (e.argv[1] === 'context' && e.argv[2] === 'add') {
+      const name = e.argv[3]!
+      ;(w.contextAdds ??= []).push(e.argv.slice(3))
+      if (w.layers.includes(`context:${name}`)) return ran(2, '', `context "${name}" already exists at /home/me/.agents/contexts/${name}`)
+      // Matched here by its folder: its two levels come in between global and the repo's.
+      w.layers = [w.layers[0]!, `context:${name}`, `context:${name}:me`, ...w.layers.slice(1)]
+      w.contexts = [...(w.contexts ?? []), { name, via: 'path' }]
+      return ran(0, JSON.stringify({ name }))
     }
     if (e.argv[1] === 'path') {
       const layer = e.argv[e.argv.indexOf('--layer') + 1]
@@ -585,7 +601,7 @@ test('/agent-config opens on the components; one opens its settings, and Back re
   expect(await ui.find({ key: 'component:demo' })).toBeUndefined()
   // A credential shows where it lives and its level, never a secret.
   expect(await text(ui, 'row:setting:credentials.apiKey')).toContain('1Password: op://Private/Demo/key · Everywhere')
-  expect(await text(ui, 'row:setting:workspace.subdomain')).toContain('acme · Project, shared')
+  expect(await text(ui, 'row:setting:workspace.subdomain')).toContain('acme · Repo, shared')
   expect(w.runs.some(argv => argv[0] === 'sh')).toBe(false)
 
   await ui.press({ key: 'back' })
@@ -635,20 +651,20 @@ test('an edit writes at the level picked in its chain, and goes back saying what
   // Set now in the repo layer, so the edit starts there; the plain case adds no line under the title.
   expect(await ui.find({ key: 'where' })).toBeUndefined()
   // Every level is a step of the chain on the edit screen: typed text stays when the level changes.
-  expect(await text(ui, 'level:repo')).toContain('◉ Project, shared  acme  wins')
-  expect(await text(ui, 'save')).toContain('Save to Project, shared')
+  expect(await text(ui, 'level:repo')).toContain('◉ Repo, shared  acme  wins')
+  expect(await text(ui, 'save')).toContain('Save to Repo, shared')
   await ui.input({ key: 'value', text: 'beta', kind: 'change' })
   await ui.press({ key: 'level:local' })
   expect(await text(ui, 'level:local')).toContain('◉ This checkout')
   expect(await text(ui, 'save')).toContain('Save to This checkout')
-  expect(await text(ui, 'where')).toContain('Saving here overrides Project, shared (acme) in this checkout only.')
+  expect(await text(ui, 'where')).toContain('Saving here overrides Repo, shared (acme) in this checkout only.')
   await ui.input({ key: 'value', text: 'beta' })
   expect(w.runs.find(argv => argv[1] === 'write')).toEqual(['/ac/bin/agent-config', 'write', 'demo', '--layer', 'local'])
   expect(JSON.parse(w.writes.at(-1)!)).toEqual({ workspace: { subdomain: 'beta', team: 'x' } })
   // Saved: back on the settings, saying where.
   expect(await ui.find({ key: 'value' })).toBeUndefined()
   expect(await text(ui, 'row:setting:workspace.subdomain')).toBeDefined()
-  expect(JSON.stringify(await ui.find({}))).toContain('Saved workspace.subdomain in This checkout: it overrides acme from Project, shared.')
+  expect(JSON.stringify(await ui.find({}))).toContain('Saved workspace.subdomain in This checkout: it overrides acme from Repo, shared.')
   await ui.unmount()
 })
 
@@ -782,9 +798,9 @@ test('a step picked after typing writes the typed value there and leaves the oth
   await ui.press({ key: 'save' })
   expect(w.runs.find(argv => argv[1] === 'write')).toEqual(['/ac/bin/agent-config', 'write', 'demo', '--layer', 'user-repo'])
   expect(JSON.parse(w.writes.at(-1)!)).toEqual({ workspace: { subdomain: 'mine' } })
-  // Back on the settings, saying where, and that Project, just me now sits over the team's value.
+  // Back on the settings, saying where, and that Repo, just me now sits over the team's value.
   expect(await text(ui, 'row:setting:workspace.subdomain')).toBeDefined()
-  expect(JSON.stringify(await ui.find({}))).toContain('Saved workspace.subdomain in Project, just me: it overrides acme from Project, shared.')
+  expect(JSON.stringify(await ui.find({}))).toContain('Saved workspace.subdomain in Repo, just me: it overrides acme from Repo, shared.')
   await ui.unmount()
 })
 
@@ -796,7 +812,7 @@ test('a value set Everywhere offers every level above it as a step to override a
   await ui.press({ key: 'component:demo' })
   await ui.press({ key: 'setting:workspace.subdomain' })
   expect(await text(ui, 'level:global')).toContain('◉ Everywhere  acme  wins')
-  expect(await text(ui, 'level:repo')).toContain('○ Project, shared  not set')
+  expect(await text(ui, 'level:repo')).toContain('○ Repo, shared  not set')
   expect(await ui.find({ key: 'level:user-repo' })).toBeDefined()
   expect(await ui.find({ key: 'level:local' })).toBeDefined()
 
@@ -816,7 +832,7 @@ test('Remove here drops the key from one level; Block inherited writes null ther
   w.subdomain = { value: 'beta', source: 'local', levels: { repo: 'acme', local: 'beta' } }
   const ui = await open($)
   await ui.press({ key: 'component:demo' })
-  expect(await text(ui, 'row:setting:workspace.subdomain')).toContain('beta · This checkout ← acme (Project, shared)')
+  expect(await text(ui, 'row:setting:workspace.subdomain')).toContain('beta · This checkout ← acme (Repo, shared)')
   await ui.press({ key: 'setting:workspace.subdomain' })
   // The chain compares every level, and a pick there points the edit at it.
   expect(await text(ui, 'level:local')).toContain('beta  wins')
@@ -843,7 +859,7 @@ test('Show switches the settings to one level’s own values', async ($, on) => 
   expect(await text(ui, 'show')).toContain('Show: Effective ›')
   await ui.press({ key: 'show' })
   await ui.press({ key: 'show:repo' })
-  expect(await text(ui, 'show')).toContain('Show: Project ›')
+  expect(await text(ui, 'show')).toContain('Show: Repo ›')
   expect(await text(ui, 'row:setting:workspace.subdomain')).toContain('acme')
   await ui.press({ key: 'show' })
   await ui.press({ key: 'show:user-repo' })
@@ -975,7 +991,7 @@ test('the mobile pane has no fields, and still saves an on/off key', async ($, o
   await ui.press({ key: 'component:demo' })
   await ui.press({ key: 'setting:workspace.subdomain' })
   expect(await ui.find({ key: 'value' })).toBeUndefined()
-  expect(JSON.stringify(await ui.find({ key: 'level:repo' }))).toContain('◉ Project, shared')
+  expect(JSON.stringify(await ui.find({ key: 'level:repo' }))).toContain('◉ Repo, shared')
   await ui.press({ key: 'back' })
   await ui.press({ key: 'back' })
   await ui.press({ key: 'component:agent-config' })
@@ -1252,7 +1268,7 @@ test('a map of projects is edited a field at a time: typed, picked and opened, t
   const ui = await open($)
   await ui.press({ key: 'component:demo' })
   // The settings row names the projects, not a line of JSON.
-  expect(await text(ui, 'row:setting:projects')).toContain('acme, beta · Project, shared')
+  expect(await text(ui, 'row:setting:projects')).toContain('acme, beta · Repo, shared')
   await ui.press({ key: 'setting:projects' })
   expect(await ui.find({ key: 'value' })).toBeUndefined()
   expect(await text(ui, 'row:at:acme')).toContain('label: Acme')
@@ -1274,7 +1290,7 @@ test('a map of projects is edited a field at a time: typed, picked and opened, t
     projects: { acme: { label: 'Acme Corp', title: { include: ['Acme', 'Falcon'] }, fallback: 'exclude' }, beta: { label: 'Beta' } },
   })
   expect(await text(ui, 'row:setting:projects')).toBeDefined()
-  expect(JSON.stringify(await ui.find({}))).toContain('Saved projects in Project, shared.')
+  expect(JSON.stringify(await ui.find({}))).toContain('Saved projects in Repo, shared.')
   await ui.unmount()
 })
 
@@ -1556,4 +1572,41 @@ test('a value the enum does not name shows no choice picked, and an untouched sa
 
 test('an entry named like an Object member is still written as removed', () => {
   expect(withRemovals({}, { toString: 'x' }, { toString: 'x' })).toEqual({ toString: null })
+})
+
+test('outside a repo, + New context… creates one from the folder and moves the edit to it', async ($, on) => {
+  const w = world(on)
+  w.layers = ['global']
+  w.place = { cwd: '/home/me/git/beta', paths: ['/home/me/git/beta/'], remotes: [] }
+  w.subdomain = { value: 'acme', source: 'global', levels: { global: 'acme' } }
+  const ui = await open($)
+  await ui.press({ key: 'component:demo' })
+  await ui.press({ key: 'setting:workspace.subdomain' })
+  expect(await text(ui, 'where')).toContain('No repo or context applies here, so only Everywhere.')
+  expect(await text(ui, 'row:newcontext')).toContain('everything under ~/git/beta/')
+  await ui.press({ key: 'newcontext' })
+  // Suggested from the folder: its name, every folder under it, and no remote outside a repo.
+  expect(await text(ui, 'name')).toContain('beta')
+  expect(await text(ui, 'path')).toContain('~/git/beta/')
+  await ui.press({ key: 'create' })
+  expect(w.contextAdds).toEqual([['beta', '--path', '~/git/beta/']])
+  // Back on the edit, at the new context's shared level, with its chain.
+  expect(await text(ui, 'level:context:beta')).toContain('◉ Context beta, shared')
+  expect(await text(ui, 'save')).toContain('Save to Context beta, shared')
+  expect(JSON.stringify(await ui.find({}))).toContain('Created context beta. Editing at Context beta, shared.')
+  await ui.unmount()
+})
+
+test('a context the CLI refuses is not created, and the screen says why', async ($, on) => {
+  const w = world(on)
+  w.layers = ['global', 'context:beta', 'context:beta:me']
+  w.place = { cwd: '/home/me/git/beta', paths: ['/home/me/git/beta/'], remotes: [] }
+  const ui = await open($)
+  await ui.press({ key: 'component:demo' })
+  await ui.press({ key: 'setting:workspace.subdomain' })
+  await ui.press({ key: 'newcontext' })
+  await ui.press({ key: 'create' })
+  expect(JSON.stringify(await ui.find({}))).toContain('Not created: context \\"beta\\" already exists')
+  expect(await ui.find({ key: 'create' })).toBeDefined()
+  await ui.unmount()
 })

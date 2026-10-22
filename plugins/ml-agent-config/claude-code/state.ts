@@ -28,6 +28,8 @@ export const EMPTY_PANEL: Panel = {
   defs: {},
   layers: [],
   contexts: [],
+  here: null,
+  newContext: null,
   show: 'effective',
   edit: null,
   onePassword: NO_ONE_PASSWORD,
