@@ -7,12 +7,12 @@ import type { Json, Setting } from '../../types'
 import type { Defs } from '../../src/key-schema'
 import { display } from '../tree'
 import { layerNames, selected } from '../panel'
-import { levelInfo, levelLabel, under } from '../ui/levels'
+import { levelInfo, pathLine } from '../ui/levels'
 import { note, row, screen } from '../ui/screen'
 import type { Names } from '../values'
 import type { Ctx } from './context'
 
-/** The value line: in effect and from where, or what one level sets. */
+/** The value line: in effect, from where, and what it overrides; or what one level sets. */
 export function valueLine(setting: Setting, show: string, layers: readonly string[], names: Names, defs: Defs): string {
   const shown = (value: Json) => display(setting, value, names, defs)
   if (show !== 'effective') {
@@ -20,9 +20,7 @@ export function valueLine(setting: Setting, show: string, layers: readonly strin
     return here === undefined ? 'not set here' : here === null ? 'blocked here' : shown(here)
   }
   if (setting.value === null) return setting.required ? 'missing' : 'not set'
-  const below = setting.source && setting.source !== 'default' ? under(setting, setting.source, layers) : undefined
-  const overrides = below && shown(below.value) !== shown(setting.value) ? `, overrides ${shown(below.value)}` : ''
-  return `${shown(setting.value)} · ${levelLabel(setting.source)}${overrides}`
+  return pathLine(setting, layers, names, defs)
 }
 
 export function settings({ now, ui, Input, act }: Ctx): RenderElement {

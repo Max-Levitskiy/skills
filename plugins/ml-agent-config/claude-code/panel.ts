@@ -4,8 +4,8 @@
 
 import type { Component, Edit, Json, Level, Panel, Screen, Setting, ValueSchema } from '../types'
 import { isObject } from './shapes'
-import { addKey, atKey, choicesAt, getAt, isStructuredKind, isTreeSetting, nodeAt, takesEntries, type At } from './tree'
-import { canHold, levelLabel } from './ui/levels'
+import { addKey, atKey, choicesAt, display, getAt, isStructuredKind, isTreeSetting, nodeAt, takesEntries, type At } from './tree'
+import { levelLabel, over, under } from './ui/levels'
 import { SOURCES, choiceLabels, editText, isReference, rootChoices, valueAt, type Stored } from './values'
 import { enumOf, kindOf, same } from '../src/key-schema'
 
@@ -207,18 +207,30 @@ export function firstEdit(now: Panel, canType: boolean): string | undefined {
   const edit = now.edit
   if (!setting || !edit) return undefined
   if (isTreeSetting(setting, now.defs)) return firstKey(now, [], canType)
-  // The level button is pressable only when another level can hold the key.
-  const canPickLevel = now.layers.some(one => one.layer !== edit.layer && canHold(setting, one.layer))
   const choices = setting.credential ? null : rootChoices(setting, now.defs, edit.like)
   if (choices) return `value:${choices.includes(edit.text) ? edit.text : choices[0]}`
-  if (!canType) return canPickLevel ? 'level' : 'save'
+  if (!canType) return 'save'
   if (!setting.credential) return 'value'
   if (edit.source === '1password') return 'pick'
   return `field:${SOURCES[edit.source]!.fields[0]!.name}`
 }
 
-export function savedAt(path: string, layer: string, value: Json | undefined): string {
-  if (value === undefined) return `Removed ${path} from ${levelLabel(layer)}.`
-  if (value === null) return `Blocked ${path} in ${levelLabel(layer)}: the levels under it no longer apply.`
-  return `Saved ${path} in ${levelLabel(layer)}.`
+/**
+ * What a save did, and what it does to the value in effect: overrides a lower value, sits under a
+ * higher one, or, removed, lets the next one down show through. Read off the setting as it was
+ * before the save; only the saved level changed.
+ */
+export function savedAt(setting: Setting, layer: string, value: Json | undefined, layers: readonly string[], names: Panel['names'], defs: Panel['defs']): string {
+  const path = setting.path
+  const where = levelLabel(layer)
+  if (value === null) return `Blocked ${path} in ${where}: the levels under it no longer apply.`
+  const show = (one: Json) => display(setting, one, names, defs)
+  const above = over(setting, layer, layers)
+  const below = under(setting, layer, layers)
+  if (value === undefined) {
+    if (above) return `Removed ${path} from ${where}. ${above} still sets it.`
+    return below ? `Removed ${path} from ${where}: ${show(below.value)} from ${below.label} applies now.` : `Removed ${path} from ${where}.`
+  }
+  if (above) return `Saved ${path} in ${where}, but ${above} overrides it.`
+  return below && show(below.value) !== show(value) ? `Saved ${path} in ${where}: it overrides ${show(below.value)} from ${below.label}.` : `Saved ${path} in ${where}.`
 }

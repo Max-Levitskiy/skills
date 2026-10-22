@@ -1,13 +1,14 @@
 // A structured key, a part at a time, drawn from its JSON Schema: an object's fields, a map's named
 // entries, or a list's items. A field holding text, a number or a list of them is typed; on/off and
 // a fixed set of values are picked; an object or a list of objects opens its own screen. Every part
-// is changed in the edit's draft, and Save here writes the whole value at the edit's level.
+// is changed in the edit's draft, and Save writes the whole value at the edit's level.
 
 import type { RenderElement, RenderNode } from 'claude-code'
 
 import { editing, parts, selected, top } from '../panel'
 import { type At, addKey, atKey, choicesAt, getAt, isStructuredKind, itemName, nodeAt, pointer, roleOf, summary, takesEntries } from '../tree'
 import { editText } from '../values'
+import { levelInfo } from '../ui/levels'
 import { note, row, screen } from '../ui/screen'
 import type { Ctx } from './context'
 
@@ -119,7 +120,7 @@ export function node(ctx: Ctx): RenderElement {
     ),
     ...nodeBody(ctx, at),
     <Box key="actions" marginTop={1}>
-      <Button key="save" label="Save here" variant="primary" onPress={() => act.saveEdit()} />
+      <Button key="save" label={`Save to ${levelInfo(now.edit.layer).label}`} variant="primary" onPress={() => act.saveEdit()} />
     </Box>,
     (isEntry || isItem) && row(ui, { key: 'remove', label: `› Remove ${isEntry ? at.at(-1) : itemName(getAt(now.edit.value, at), Number(at.at(-1)))}`, onPress: () => act.removePart(at) }),
     // A declared field is never removed from the schema, only unset here, back to what lies beneath.

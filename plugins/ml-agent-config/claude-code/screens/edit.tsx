@@ -1,11 +1,13 @@
-// One setting at one level. The level sits on the title line; the value is typed (or for a
-// credential, its source picked and filled in). Save, Remove and Block act on that level alone;
-// Save to… writes the value at another.
+// One setting at one level. Its levels come first, top first, each with what it sets and what became
+// of that: a press points the edit at another level, keeping what was typed. The value is typed (or
+// for a credential, its source picked and filled in); Save, Remove and Block act on that level alone.
 
 import type { RenderElement } from 'claude-code'
 
+import type { Json } from '../../types'
+
 import { editing, layerNames, selected } from '../panel'
-import { canHold, effect, levelInfo, openAbove, under } from '../ui/levels'
+import { chainRows, chainState, effect, levelInfo, refusal, under } from '../ui/levels'
 import { note, row, screen } from '../ui/screen'
 import { display, isTreeSetting } from '../tree'
 import { kindOf } from '../../src/key-schema'
@@ -24,7 +26,6 @@ export function edit(ctx: Ctx): RenderElement {
   const layers = layerNames(now)
   const here = setting.levels[draft.layer]
   const below = under(setting, draft.layer, layers)
-  const overrides = openAbove(setting, layers).filter(layer => layer !== draft.layer)
   const kind = SOURCES[draft.source]
   // An object or a list of objects, with a schema saying so: its fields, not a line of JSON.
   const isTree = isTreeSetting(setting, now.defs)
@@ -34,29 +35,37 @@ export function edit(ctx: Ctx): RenderElement {
   const isText = setting.schema !== null && kindOf(setting.schema, now.defs) === 'string'
 
   const said = effect(setting, draft.layer, layers, now.names, now.defs)
-  // The level sits on the title line, at the right; a press opens the level list. With no other
-  // level that can hold the key there is nothing to pick, so it is only named.
-  const others = layers.filter(layer => layer !== draft.layer)
-  const saveTargets = others.filter(layer => canHold(setting, layer))
-  // An edit at a level that cannot hold the key (one set there by hand) has no pickable row of its
-  // own in the level list, so the list opens on the first row that can.
-  const focusRow = canHold(setting, draft.layer) ? draft.layer : [...layers].reverse().find(layer => canHold(setting, layer))
-  const tools =
-    saveTargets.length > 0
-      ? [<Button key="level" label={` ${levelInfo(draft.layer).short} ›`} plain onPress={() => act.go({ kind: 'levels' }, 'level', `level:${focusRow}`)} />]
-      : [
-          <Box key="level">
-            <Text dimColor> {levelInfo(draft.layer).short}</Text>
-          </Box>,
-        ]
+  const chain = layers.length > 1 ? chainRows(setting, layers) : []
+  const shown = (value: Json | undefined) =>
+    value === undefined ? 'not set' : value === null ? 'blocked' : display(setting, value, now.names, now.defs)
 
-  return screen(ui, { path, onBack: () => act.back(), tools, message: now.message }, [
-    // A line only when it says something: an override, a block, what saving would hide, or why
-    // there is only one level.
-    (said || others.length === 0) && (
+  return screen(ui, { path, onBack: () => act.back(), message: now.message }, [
+    // Every level, top first: a press edits there. One that cannot hold the key shows what it holds
+    // and why it is not offered.
+    chain.length > 0 && (
+      <Box key="chain" flexDirection="column" marginBottom={1}>
+        <Text dimColor>The top level with a value wins. Pick one to edit.</Text>
+        {chain.map(level => {
+          const label = `${level.layer === draft.layer ? '◉' : '○'} ${level.label}  ${shown(level.value)}${chainState(level) ? `  ${chainState(level)}` : ''}`
+          return level.canHold ? (
+            <Button key={`level:${level.layer}`} label={label} plain onPress={() => act.setLevel(level.layer)} />
+          ) : (
+            <Text key={`level:${level.layer}`} dimColor>
+              {label} · {refusal(level.layer)}
+            </Text>
+          )
+        })}
+        <Text dimColor>
+          {'  '}Default  {setting.default === null ? 'none' : display(setting, setting.default, now.names, now.defs)}
+          {setting.source === 'default' ? '  wins' : ''}
+        </Text>
+      </Box>
+    ),
+    // What saving here does, when it says more than the level: an override, a block, what it would hide.
+    (said || layers.length === 1) && (
       <Box key="where" flexDirection="column" marginBottom={1}>
         {said ? <Text dimColor>{said}</Text> : null}
-        {others.length === 0 && <Text dimColor>The only level outside a git repo. Open Claude Code in one for the project levels.</Text>}
+        {layers.length === 1 && <Text dimColor>The only level outside a git repo. Open Claude Code in one for the project levels.</Text>}
       </Box>
     ),
     ...(isTree ? nodeBody(ctx, []) : []),
@@ -109,9 +118,7 @@ export function edit(ctx: Ctx): RenderElement {
       row(ui, { key: 'pick', label: '› Pick from 1Password', onPress: () => act.openOnePassword() }),
     (choices || Input || setting.credential || isTree) && (
       <Box key="actions" marginTop={1}>
-        <Button key="save" label="Save here" variant="primary" onPress={() => act.saveEdit()} />
-        {saveTargets.length > 0 && <Text> </Text>}
-        {saveTargets.length > 0 && <Button key="saveto" label="Save to…" onPress={() => act.go({ kind: 'saveto' }, 'saveto', `saveto:${saveTargets.at(-1)}`)} />}
+        <Button key="save" label={`Save to ${levelInfo(draft.layer).label}`} variant="primary" onPress={() => act.saveEdit()} />
       </Box>
     ),
     here !== undefined &&
@@ -128,19 +135,5 @@ export function edit(ctx: Ctx): RenderElement {
         label: '› Block inherited',
         onPress: () => act.blockHere(),
       }),
-    // The common wish, spelled out: keep the value where it is, and add one above it for a team,
-    // for yourself, or for this checkout. A press points the edit there, starting from the value now.
-    overrides.length > 0 && (
-      <Box key="override" marginTop={1}>
-        <Text bold>{setting.source ? 'Override it' : 'Or set it'}</Text>
-      </Box>
-    ),
-    ...overrides.map(layer =>
-      row(ui, {
-        key: `override:${layer}`,
-        label: `+ ${levelInfo(layer).offer}`,
-        onPress: () => act.overrideAt(layer),
-      }),
-    ),
   ])
 }
