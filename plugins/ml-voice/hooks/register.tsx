@@ -24,7 +24,7 @@ const EMPTY: Reader = {
 }
 // Bump the shape when Reader changes: a value an older version wrote then reads as absent.
 const reader = atom({ plugin: 'ml-voice', key: 'reader' } as const, EMPTY, { shape: 'reader-3' })
-const NO_PICKER: Picker = { key: '', search: 'local', choices: [], text: '', note: null, error: null, isLoading: false, current: '', model: null, picked: null, isHearing: false, message: null }
+const NO_PICKER: Picker = { key: '', search: 'local', choices: [], text: '', note: null, error: null, isLoading: false, current: '', model: null, picked: null, isHearing: false, message: null, isAsking: false }
 const picker = atom({ plugin: 'ml-voice', key: 'picker' } as const, NO_PICKER)
 
 // ---------------------------------------------------------------- splitting
@@ -395,6 +395,7 @@ let doc = 0
 // Counts calls of readAloud: one overtaken by a later call while it loaded settings gives way.
 let loads = 0
 const OVERTAKEN = 'A later read took over.'
+const ASKING = 'No voice is chosen yet: pick one in the pane, and the reply is read in it.'
 let playing: AbortController | undefined
 // The requests for one file that are in flight at once share one promise; it
 // leaves the map when it settles, since the file on disk answers from then on.
@@ -418,12 +419,13 @@ let narrateThenPlay: (mine: number) => Promise<void> = async () => {}
 let pause: () => Promise<void> = async () => {}
 let halt: () => Promise<void> = async () => {}
 let openPane: () => Promise<void> = async () => {}
-let openVoices: (key?: string) => Promise<void> = async () => {}
+let openVoices: (key?: string, given?: Plan) => Promise<void> = async () => {}
 let closeVoices: () => Promise<void> = async () => {}
 let searchVoices: (text: string) => Promise<void> = async () => {}
 let hear: (choice: Choice) => Promise<void> = async () => {}
-let useVoice: () => Promise<void> = async () => {}
-let readAloud: (reply: Reply, index: number) => Promise<{ isReading: boolean; text: string }> = async () => ({
+let useVoice: (choice?: Choice) => Promise<void> = async () => {}
+let readLater: () => Promise<void> = async () => {}
+let readAloud: (reply: Reply, index: number, isAsked?: boolean) => Promise<{ isReading: boolean; text: string }> = async () => ({
   isReading: false,
   text: 'ml-voice is still starting.',
 })
@@ -729,9 +731,13 @@ export const register: Register = on => {
       }
     }
 
+    // The reply held while the picker asks for a voice none of the layers set; read once one is.
+    let held: { reply: Reply; index: number } | undefined
+
     // Loads the voice from agent-config and starts reading `reply`: what
-    // /ml-voice:read and the pane's list of earlier replies both run.
-    readAloud = async (reply, index) => {
+    // /ml-voice:read and the pane's list of earlier replies both run. A voice
+    // left at its declared default is asked for first, unless it just was.
+    readAloud = async (reply, index, isAsked = false) => {
       const call = ++loads
       const overtaken = { isReading: false, text: OVERTAKEN }
       // /clear ends a session and starts the next with no session.start.
@@ -756,6 +762,12 @@ export const register: Register = on => {
       const named = config.voice?.provider ?? 'say'
       if (!Object.hasOwn(PROVIDERS, named)) {
         return { isReading: false, text: `ml-voice does not know the voice provider "${named}"; pick one of ${Object.keys(PROVIDERS).join(', ')} in /agent-config voice-reader.` }
+      }
+      if (!isAsked && plan.provenance?.[VOICE_KEY[named]] === 'default') {
+        held = { reply, index }
+        await openVoices(undefined, plan)
+        await openPane()
+        return { isReading: false, text: ASKING }
       }
       const provider = PROVIDERS[named]
       let key: string | undefined
@@ -845,25 +857,27 @@ export const register: Register = on => {
       if (wrote.exitCode !== 0) throw new Error(wrote.stderr.trim().split('\n')[0] || 'the write failed')
     }
 
-    openVoices = async key => {
+    openVoices = async (key, given) => {
       agentConfig ||= await findAgentConfig()
       const say = async (note: string) => {
         await update($, reader, (r): Reader => ({ ...r, note }))
       }
       if (!agentConfig) return say('ml-voice needs the ml-agent-config plugin to choose a voice.')
-      const { plan } = await startPlan(agentConfig)
+      const plan = given ?? (await startPlan(agentConfig)).plan
       if (!plan.ready || !plan.config) return say('No voice provider is set up yet: run /ml-voice:read, and Claude sets one up with you.')
       const named = plan.config.voice?.provider ?? 'say'
       if (!Object.hasOwn(PROVIDERS, named)) return say(`ml-voice does not know the voice provider "${named}".`)
       opened = { config: plan.config, provenance: plan.provenance ?? {} }
       const listed = key ?? VOICE_KEY[named]
       const model = named === 'openrouter' ? (plan.config.openrouter?.model ?? '') : null
-      await update($, picker, (): Picker => ({ ...NO_PICKER, key: listed, current: String(valueAt(plan.config, listed) ?? ''), model }))
+      const message = held ? 'No voice is chosen yet. Press one to hear it, then use it; keep default saves the default voice; not now reads in it and asks next time.' : null
+      await update($, picker, (): Picker => ({ ...NO_PICKER, key: listed, current: String(valueAt(plan.config, listed) ?? ''), model, isAsking: held !== undefined, message }))
       await update($, reader, (r): Reader => ({ ...r, mode: 'voices', note: undefined }))
       await listChoices()
     }
 
     closeVoices = async () => {
+      held = undefined
       pickerSecret = undefined
       opened = undefined
       if ((await read($, picker)).isHearing) stop()
@@ -907,11 +921,14 @@ export const register: Register = on => {
       await update($, picker, (r): Picker => ({ ...r, isHearing: false }))
     }
 
-    useVoice = async () => {
+    // The picked voice is saved; while the picker asks, `choice` keeps the default by saving it,
+    // so it is not asked for again, and the held reply is read.
+    useVoice = async (choice = undefined) => {
       const p = await read($, picker)
-      if (!p.picked || !opened) return
+      const used = choice ?? p.picked
+      if (!used || !opened) return
       const layer = layerOf(p.key)
-      const failed = await saveKey(layer, p.key, p.picked.value).then(
+      const failed = await saveKey(layer, p.key, used.value).then(
         () => undefined,
         (error: Error) => error.message,
       )
@@ -919,15 +936,26 @@ export const register: Register = on => {
         await update($, picker, (s): Picker => ({ ...s, message: `Not saved: ${failed}` }))
         return
       }
-      opened = { ...opened, config: withValue(opened.config, p.key, p.picked.value) as VoiceConfig }
+      opened = { ...opened, config: withValue(opened.config, p.key, used.value) as VoiceConfig }
       if (p.key === 'openrouter.model') {
         // Each model names voices of its own: its list comes next.
         const current = String(valueAt(opened.config, 'openrouter.voice') ?? '')
-        await update($, picker, (): Picker => ({ ...NO_PICKER, key: 'openrouter.voice', model: p.picked!.value, current, message: `${p.picked!.label} is the model now; pick one of its voices.` }))
+        await update($, picker, (): Picker => ({ ...NO_PICKER, key: 'openrouter.voice', model: used.value, current, isAsking: p.isAsking, message: `${used.label} is the model now; pick one of its voices.` }))
         return listChoices()
       }
-      await update($, picker, (s): Picker => ({ ...s, current: p.picked!.value, message: `${p.picked!.label} is the voice now, saved in ${layer}; the next /ml-voice:read uses it.` }))
+      if (held) return readHeld()
+      await update($, picker, (s): Picker => ({ ...s, current: used.value, message: `${used.label} is the voice now, saved in ${layer}; the next /ml-voice:read uses it.` }))
     }
+
+    // The picker closes and the held reply is read, in the voice just saved or, not now, in the
+    // default one, which the next /ml-voice:read asks about again.
+    const readHeld = async () => {
+      const { reply, index } = held!
+      await closeVoices()
+      const started = await readAloud(reply, index, true)
+      if (!started.isReading && started.text !== OVERTAKEN) await update($, reader, (s): Reader => ({ ...s, note: started.text }))
+    }
+    readLater = () => (held ? readHeld() : closeVoices())
 
     return next(e)
   })
@@ -1014,10 +1042,17 @@ export const register: Register = on => {
       return (
         <Box flexDirection="column">
           <Box flexDirection="row" gap={1}>
-            <Button key="back" hotkey="b" label="back" onPress={() => closeVoices()} />
+            {p.isAsking ? (
+              <Button key="later" hotkey="n" label="not now" onPress={() => readLater()} />
+            ) : (
+              <Button key="back" hotkey="b" label="back" onPress={() => closeVoices()} />
+            )}
             {p.model !== null && !isModel && <Button key="model" hotkey="m" label={`model: ${p.model}`} onPress={() => openVoices('openrouter.model')} />}
             {p.picked && (
               <Button key="use" hotkey="u" variant="primary" label={`use ${p.picked.label}`} onPress={() => useVoice()} />
+            )}
+            {p.isAsking && !isModel && (
+              <Button key="keep" hotkey="k" label="keep default" onPress={() => useVoice({ value: p.current, label: now })} />
             )}
           </Box>
           <Text dimColor>
@@ -1057,7 +1092,7 @@ export const register: Register = on => {
         if (!chosen) return
         $.clock.after(0, async () => {
           const started = await readAloud(chosen, index)
-          if (!started.isReading && started.text !== OVERTAKEN) await update($, reader, (s): Reader => ({ ...s, mode: 'reader', note: started.text }))
+          if (!started.isReading && started.text !== OVERTAKEN && started.text !== ASKING) await update($, reader, (s): Reader => ({ ...s, mode: 'reader', note: started.text }))
         })
       }
       const newestFirst = all.map((one, index) => ({ ...one, index })).reverse().slice(0, 40)

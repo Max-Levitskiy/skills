@@ -2,7 +2,7 @@ import { expect, test } from 'claude-code/testing'
 
 import { withValue } from '../hooks/register'
 import { matching } from '../scripts/matching'
-import { PANE_PROPS, boot, memoryDisk } from './boot'
+import { PANE_PROPS, READ, boot, memoryDisk } from './boot'
 
 type Ran = { exitCode: number; stdout: string; stderr: string }
 const ok = (stdout: object): Ran => ({ exitCode: 0, stdout: JSON.stringify(stdout), stderr: '' })
@@ -124,6 +124,62 @@ test('with no provider set up, the voice button says how to set one up', async (
   const pane = await $.ui.mount({ plugin: 'ml-voice', surface: 'terminal', component: 'Pane', requestId: 'ml-voice', props: PANE_PROPS })
   await pane.press({ key: 'voices' })
   expect(await pane.find({ type: 'Text', text: /run \/ml-voice:read/ })).toBeDefined()
+  await pane.unmount()
+})
+
+// A say voice no layer sets, as `start` answers until one is written; then the written one.
+function unchosen(ac: ReturnType<typeof agentConfig>, disk: ReturnType<typeof memoryDisk>, says: string[][]) {
+  return (e: { argv: readonly string[]; init?: { stdin?: string } }) => {
+    if (e.argv[0] === 'say') says.push([...e.argv])
+    if (e.argv[0] === '/bin/agent-config' && e.argv[1] === 'start') {
+      const voice = ac.written.at(-1)?.config.say as { voice?: string } | undefined
+      const provenance = { 'voice.provider': 'global', 'say.voice': voice ? 'global' : 'default' }
+      return ok({ ready: true, config: { voice: { provider: 'say' }, say: { voice: voice?.voice ?? '' } }, provenance })
+    }
+    return ac.run(e) ?? disk.run(e)
+  }
+}
+
+test('a read whose voice no layer sets asks for one, then reads the reply in the voice used', async ($, on) => {
+  const disk = memoryDisk(on)
+  on('audio.play', () => ({ value: undefined }))
+  const ac = agentConfig(() => ({ search: 'local', choices: SAY_VOICES }))
+  const says: string[][] = []
+  const clock = await boot($, on, { run: unchosen(ac, disk, says) as never })
+  const out = await $.prompt.submit(READ)
+  expect((out as { drop?: string }).drop).toContain('No voice is chosen yet')
+  expect(says).toHaveLength(0)
+  const pane = await $.ui.mount({ plugin: 'ml-voice', surface: 'terminal', component: 'Pane', requestId: 'ml-voice', props: PANE_PROPS })
+  expect(await pane.find({ type: 'Text', text: /keep default saves the default voice/ })).toBeDefined()
+  expect(await pane.find({ key: 'back' })).toBeUndefined()
+
+  await pane.press({ key: 'hear-Alva' })
+  await pane.press({ key: 'use' })
+  expect(ac.written).toEqual([{ layer: 'global', config: { say: { voice: 'Alva' } } }])
+  await clock.advance(1)
+  expect(await pane.find({ type: 'Text', text: /macOS say Alva · reply 1/ })).toBeDefined()
+  // The next read takes the voice saved, without asking.
+  expect(((await $.prompt.submit(READ)) as { drop?: string }).drop).toContain('Reading reply 1')
+  await pane.unmount()
+})
+
+test('keep default saves the default voice, so the read is not asked about again; not now asks again', async ($, on) => {
+  const disk = memoryDisk(on)
+  const ac = agentConfig(() => ({ search: 'local', choices: SAY_VOICES }))
+  const says: string[][] = []
+  const clock = await boot($, on, { run: unchosen(ac, disk, says) as never })
+  const pane = await $.ui.mount({ plugin: 'ml-voice', surface: 'terminal', component: 'Pane', requestId: 'ml-voice', props: PANE_PROPS })
+
+  await $.prompt.submit(READ)
+  await pane.press({ key: 'later' })
+  expect(ac.written).toHaveLength(0)
+  await clock.advance(1)
+  expect(await pane.find({ type: 'Text', text: /macOS say · reply 1/ })).toBeDefined()
+
+  expect(((await $.prompt.submit(READ)) as { drop?: string }).drop).toContain('No voice is chosen yet')
+  await pane.press({ key: 'keep' })
+  expect(ac.written).toEqual([{ layer: 'global', config: { say: { voice: '' } } }])
+  expect(((await $.prompt.submit(READ)) as { drop?: string }).drop).toContain('Reading reply 1')
   await pane.unmount()
 })
 

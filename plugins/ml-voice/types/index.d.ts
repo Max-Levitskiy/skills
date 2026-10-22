@@ -46,6 +46,8 @@ export type Picker = {
   isHearing: boolean
   /** What the last use or hearing came to. */
   message: string | null
+  /** Opened by /ml-voice:read for a voice no layer sets: the reply waits for one to be used, or kept. */
+  isAsking: boolean
 }
 
 declare module 'claude-code' {

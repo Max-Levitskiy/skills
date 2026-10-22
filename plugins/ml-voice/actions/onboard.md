@@ -28,11 +28,13 @@ parent of this `actions/` folder) to every `agent-config` call.
    items by name, never a value; for 1Password, store `{ source, ref, account }` with the
    account's URL or id so `op` reads the right account.
 4. **`selfHosted.url`** (self-hosted only): the server's `/v1/audio/speech` URL.
-5. Voices have defaults; ask only if the user wants to pick one. Then list them with
-   `agent-config choices voice-reader <key> --from <mod dir>` (`fishAudio.voice`, `openrouter.voice`,
-   `kokoro.voice`, `selfHosted.voice` or `say.voice`; add `--search <text>` for the Fish Audio
-   library) and offer the closest few by label, storing the `value`. `openrouter.model` lists the
-   same way. The person can also pick later in the read pane, under **voice**, hearing each first.
+5. **The voice** (`fishAudio.voice`, `openrouter.voice`, `kokoro.voice`, `selfHosted.voice` or
+   `say.voice`): always ask, and write the answer even when it is the default, since
+   `/ml-voice:read` asks again for a voice no layer sets. List them with
+   `agent-config choices voice-reader <key> --from <mod dir>` (add `--search <text>` for the Fish
+   Audio library) and offer the closest few by label, storing the `value`, with the default as one
+   option. `openrouter.model` lists the same way. The person can also pick later in the read
+   pane, under **voice**, hearing each first.
 
 Recommend the global layer: the voice follows the person, not the project. `write` replaces the
 whole layer, so read it first and write the merged whole. Then run the `verify` action.
