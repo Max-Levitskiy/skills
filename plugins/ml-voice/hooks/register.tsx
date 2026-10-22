@@ -6,7 +6,8 @@
 import { atom, read, update } from 'claude-code'
 import type { FsEntry, Register } from 'claude-code'
 
-import type { Billing, Block, Reader } from '../types'
+import { matching } from '../scripts/matching'
+import type { Billing, Block, Choice, Picker, Reader } from '../types'
 
 const PANE = 'ml-voice'
 // The skill the person types; the mod answers it before it is rendered.
@@ -22,7 +23,9 @@ const EMPTY: Reader = {
   replyIndex: -1,
 }
 // Bump the shape when Reader changes: a value an older version wrote then reads as absent.
-const reader = atom({ plugin: 'ml-voice', key: 'reader' } as const, EMPTY, { shape: 'reader-2' })
+const reader = atom({ plugin: 'ml-voice', key: 'reader' } as const, EMPTY, { shape: 'reader-3' })
+const NO_PICKER: Picker = { key: '', search: 'local', choices: [], text: '', note: null, error: null, isLoading: false, current: '', model: null, picked: null, isHearing: false, message: null }
+const picker = atom({ plugin: 'ml-voice', key: 'picker' } as const, NO_PICKER)
 
 // ---------------------------------------------------------------- splitting
 
@@ -209,9 +212,10 @@ type Voice =
       ext: 'mp3'
       mime: 'audio/mpeg'
     }
-  | { kind: 'say'; name: string; model: string; billing: 'free'; ext: 'wav'; mime: 'audio/wav' }
+  | { kind: 'say'; name: string; model: string; voice: string; billing: 'free'; ext: 'wav'; mime: 'audio/wav' }
 
-const SAY: Voice = { kind: 'say', name: 'macOS say', model: 'say', billing: 'free', ext: 'wav', mime: 'audio/wav' }
+// No voice is the system's own.
+const sayVoice = (voice = ''): Voice => ({ kind: 'say', name: voice ? `macOS say ${voice}` : 'macOS say', model: 'say', voice, billing: 'free', ext: 'wav', mime: 'audio/wav' })
 
 type Provider = 'fish-audio' | 'openrouter' | 'kokoro' | 'self-hosted' | 'say'
 type Endpoint = { model?: string; voice?: string; url?: string }
@@ -225,6 +229,7 @@ type VoiceConfig = {
   openrouter?: Endpoint
   kokoro?: Endpoint
   selfHosted?: Endpoint
+  say?: { voice?: string }
   usage?: { log?: string }
   cache?: { dir?: string; maxAgeDays?: number; maxSizeMB?: number }
   credentials?: Record<string, unknown>
@@ -269,8 +274,41 @@ const PROVIDERS: Record<Provider, { secret?: string; voice: (config: VoiceConfig
   },
   kokoro: { voice: ({ kokoro: at = {} }) => openAiShaped('Kokoro', at.url ?? '', { model: 'kokoro', voice: at.voice }) },
   'self-hosted': { voice: ({ selfHosted: at = {} }) => openAiShaped(`${at.model} (self-hosted)`, at.url ?? '', at) },
-  say: { voice: () => SAY },
+  say: { voice: ({ say: at = {} }) => sayVoice(at.voice) },
 }
+
+// What `agent-config start voice-reader` answers, as far as the module reads it.
+type Plan = { ready?: boolean; guide?: string; config?: VoiceConfig; provenance?: Record<string, string> }
+
+// The key each provider's voice is kept under; `agent-config choices` lists what it can be.
+const VOICE_KEY: Record<Provider, string> = {
+  'fish-audio': 'fishAudio.voice',
+  openrouter: 'openrouter.voice',
+  kokoro: 'kokoro.voice',
+  'self-hosted': 'selfHosted.voice',
+  say: 'say.voice',
+}
+// What a voice says when it is heard in the picker.
+const SAMPLE = 'Hello. This is how I will sound reading your replies.'
+// A search the listing script answers is asked once typing pauses this long.
+const PAUSE_MS = 350
+const SHOWN = 12
+
+type Tree = { [key: string]: unknown }
+
+export function valueAt(config: unknown, dotPath: string): unknown {
+  return dotPath.split('.').reduce<unknown>((at, part) => (at && typeof at === 'object' ? (at as Tree)[part] : undefined), config)
+}
+
+/** The config with the key at `dotPath` set, the objects on the way copied rather than changed. */
+export function withValue(config: Tree, dotPath: string, value: unknown): Tree {
+  const [head = '', ...rest] = dotPath.split('.')
+  if (rest.length === 0) return { ...config, [head]: value }
+  const inner = config[head]
+  const holder = inner && typeof inner === 'object' && !Array.isArray(inner) ? (inner as Tree) : {}
+  return { ...config, [head]: withValue(holder, rest.join('.'), value) }
+}
+
 
 // curl's config format reads a newline as the start of another directive, so
 // a value holding one could add a URL that the key is then sent to.
@@ -306,8 +344,9 @@ async function digest(value: unknown): Promise<string> {
 }
 
 // Everything that changes the sound, and nothing secret: the key is left out.
+// The system voice keeps the name it had before a voice could be picked, so its cache still answers.
 const soundOf = (v: Voice, text: string) =>
-  v.kind === 'say' ? ['say', text] : [v.url, v.model, v.headers, v.body, v.textField, text]
+  v.kind === 'say' ? (v.voice ? ['say', v.voice, text] : ['say', text]) : [v.url, v.model, v.headers, v.body, v.textField, text]
 
 type Policy = { maxAgeDays: number; maxSizeMB: number }
 type Cached = { path: string; size: number; mtimeMs: number }
@@ -342,7 +381,7 @@ type Settings = {
   usageLog: string
   cacheDir: string
 }
-let settings: Settings = { voice: SAY, narrator: 'haiku', style: 'full', autoStart: true, usageLog: '', cacheDir: '' }
+let settings: Settings = { voice: sayVoice(), narrator: 'haiku', style: 'full', autoStart: true, usageLog: '', cacheDir: '' }
 
 // The agent-config binary, found once for the module's life.
 let agentConfig = ''
@@ -379,6 +418,11 @@ let narrateThenPlay: (mine: number) => Promise<void> = async () => {}
 let pause: () => Promise<void> = async () => {}
 let halt: () => Promise<void> = async () => {}
 let openPane: () => Promise<void> = async () => {}
+let openVoices: (key?: string) => Promise<void> = async () => {}
+let closeVoices: () => Promise<void> = async () => {}
+let searchVoices: (text: string) => Promise<void> = async () => {}
+let hear: (choice: Choice) => Promise<void> = async () => {}
+let useVoice: () => Promise<void> = async () => {}
 let readAloud: (reply: Reply, index: number) => Promise<{ isReading: boolean; text: string }> = async () => ({
   isReading: false,
   text: 'ml-voice is still starting.',
@@ -414,7 +458,8 @@ export const register: Register = on => {
       }
       if (voice.kind === 'say') {
         await $.fs.write(`${work}.txt`, text)
-        const ran = await $.process.run(['say', '-o', out, '--file-format=WAVE', '--data-format=LEI16@22050', '-f', `${work}.txt`])
+        const named = voice.voice ? ['-v', voice.voice] : []
+        const ran = await $.process.run(['say', '-o', out, '--file-format=WAVE', '--data-format=LEI16@22050', ...named, '-f', `${work}.txt`])
         await remove([`${work}.txt`])
         if (ran.exitCode !== 0) throw new Error(`say: ${ran.stderr.trim()}`)
         await keep()
@@ -496,13 +541,13 @@ export const register: Register = on => {
       await recording
     }
 
-    // A file played again is touched, so the cleanup counts age from its last play.
-    const clip = async (text: string, s: Settings): Promise<string> => {
+    // A file played again is touched, so the cleanup counts age from its last play. A paid request
+    // counts toward the reply `mine` names; a voice heard in the picker names none.
+    const clip = async (text: string, s: Settings, mine = doc): Promise<string> => {
       await sweeping
       const file = `${s.cacheDir}/audio/${await digest(soundOf(s.voice, text))}.${s.voice.ext}`
       let made = clips.get(file)
       if (!made) {
-        const mine = doc
         made = $.fs.exists(file).then(async isKept => {
           if (isKept) await $.process.run(['touch', file])
           else await synth(text, file, s, mine)
@@ -660,6 +705,30 @@ export const register: Register = on => {
       return (JSON.parse(ran.stdout) as Record<string, string>)[path] ?? ''
     }
 
+    const startPlan = async (ac: string) => {
+      const started = await $.process
+        .run([ac, 'start', 'voice-reader', '--from', $.plugin.root], { env: HARNESS, timeoutMs: 15_000 })
+        .catch((error: Error) => ({ exitCode: 1, stdout: '', stderr: error.message }))
+      let plan: Plan = {}
+      try {
+        plan = JSON.parse(started.stdout || '{}') as Plan
+      } catch {}
+      return { started, plan }
+    }
+
+    const settingsOf = async (config: VoiceConfig, voice: Voice): Promise<Settings> => {
+      const home = (await $.env.get('HOME')) ?? ''
+      const expand = (path: string) => path.replace(/^~(?=\/)/, home).replace(/\/$/, '')
+      return {
+        voice,
+        narrator: config.narration?.model ?? 'haiku',
+        style: config.narration?.style ?? 'full',
+        autoStart: config.playback?.autoStart ?? true,
+        usageLog: expand(config.usage?.log ?? '~/.agents/voice-reader/usage.jsonl'),
+        cacheDir: expand(config.cache?.dir ?? '~/.cache/voice-reader'),
+      }
+    }
+
     // Loads the voice from agent-config and starts reading `reply`: what
     // /ml-voice:read and the pane's list of earlier replies both run.
     readAloud = async (reply, index) => {
@@ -670,10 +739,7 @@ export const register: Register = on => {
       agentConfig ||= await findAgentConfig()
       const ac = agentConfig
       if (!ac) return { isReading: false, text: 'ml-voice needs the ml-agent-config plugin to choose a voice; install it and run /ml-voice:read again.' }
-      const started = await $.process
-        .run([ac, 'start', 'voice-reader', '--from', $.plugin.root], { env: HARNESS, timeoutMs: 15_000 })
-        .catch((error: Error) => ({ exitCode: 1, stdout: '', stderr: error.message }))
-      const plan = JSON.parse(started.stdout || '{}') as { ready?: boolean; guide?: string; config?: VoiceConfig }
+      const { started, plan } = await startPlan(ac)
       if (started.exitCode !== 0 || !plan.ready || !plan.config) {
         // A command's own hook cannot queue a prompt (it would wait on this
         // turn); a timer submits it once the command has answered.
@@ -698,17 +764,9 @@ export const register: Register = on => {
       } catch (err) {
         return { isReading: false, text: (err as Error).message }
       }
-      const home = (await $.env.get('HOME')) ?? ''
+      const loaded = await settingsOf(config, provider.voice(config, key))
       if (call !== loads) return overtaken
-      const expand = (path: string) => path.replace(/^~(?=\/)/, home).replace(/\/$/, '')
-      settings = {
-        voice: provider.voice(config, key),
-        narrator: config.narration?.model ?? 'haiku',
-        style: config.narration?.style ?? 'full',
-        autoStart: config.playback?.autoStart ?? true,
-        usageLog: expand(config.usage?.log ?? '~/.agents/voice-reader/usage.jsonl'),
-        cacheDir: expand(config.cache?.dir ?? '~/.cache/voice-reader'),
-      }
+      settings = loaded
       if (!isSwept) {
         isSwept = true
         const policy = { maxAgeDays: config.cache?.maxAgeDays ?? 30, maxSizeMB: config.cache?.maxSizeMB ?? 500 }
@@ -733,6 +791,142 @@ export const register: Register = on => {
       const mine = doc
       $.clock.after(0, () => void narrateThenPlay(mine))
       return { isReading: true, text: `Reading reply ${index + 1} aloud (${blocks.length} parts, ${voice.name}).` }
+    }
+
+    // ---------------------------------------------------------------- voice picker
+
+    // The provider's key while the picker is open, so hearing one voice after another asks
+    // agent-config (and 1Password) once; dropped when the picker closes.
+    let pickerSecret: string | undefined
+    let opened: { config: VoiceConfig; provenance: Record<string, string> } | undefined
+    let listings = 0
+
+    const listChoices = async () => {
+      const p = await read($, picker)
+      const mine = ++listings
+      await update($, picker, (s): Picker => ({ ...s, isLoading: true, error: null }))
+      const asked = p.search === 'server' ? ['--search', p.text] : []
+      const ran = await $.process
+        .run([agentConfig, 'choices', 'voice-reader', p.key, ...asked, '--from', $.plugin.root], { env: HARNESS, timeoutMs: 45_000 })
+        .catch((error: Error) => ({ exitCode: 1, stdout: '', stderr: error.message }))
+      let answer: Partial<Picker>
+      try {
+        if (ran.exitCode !== 0) throw new Error(ran.stderr.trim().split('\n')[0] || 'the listing failed')
+        const got = JSON.parse(ran.stdout) as { search?: string; choices?: Choice[]; note?: string }
+        answer = { choices: got.choices ?? [], note: got.note ?? null, search: got.search === 'server' ? 'server' : 'local' }
+      } catch (error) {
+        answer = { choices: [], note: null, error: (error as Error).message }
+      }
+      // Asked again, or for the other key, while this one ran: the later listing is the one to show.
+      if (mine !== listings || (await read($, picker)).key !== p.key) return
+      await update($, picker, (s): Picker => ({ ...s, ...answer, isLoading: false }))
+    }
+
+    // The layer a key is written to: the one its value comes from now, else the global one, where
+    // the voice follows the person.
+    const layerOf = (key: string) => {
+      const from = opened?.provenance[key]
+      return from && from !== 'default' ? from : 'global'
+    }
+
+    // `write` replaces a whole layer, so the file is read and only this key changes, as the
+    // agent-config pane saves one.
+    const saveKey = async (layer: string, dotPath: string, value: string) => {
+      const from = ['--from', $.plugin.root]
+      const where = await $.process.run([agentConfig, 'path', 'voice-reader', '--layer', layer, ...from], { env: HARNESS })
+      if (where.exitCode !== 0) throw new Error(where.stderr.trim().split('\n')[0] || `no ${layer} layer here`)
+      const file = (JSON.parse(where.stdout) as { layers?: { path?: string | null; exists?: boolean }[] }).layers?.[0]
+      if (!file?.path) throw new Error(`no ${layer} layer here`)
+      const config = file.exists ? (JSON.parse(await $.fs.read(file.path)) as Tree) : {}
+      const wrote = await $.process.run([agentConfig, 'write', 'voice-reader', '--layer', layer, ...from], {
+        env: HARNESS,
+        stdin: JSON.stringify(withValue(config, dotPath, value)),
+      })
+      if (wrote.exitCode !== 0) throw new Error(wrote.stderr.trim().split('\n')[0] || 'the write failed')
+    }
+
+    openVoices = async key => {
+      agentConfig ||= await findAgentConfig()
+      const say = async (note: string) => {
+        await update($, reader, (r): Reader => ({ ...r, note }))
+      }
+      if (!agentConfig) return say('ml-voice needs the ml-agent-config plugin to choose a voice.')
+      const { plan } = await startPlan(agentConfig)
+      if (!plan.ready || !plan.config) return say('No voice provider is set up yet: run /ml-voice:read, and Claude sets one up with you.')
+      const named = plan.config.voice?.provider ?? 'say'
+      if (!Object.hasOwn(PROVIDERS, named)) return say(`ml-voice does not know the voice provider "${named}".`)
+      opened = { config: plan.config, provenance: plan.provenance ?? {} }
+      const listed = key ?? VOICE_KEY[named]
+      const model = named === 'openrouter' ? (plan.config.openrouter?.model ?? '') : null
+      await update($, picker, (): Picker => ({ ...NO_PICKER, key: listed, current: String(valueAt(plan.config, listed) ?? ''), model }))
+      await update($, reader, (r): Reader => ({ ...r, mode: 'voices', note: undefined }))
+      await listChoices()
+    }
+
+    closeVoices = async () => {
+      pickerSecret = undefined
+      opened = undefined
+      if ((await read($, picker)).isHearing) stop()
+      await update($, picker, (): Picker => NO_PICKER)
+      await update($, reader, (r): Reader => ({ ...r, mode: 'reader' }))
+    }
+
+    searchVoices = async text => {
+      await update($, picker, (s): Picker => ({ ...s, text }))
+      if ((await read($, picker)).search !== 'server') return
+      const typed = ++listings
+      $.clock.after(PAUSE_MS, async () => {
+        if (typed === listings) await listChoices()
+      })
+    }
+
+    // A voice is heard saying SAMPLE, made and cached the way a reply's parts are; a model is
+    // only picked, and its voices are listed once it is kept.
+    hear = async choice => {
+      const p = await read($, picker)
+      if (!opened) return
+      await update($, picker, (s): Picker => ({ ...s, picked: choice, message: null }))
+      if (p.key === 'openrouter.model') return
+      const { config } = opened
+      const provider = PROVIDERS[config.voice?.provider ?? 'say']
+      // The reading pauses, so play takes it up again where it was.
+      if (isActive(await read($, reader))) await pause()
+      const control = new AbortController()
+      try {
+        pickerSecret ??= provider.secret ? await keyOf(agentConfig, config, provider.secret) : undefined
+        const s = await settingsOf(config, provider.voice(withValue(config, p.key, choice.value) as VoiceConfig, pickerSecret))
+        await update($, picker, (r): Picker => ({ ...r, isHearing: true }))
+        const file = await clip(SAMPLE, s, -1)
+        const { base64 } = await $.fs.read(file, { as: 'bytes' })
+        stop()
+        playing = control
+        await $.audio.play({ base64, mime: s.voice.mime }, { signal: control.signal })
+      } catch (err) {
+        if (!control.signal.aborted) await update($, picker, (r): Picker => ({ ...r, message: `${choice.label} could not be heard: ${(err as Error).message ?? String(err)}` }))
+      }
+      await update($, picker, (r): Picker => ({ ...r, isHearing: false }))
+    }
+
+    useVoice = async () => {
+      const p = await read($, picker)
+      if (!p.picked || !opened) return
+      const layer = layerOf(p.key)
+      const failed = await saveKey(layer, p.key, p.picked.value).then(
+        () => undefined,
+        (error: Error) => error.message,
+      )
+      if (failed) {
+        await update($, picker, (s): Picker => ({ ...s, message: `Not saved: ${failed}` }))
+        return
+      }
+      opened = { ...opened, config: withValue(opened.config, p.key, p.picked.value) as VoiceConfig }
+      if (p.key === 'openrouter.model') {
+        // Each model names voices of its own: its list comes next.
+        const current = String(valueAt(opened.config, 'openrouter.voice') ?? '')
+        await update($, picker, (): Picker => ({ ...NO_PICKER, key: 'openrouter.voice', model: p.picked!.value, current, message: `${p.picked!.label} is the model now; pick one of its voices.` }))
+        return listChoices()
+      }
+      await update($, picker, (s): Picker => ({ ...s, current: p.picked!.value, message: `${p.picked!.label} is the voice now, saved in ${layer}; the next /ml-voice:read uses it.` }))
     }
 
     return next(e)
@@ -799,6 +993,8 @@ export const register: Register = on => {
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text, Button } = $.ui.resolve(e)
+    // The mobile app draws no field yet: there the picker lists without a search.
+    const Input = e.surface === 'mobile' ? undefined : $.ui.resolve(e).Input
     const r = await read($, reader)
     const isPlaying = r.status === 'playing'
     const go = (k: number) => playAt(Math.min(k, r.blocks.length - 1))
@@ -808,6 +1004,50 @@ export const register: Register = on => {
         onPress={() => (isPlaying ? pause() : go(r.status === 'done' ? 0 : r.current))} />,
       <Button key="stop" hotkey="s" label="stop" onPress={() => halt()} />,
     ]
+
+    if (r.mode === 'voices') {
+      const p = await read($, picker)
+      const isModel = p.key === 'openrouter.model'
+      const matches = p.search === 'server' ? p.choices : matching(p.choices, p.text)
+      const nameOf = (value: string) => p.choices.find(one => one.value === value)?.label ?? value
+      const now = p.current ? nameOf(p.current) : isModel ? 'not set' : 'the default voice'
+      return (
+        <Box flexDirection="column">
+          <Box flexDirection="row" gap={1}>
+            <Button key="back" hotkey="b" label="back" onPress={() => closeVoices()} />
+            {p.model !== null && !isModel && <Button key="model" hotkey="m" label={`model: ${p.model}`} onPress={() => openVoices('openrouter.model')} />}
+            {p.picked && (
+              <Button key="use" hotkey="u" variant="primary" label={`use ${p.picked.label}`} onPress={() => useVoice()} />
+            )}
+          </Box>
+          <Text dimColor>
+            {isModel ? 'Pick a speech model' : 'Press a voice to hear it, then use it'} · now {now}
+          </Text>
+          {Input && (
+            <Input key="search" label="Search" value={p.text} placeholder={p.search === 'server' ? 'type to search the library' : 'letters in order'}
+              submitLabel="hear first" onInput={text => searchVoices(text)} onSubmit={() => matches[0] && hear(matches[0])} />
+          )}
+          {p.isLoading && <Text dimColor>{p.search === 'server' && p.text ? `Searching for ${p.text}…` : 'Listing…'}</Text>}
+          {p.error && <Text color="error">{p.error}</Text>}
+          {p.note && <Text dimColor>{p.note}</Text>}
+          {p.message && <Text color={p.message.startsWith('Not saved') || p.message.includes('could not') ? 'error' : 'claude'}>{p.message}</Text>}
+          {matches.slice(0, SHOWN).map(one => (
+            <Box key={`voice-${one.value}`} flexDirection="column">
+              <Button key={`hear-${one.value}`} plain onPress={() => hear(one)}>
+                <Text color={one.value === p.picked?.value ? 'claude' : undefined} hover={{ underline: true }}>
+                  {one.value === p.picked?.value ? (p.isHearing ? '♪ ' : '▶ ') : '  '}
+                  {one.label}
+                  {one.value === p.current ? '  ✓' : ''}
+                </Text>
+              </Button>
+              {one.detail && <Text dimColor>{`    ${one.detail}`}</Text>}
+            </Box>
+          ))}
+          {matches.length > SHOWN && <Text dimColor>{matches.length - SHOWN} more; type to narrow them.</Text>}
+          {!p.isLoading && !p.error && matches.length === 0 && <Text dimColor>{p.choices.length === 0 ? 'Nothing listed.' : 'Nothing matches.'}</Text>}
+        </Box>
+      )
+    }
 
     if (r.mode === 'picker') {
       const all = replies(await $.session.messages())
@@ -862,6 +1102,7 @@ export const register: Register = on => {
           <Button key="view" hotkey="v" label={r.view === 'source' ? 'show spoken' : 'show original'}
             onPress={() => update($, reader, (s): Reader => ({ ...s, view: s.view === 'source' ? 'spoken' : 'source' }))} />
           <Button key="replies" hotkey="r" label="earlier replies" onPress={() => update($, reader, (s): Reader => ({ ...s, mode: 'picker' }))} />
+          <Button key="voices" hotkey="c" label="voice" onPress={() => openVoices()} />
         </Box>
         <Text dimColor>{status} · {r.backend}{r.replyIndex >= 0 ? ` · reply ${r.replyIndex + 1}` : ''}</Text>
         {r.usage.billing !== 'free' && <Text dimColor>{spent(r.usage)}</Text>}
