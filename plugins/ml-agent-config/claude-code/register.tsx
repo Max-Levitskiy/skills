@@ -16,7 +16,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import { cacheKey, parseCache } from '../src/secret-cache'
-import type { Component, Here, Json, OnePassword, Panel, Screen, Setting, Unlock } from '../types'
+import type { Component, Here, Json, Listing, OnePassword, Panel, Screen, Setting, Unlock } from '../types'
 import { HARNESS, OWN, blockedParent, firstLine, withValue, type Plan, type Reference } from './cli'
 import { PANE, editAt, editing, inheritedFields, referenceAt, firstEdit, firstKey, firstSetting, layerNames, readContextList, readDescribe, readExplainHere, savedAt, selected, suggestContext, switchLevel, top } from './panel'
 import { draw } from './screens'
@@ -25,7 +25,7 @@ import { atKey, fold, getAt, isStructured, isTreeSetting, kindAt, mergedBelow, m
 import { readableReference } from './screens/onepassword'
 import type { Actions } from './screens/context'
 import { isObject, isPlan, listedComponents, onePasswordFields, onePasswordListing, pathLayer } from './shapes'
-import { EMPTY_PANEL, NO_ONE_PASSWORD } from './state'
+import { EMPTY_PANEL, NO_LISTING, NO_ONE_PASSWORD } from './state'
 import { canHold, levelLabel } from './ui/levels'
 import { SOURCES, isReference, parseText, targetLayer, type Stored } from './values'
 
@@ -814,6 +814,66 @@ function withoutAccount(draft: Record<string, string>): Record<string, string> {
   return rest
 }
 
+// The values a key's script lists, through `agent-config choices`. A key whose script searches is
+// asked again once typing pauses; one listed whole is searched here as it is typed.
+
+// Counts each listing asked for, so only the latest one's answer is shown.
+let choiceListings = 0
+const PAUSE_MS = 350
+
+async function setListing($: EngineInterface, change: Partial<Listing>, pages: Record<string, number> = {}): Promise<void> {
+  await update($, panel, now => ({ ...now, listing: { ...now.listing, ...change }, pages: { ...now.pages, ...pages } }))
+}
+
+async function loadChoices($: EngineInterface): Promise<void> {
+  const now = await read($, panel)
+  const component = selected(now)
+  const { path, search, text } = now.listing
+  if (!component || !path) return
+  const mine = ++choiceListings
+  await setListing($, { isLoading: true, error: null })
+  const from = component.from ? ['--from', component.from] : []
+  const asked = search === 'server' ? ['--search', text] : []
+  const answer = await $.process
+    .run([await bin($), 'choices', component.name, path, ...asked, ...from], { env: HARNESS, timeoutMs: 45000 })
+    .then(ran => {
+      if (ran.exitCode !== 0) return { error: firstLine(ran.stderr) || 'the listing failed' }
+      const got: unknown = JSON.parse(ran.stdout)
+      if (!isObject(got) || !Array.isArray(got.choices)) return { error: 'agent-config choices answered in another shape' }
+      return { choices: got.choices as Listing['choices'], note: typeof got.note === 'string' ? got.note : null }
+    })
+    .catch((error: Error) => ({ error: error.message || 'the listing failed' }))
+  // Asked again, or for another key, while this one ran: the later listing is the one to show.
+  if (mine !== choiceListings || (await read($, panel)).listing.path !== path) return
+  if ('error' in answer) return setListing($, { isLoading: false, error: answer.error ?? null, choices: [], note: null })
+  await setListing($, { isLoading: false, choices: answer.choices, note: answer.note }, { choice: 0 })
+}
+
+async function openChoices($: EngineInterface, canType: boolean): Promise<void> {
+  const setting = editing(await read($, panel))
+  if (!setting?.choices) return
+  await update($, panel, now => ({ ...now, listing: { ...NO_LISTING, path: setting.path, search: setting.choices!.search }, pages: { ...now.pages, choice: 0 } }))
+  await go($, { kind: 'choices' }, 'pick-list', canType ? 'search' : undefined)
+  await loadChoices($)
+}
+
+async function searchChoices($: EngineInterface, text: string): Promise<void> {
+  await setListing($, { text }, { choice: 0 })
+  if ((await read($, panel)).listing.search !== 'server') return
+  const typed = ++choiceListings
+  $.clock.after(PAUSE_MS, async () => {
+    if (typed === choiceListings) await loadChoices($)
+  })
+}
+
+// The value picked becomes the edit's text, and the edit waits for Save, as a 1Password pick does.
+async function pickChoice($: EngineInterface, value: string): Promise<void> {
+  const picked = (await read($, panel)).listing.choices.find(one => one.value === value)
+  await update($, panel, now => ({ ...now, edit: now.edit && { ...now.edit, text: value, isDirty: true } }))
+  const named = picked && picked.label !== value ? `${picked.label} (${value})` : value
+  await back($, 1, { message: `Picked ${named}. Press Save to keep it.`, focus: 'save' })
+}
+
 // A structured key's parts. Each change lands in the edit's draft; Save writes the whole value.
 
 /** A draft value with every part removed reads as nothing set. */
@@ -945,6 +1005,10 @@ function actions($: EngineInterface, canType: boolean): Actions {
     },
     openItem: id => openItem($, id),
     pickField: reference => pickField($, reference),
+    openChoices: () => openChoices($, canType),
+    loadChoices: () => loadChoices($),
+    searchChoices: text => searchChoices($, text),
+    pickChoice: value => pickChoice($, value),
     openNode: at => openNode($, at, canType),
     setPart: (at, value) => changeDraft($, edit => ({ ...edit, value: asDraft(setAt(edit.value, at, value)), texts: moveTexts(edit.texts, at, null) })),
     typePart: (at, text) => changeDraft($, edit => ({ ...edit, texts: { ...edit.texts, [pointer(at)]: text } })),

@@ -64,7 +64,7 @@ export function readDescribe(stdout: string, home: string | undefined, name: str
   const known = out.layers.map(one => one.layer)
   return {
     // Each field as the screens read it, whatever an out-of-sync CLI left out.
-    settings: out.keys.map(({ path, description, layer, default: fallback, value, source, credential, personal, required, levels, schema }) => ({
+    settings: out.keys.map(({ path, description, layer, default: fallback, value, source, credential, personal, required, levels, schema, choices }) => ({
       path,
       description: typeof description === 'string' ? description : '',
       layer: typeof layer === 'string' ? layer : null,
@@ -75,6 +75,7 @@ export function readDescribe(stdout: string, home: string | undefined, name: str
       personal: personal === true,
       required: required === true,
       schema: isObject(schema) ? (schema as ValueSchema) : null,
+      choices: isObject(choices) ? { search: choices.search === 'server' ? ('server' as const) : ('local' as const) } : null,
       levels: Object.fromEntries(Object.entries(levels ?? {}).filter(([layer]) => known.includes(layer))),
     })),
     defs: out.defs,

@@ -50,6 +50,8 @@ export type Setting = {
   required: boolean
   /** What the key holds, as JSON Schema: a key holding an object is edited a field at a time. */
   schema: ValueSchema | null
+  /** Declared `choices`: its values are listed by the component's script, searched here or there. */
+  choices: { search: 'local' | 'server' } | null
   /** What each level itself sets: absent where it sets nothing, null where it blocks the levels under it. */
   levels: { [layer: string]: Json }
 }
@@ -68,7 +70,7 @@ export type ContextEntry = { name: string; parent: string | null; remotes: strin
 
 /** One screen of the pane. The pane draws the top of the stack; Back pops it. */
 export type Screen = {
-  kind: 'components' | 'settings' | 'show' | 'edit' | 'node' | 'files' | 'context' | 'parent' | 'source' | 'onepassword' | 'filter' | 'fields'
+  kind: 'components' | 'settings' | 'show' | 'edit' | 'node' | 'files' | 'context' | 'parent' | 'source' | 'onepassword' | 'filter' | 'fields' | 'choices'
   /** A node screen's part of the value being edited: property, entry name or item index, outermost first. */
   at?: string[]
   /** A context screen's context; absent on the one creating a context. */
@@ -125,6 +127,21 @@ export type OnePassword = {
   fieldsError: string | null
 }
 
+/** The values a key's script listed, for the key being edited: `agent-config choices`. */
+export type Listing = {
+  /** The key listed: a listing that comes back for another key is not this one's. */
+  path: string
+  /** local: listed whole and searched here; server: the script answers each search. */
+  search: 'local' | 'server'
+  choices: { value: string; label: string; detail?: string }[]
+  /** What was typed into the search. */
+  text: string
+  /** What the script said beside its list: why it is empty, where the rest are. */
+  note: string | null
+  isLoading: boolean
+  error: string | null
+}
+
 export type Panel = {
   stack: Screen[]
   components: Component[]
@@ -151,6 +168,7 @@ export type Panel = {
   show: string
   edit: Edit | null
   onePassword: OnePassword
+  listing: Listing
   /** The first row each list shows, by the list's name; ↑ more and ↓ more move it a page. */
   pages: Record<string, number>
   /** 1Password vault and item names by id, from the last listing, so a reference reads by name. */

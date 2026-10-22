@@ -25,6 +25,8 @@ export function pickList(
     choices: Choice[]
     /** Absent: no search box, as for a short list. */
     search?: { value: string; placeholder: string; onInput: (text: string) => void }
+    /** The choices already answer the search, best first, as a server ranks them: shown as they are. */
+    isRanked?: boolean
     filters?: { key: string; label: string; onPress: () => void }[]
     offset: number
     onPage: (offset: number, focus: string) => void
@@ -33,7 +35,7 @@ export function pickList(
   },
 ): RenderNode[] {
   const { Box, Button, Text } = ui
-  const matches = shown(list.choices, list.search?.value ?? '')
+  const matches = list.isRanked ? list.choices : shown(list.choices, list.search?.value ?? '')
   const offset = Math.min(list.offset, Math.max(0, matches.length - 1))
   const page = matches.slice(offset, offset + PAGE)
   const turn = (to: number) => list.onPage(to, `${list.name}:${matches[to]!.value}`)
@@ -47,7 +49,7 @@ export function pickList(
         submitLabel="open first"
         onInput={list.search.onInput}
         onSubmit={text => {
-          const first = shown(list.choices, text)[0]
+          const first = list.isRanked ? list.choices[0] : shown(list.choices, text)[0]
           if (first) list.onPick(first.value)
         }}
       />

@@ -97,6 +97,7 @@ export function edit(ctx: Ctx): RenderElement {
       />
     ),
     isPlain && !choices && !Input && note(ui, `Value  ${draft.text || 'not set'}`),
+    isPlain && !choices && setting.choices && row(ui, { key: 'pick-list', label: '› Pick from the list', onPress: () => act.openChoices() }),
     setting.credential &&
       row(ui, {
         key: 'source',

@@ -301,6 +301,26 @@ What reads it:
   remove. An entry inherited from a level below and removed at a higher one is written there as
   null, since objects merge and it would otherwise come back.
 
+A key can also name where the values it takes are listed, for values no `enum` can hold: the
+voices a speech API serves, the models a provider offers. `choices.script` is a script beside the
+declaration, inside its folder; `choices.search` is `local` (the default: the script lists every
+value) or `server` (the script is handed what was typed, and answers it).
+
+```json
+"fishAudio.voice": {
+  "description": "Fish Audio voice id", "type": "string", "default": "",
+  "choices": { "script": "scripts/voices.ts", "search": "server" }
+}
+```
+
+`agent-config choices <name> <key> [--search <text>]` runs it with bun from the declaration's
+folder, and hands it on stdin `{ "key", "search", "config" }`: the search only for a `server` key,
+and the effective config, references and never a secret (a script that needs one loads it through
+`load` like any consumer). It prints `{ "choices": [{ "value", "label", "detail" }], "note" }`,
+and `choices` answers that with `search` beside it. A script that fails exits non-zero with why on
+stderr, and `choices` exits 1 with that line. Offer the list when onboarding asks for such a key;
+the `/agent-config` pane offers it as **Pick from the list**.
+
 A key with no type keyword is typed by its default, as before, and is never refused. A declaration
 whose `$ref` names nothing, whose type is unknown, whose default its own schema refuses (checked
 whole), or where a key or an object member under it may hold null (null in a layer removes what

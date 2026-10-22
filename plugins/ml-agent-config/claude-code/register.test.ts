@@ -89,6 +89,8 @@ type World = {
   contextEntries?: { name: string; parent: string | null; team: { remote: string }[]; me: { path: string }[]; matched: boolean; components: string[] }[]
   /** Each `context set` and `context remove`, from its subcommand on. */
   contextRuns?: string[][]
+  /** What `choices` prints for a key, by its argv: the search follows --search. */
+  choices?: (argv: string[]) => { exitCode: number; stdout: string; stderr?: string }
   /** What every `start` prints instead of a plan: exit 2 for a broken layer file, or not JSON at all. */
   broken: 'invalid' | 'garbled' | 'shapeless' | 'null-entry' | 'other-name' | null
 }
@@ -150,6 +152,10 @@ function world(on: On, loadExit = 0): World {
       }
       if (w.fieldsFail) return ran(1, '', 'op item get failed: the item is locked')
       return ran(0, JSON.stringify({ fields: [{ id: 'credential', label: 'credential', section: null, type: 'CONCEALED', reference: 'op://V2/IG/credential' }] }))
+    }
+    if (e.argv[1] === 'choices' && w.choices) {
+      const answer = w.choices([...e.argv])
+      return ran(answer.exitCode, answer.stdout, answer.stderr)
     }
     if (w.broken === 'garbled') return ran(0, 'Segmentation fault')
     if (w.broken === 'other-name' && e.argv[1] === 'start') return ran(0, '{"name":"other","ready":true,"actions":[],"problems":[],"config":{}}')
@@ -1659,5 +1665,80 @@ test('the Contexts tab lists every context; a context screen edits its filters a
   expect(w.contextRuns!.at(-1)).toEqual(['remove', 'beta', '--force'])
   expect(await ui.find({ key: 'context:beta' })).toBeUndefined()
   expect(JSON.stringify(await ui.find({}))).toContain('Deleted context beta.')
+  await ui.unmount()
+})
+
+const VOICES = [
+  { value: 'af_bella', label: 'af_bella', detail: 'American English' },
+  { value: 'af_sky', label: 'af_sky', detail: 'American English' },
+  { value: 'bm_george', label: 'bm_george', detail: 'British English' },
+]
+
+test('a key with choices is picked from its script\'s list, searched as it is typed, and saved on Save', async ($, on) => {
+  const w = world(on)
+  w.choices = () => ({ exitCode: 0, stdout: JSON.stringify({ choices: VOICES }) })
+  describedKey(w, 'voice', { type: 'string' }, {}, 'default', 'af_sky')
+  const described = JSON.parse(w.described!)
+  described.keys[1].choices = { search: 'local' }
+  w.described = JSON.stringify(described)
+  const ui = await open($)
+  await ui.press({ key: 'component:demo' })
+  await ui.press({ key: 'setting:voice' })
+  await ui.press({ key: 'pick-list' })
+  expect(w.runs.find(argv => argv[1] === 'choices')).toEqual(['/ac/bin/agent-config', 'choices', 'demo', 'voice'])
+  // The value set now is marked.
+  expect(await text(ui, 'choice:af_sky')).toContain('✓')
+  await ui.input({ key: 'search', text: 'bmg', kind: 'change' })
+  expect(await ui.find({ key: 'choice:af_bella' })).toBeUndefined()
+  await ui.press({ key: 'choice:bm_george' })
+  expect(JSON.stringify(await ui.find({ type: 'Text', text: /Picked bm_george/ }))).toContain('Press Save')
+  expect(w.writes).toHaveLength(0)
+  await ui.press({ key: 'save' })
+  expect(JSON.parse(w.writes.at(-1)!).voice).toBe('bm_george')
+  await ui.unmount()
+})
+
+test("a key whose script searches is asked again once typing pauses, and only the latest answer shows", async ($, on) => {
+  const w = world(on)
+  const clock = mock.clock(on)
+  w.choices = argv => {
+    const search = argv.includes('--search') ? argv[argv.indexOf('--search') + 1] : undefined
+    const found = search ? [{ value: `id-${search}`, label: `Voice ${search}` }] : [{ value: 'id-top', label: 'Most used' }]
+    return { exitCode: 0, stdout: JSON.stringify({ choices: found }) }
+  }
+  describedKey(w, 'voice', { type: 'string' }, {}, 'default', '')
+  const described = JSON.parse(w.described!)
+  described.keys[1].choices = { search: 'server' }
+  w.described = JSON.stringify(described)
+  const ui = await open($)
+  await ui.press({ key: 'component:demo' })
+  await ui.press({ key: 'setting:voice' })
+  await ui.press({ key: 'pick-list' })
+  expect(await ui.find({ key: 'choice:id-top' })).toBeDefined()
+  await ui.input({ key: 'search', text: 'nar', kind: 'change' })
+  await ui.input({ key: 'search', text: 'narrator', kind: 'change' })
+  await clock.advance(400)
+  const searches = w.runs.filter(argv => argv[1] === 'choices').map(argv => argv[argv.indexOf('--search') + 1])
+  // The first keystroke was overtaken before its pause ended: one search, for what was typed last.
+  expect(searches).toEqual(['', 'narrator'])
+  // What the script answered is shown as it ranked it, though fuzzy would not match the id.
+  expect(await ui.find({ key: 'choice:id-narrator' })).toBeDefined()
+  await ui.unmount()
+})
+
+test('a script that cannot list says why on the pick screen, and the value can still be typed', async ($, on) => {
+  const w = world(on)
+  w.choices = () => ({ exitCode: 1, stdout: '', stderr: 'scripts/voices.ts could not list voice: Kokoro is not answering' })
+  describedKey(w, 'voice', { type: 'string' }, {}, 'default', '')
+  const described = JSON.parse(w.described!)
+  described.keys[1].choices = { search: 'local' }
+  w.described = JSON.stringify(described)
+  const ui = await open($)
+  await ui.press({ key: 'component:demo' })
+  await ui.press({ key: 'setting:voice' })
+  expect(await ui.find({ key: 'value' })).toBeDefined()
+  await ui.press({ key: 'pick-list' })
+  expect(await ui.find({ type: 'Text', text: /Kokoro is not answering/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /type the value instead/ })).toBeDefined()
   await ui.unmount()
 })

@@ -1,7 +1,7 @@
 // The pane's state as it starts. The atoms holding it are declared in register.tsx, where the
 // engine reads them.
 
-import type { OnePassword, Panel } from '../types'
+import type { Listing, OnePassword, Panel } from '../types'
 
 export const NO_ONE_PASSWORD: OnePassword = {
   accounts: [],
@@ -20,6 +20,8 @@ export const NO_ONE_PASSWORD: OnePassword = {
   fieldsError: null,
 }
 
+export const NO_LISTING: Listing = { path: '', search: 'local', choices: [], text: '', note: null, isLoading: false, error: null }
+
 export const EMPTY_PANEL: Panel = {
   stack: [{ kind: 'components' }],
   components: [],
@@ -37,6 +39,7 @@ export const EMPTY_PANEL: Panel = {
   show: 'effective',
   edit: null,
   onePassword: NO_ONE_PASSWORD,
+  listing: NO_LISTING,
   pages: {},
   names: {},
   message: null,

@@ -101,6 +101,7 @@ export function effectiveConfig(
       schema: keySchema(entry),
       credential,
       personal: entry.personal === true,
+      choices: entry.choices ? { search: entry.choices.search ?? "local" } : null,
       group: group ? { when: group.when, action: group.action ?? DEFAULT_ONBOARD_ACTION, status } : null,
       required,
       value: value === undefined ? null : value,
