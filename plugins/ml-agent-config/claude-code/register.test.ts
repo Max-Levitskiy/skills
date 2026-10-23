@@ -85,6 +85,10 @@ type World = {
   contexts?: { name: string; via: string }[]
   /** Each `context add`'s arguments, after `add`. */
   contextAdds?: string[][]
+  /** What `context list` lists, as the CLI prints each context. */
+  contextEntries?: { name: string; parent: string | null; team: { remote: string }[]; me: { path: string }[]; matched: boolean; components: string[] }[]
+  /** Each `context set` and `context remove`, from its subcommand on. */
+  contextRuns?: string[][]
   /** What every `start` prints instead of a plan: exit 2 for a broken layer file, or not JSON at all. */
   broken: 'invalid' | 'garbled' | 'shapeless' | 'null-entry' | 'other-name' | null
 }
@@ -174,7 +178,22 @@ function world(on: On, loadExit = 0): World {
       // Matched here by its folder: its two levels come in between global and the repo's.
       w.layers = [w.layers[0]!, `context:${name}`, `context:${name}:me`, ...w.layers.slice(1)]
       w.contexts = [...(w.contexts ?? []), { name, via: 'path' }]
+      w.contextEntries = [...(w.contextEntries ?? []), { name, parent: null, team: [], me: [], matched: true, components: [] }]
       return ran(0, JSON.stringify({ name }))
+    }
+    if (e.argv[1] === 'context' && e.argv[2] === 'list') return ran(0, JSON.stringify({ contexts: w.contextEntries ?? [], problems: [] }))
+    if (e.argv[1] === 'context' && e.argv[2] === 'explain') return ran(0, JSON.stringify({ place: w.place ?? { cwd: '/home/me/git/beta', paths: [], remotes: [] }, repo: { root: null }, chain: [], layers: w.layers }))
+    if (e.argv[1] === 'context' && (e.argv[2] === 'set' || e.argv[2] === 'remove')) {
+      ;(w.contextRuns ??= []).push(e.argv.slice(2))
+      const entry = w.contextEntries?.find(one => one.name === e.argv[3])
+      if (!entry) return ran(2, '', `context "${e.argv[3]}" does not exist`)
+      if (e.argv[2] === 'remove') w.contextEntries = w.contextEntries!.filter(one => one !== entry)
+      const flag = (name: string) => e.argv.flatMap((one, index) => (one === name ? [e.argv[index + 1]!] : []))
+      entry.team = [...entry.team.filter(one => !flag('--remove-remote').includes(one.remote)), ...flag('--add-remote').map(remote => ({ remote }))]
+      entry.me = [...entry.me.filter(one => !flag('--remove-path').includes(one.path)), ...flag('--add-path').map(path => ({ path }))]
+      if (flag('--parent').length > 0) entry.parent = flag('--parent')[0]!
+      if (e.argv.includes('--no-parent')) entry.parent = null
+      return ran(0, '{}')
     }
     if (e.argv[1] === 'path') {
       const layer = e.argv[e.argv.indexOf('--layer') + 1]
@@ -1587,13 +1606,14 @@ test('outside a repo, + New context… creates one from the folder and moves the
   await ui.press({ key: 'newcontext' })
   // Suggested from the folder: its name, every folder under it, and no remote outside a repo.
   expect(await text(ui, 'name')).toContain('beta')
-  expect(await text(ui, 'path')).toContain('~/git/beta/')
+  expect(await text(ui, 'row:path:~/git/beta/')).toContain('✕ ~/git/beta/')
+  expect(await ui.find({ key: 'add-remote' })).toBeDefined()
   await ui.press({ key: 'create' })
   expect(w.contextAdds).toEqual([['beta', '--path', '~/git/beta/']])
   // Back on the edit, at the new context's shared level, with its chain.
-  expect(await text(ui, 'level:context:beta')).toContain('◉ Context beta, shared')
-  expect(await text(ui, 'save')).toContain('Save to Context beta, shared')
-  expect(JSON.stringify(await ui.find({}))).toContain('Created context beta. Editing at Context beta, shared.')
+  expect(await text(ui, 'level:context:beta')).toContain('◉ Context beta')
+  expect(await text(ui, 'save')).toContain('Save to Context beta')
+  expect(JSON.stringify(await ui.find({}))).toContain('Created context beta. Editing at Context beta.')
   await ui.unmount()
 })
 
@@ -1608,5 +1628,36 @@ test('a context the CLI refuses is not created, and the screen says why', async 
   await ui.press({ key: 'create' })
   expect(JSON.stringify(await ui.find({}))).toContain('Not created: context \\"beta\\" already exists')
   expect(await ui.find({ key: 'create' })).toBeDefined()
+  await ui.unmount()
+})
+
+test('the Contexts tab lists every context; a context screen edits its filters and parent, and deletes it on a second press', async ($, on) => {
+  const w = world(on)
+  w.contextEntries = [
+    { name: 'acme', parent: null, team: [{ remote: 'github.com/acme/**' }], me: [], matched: false, components: [] },
+    { name: 'beta', parent: null, team: [], me: [{ path: '~/git/beta/' }], matched: true, components: ['demo'] },
+  ]
+  const ui = await open($)
+  await ui.press({ key: 'tab:contexts' })
+  // The ones that apply here first, each with its filters and what it holds.
+  expect(await text(ui, 'row:context:beta')).toContain('applies here · ~/git/beta/ · values for demo')
+  expect(await text(ui, 'row:context:acme')).toContain('github.com/acme/**')
+  await ui.press({ key: 'context:beta' })
+  await ui.input({ key: 'add-remote', text: 'github.com/beta/**' })
+  expect(w.contextRuns).toEqual([['set', 'beta', '--add-remote', 'github.com/beta/**']])
+  expect(await text(ui, 'row:remote:github.com/beta/**')).toContain('✕ github.com/beta/**')
+  await ui.press({ key: 'path:~/git/beta/' })
+  expect(w.contextRuns!.at(-1)).toEqual(['set', 'beta', '--remove-path', '~/git/beta/'])
+  await ui.press({ key: 'parent' })
+  await ui.press({ key: 'parent:acme' })
+  expect(w.contextRuns!.at(-1)).toEqual(['set', 'beta', '--parent', 'acme'])
+  expect(await text(ui, 'row:parent')).toContain('Parent  acme')
+  // Delete asks once more, naming the values that go with it.
+  await ui.press({ key: 'delete' })
+  expect(await text(ui, 'row:delete')).toContain('Press again to delete beta, and its values for demo')
+  await ui.press({ key: 'delete' })
+  expect(w.contextRuns!.at(-1)).toEqual(['remove', 'beta', '--force'])
+  expect(await ui.find({ key: 'context:beta' })).toBeUndefined()
+  expect(JSON.stringify(await ui.find({}))).toContain('Deleted context beta.')
   await ui.unmount()
 })

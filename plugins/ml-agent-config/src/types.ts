@@ -168,6 +168,8 @@ export interface ContextListOutput {
     team: MatchEntry[];
     me: MatchEntry[];
     matched: boolean;
+    /** The components that keep values in it. */
+    components: string[];
   }[];
   problems: Problem[];
 }
@@ -175,6 +177,8 @@ export interface ContextListOutput {
 export interface ContextExplainOutput {
   acs: typeof ACS_VERSION;
   place: Place;
+  /** The repository the place is in, as describe reports it. */
+  repo: RepoReport;
   chain: MatchedContext[];
   /** The merge order the chain makes. */
   layers: Layer[];

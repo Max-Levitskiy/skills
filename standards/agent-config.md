@@ -119,11 +119,13 @@ Every command that reads config takes three flags:
 - `--context <name>` applies that context and its parent chain, matched or not. The named context becomes the innermost and the write target: it is appended after the matched ones, or moved to the end of the chain if it already matched. The exception is a context that is an ancestor of another matched context, which keeps its place: in an `acme-web` clone, `--context acme` leaves the chain `acme, acme-web`, because a parent always precedes its child.
 - `--no-context` applies no matched context. It cannot be combined with `--context`.
 
-The contexts themselves have three commands:
+The contexts themselves have five commands:
 
 - `agent-config context list` — every context with its id, parent and filters, whether it applies here (`matched`), and the problems found in `~/.agents/contexts/`.
 - `agent-config context explain` — the place (the cwd, and the paths and remotes tested), the chain with why each context is in it (`via`: `remote` or `path` with the `entry` that matched, `parent`, or `explicit` for `--context`), and the layer order it makes.
 - `agent-config context add <name> [--parent <p>] [--remote <glob>]... [--path <glob>]...` — creates a context: a fresh `id`, the parent and the remote filters in `context.json`, the path filters in `context.me.json`. It is refused when the name is invalid or taken, or the parent is not a readable context.
+- `agent-config context set <name> [--parent <p> | --no-parent] [--add-remote <glob>]... [--remove-remote <glob>]... [--add-path <glob>]... [--remove-path <glob>]...` — changes a context's parent and filters, keeping every other field of its files; `context.me.json` is created when a path is added. It is refused when the parent is the context itself or under it, or a filter to remove is not there.
+- `agent-config context remove <name> [--force]` — deletes the context's directory and its name in `order.json`. It is refused while another context names it as parent, and, without `--force`, while components keep values in it; `context list` names those components (`components`).
 
 Values are written with `agent-config write <name> --layer context:<context>` for the team file and `--layer context:<context>:me` for yours. The context must exist.
 

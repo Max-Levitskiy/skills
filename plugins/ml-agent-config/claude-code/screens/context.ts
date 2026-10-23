@@ -14,10 +14,21 @@ export type Actions = {
   openEdit: (setting: Setting) => Promise<void>
   /** Point the edit at another level, keeping what was typed. */
   setLevel: (layer: string) => Promise<void>
+  /** Which list the first screen shows; Contexts lists them again. */
+  setTab: (tab: 'components' | 'contexts') => Promise<void>
   /** A context for the repos and folders around this one, filled in from where the pane runs. */
   openNewContext: () => Promise<void>
-  typeNewContext: (field: 'name' | 'path' | 'remote', text: string) => Promise<void>
+  openContext: (name: string) => Promise<void>
+  typeContextName: (text: string) => Promise<void>
+  typeFilter: (kind: 'remote' | 'path', text: string) => Promise<void>
+  /** On the screen creating a context, the draft changes; on a context's own, its files do. */
+  addFilter: (kind: 'remote' | 'path', glob: string) => Promise<void>
+  removeFilter: (kind: 'remote' | 'path', glob: string) => Promise<void>
+  /** Null drops the parent. Picked on the parent screen, which then closes. */
+  chooseParent: (parent: string | null) => Promise<void>
   createContext: () => Promise<void>
+  /** The first press asks again; the second deletes the context and the values it holds. */
+  deleteContext: (name: string) => Promise<void>
   chooseSource: (source: string) => Promise<void>
   typeText: (text: string) => Promise<void>
   typeField: (field: string, text: string) => Promise<void>

@@ -9,7 +9,7 @@ import { edit } from './edit'
 import { fields } from './fields'
 import { files } from './files'
 import { filter } from './filter'
-import { newContext } from './newcontext'
+import { context, parent } from './contexts'
 import { node } from './node'
 import { onePassword } from './onepassword'
 import { settings } from './settings'
@@ -24,7 +24,8 @@ const SCREENS: Record<Screen['kind'], (ctx: Ctx) => RenderElement> = {
   edit,
   node,
   files,
-  newcontext: newContext,
+  context,
+  parent,
   source,
   onepassword: onePassword,
   filter,

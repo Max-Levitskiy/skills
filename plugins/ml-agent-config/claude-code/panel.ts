@@ -2,7 +2,7 @@
 // edit starts, and `describe` turned into settings. Nothing here calls the engine; the presses that
 // do are in register.tsx, since the engine follows `$` only within the file that declares it.
 
-import type { Component, Edit, Here, Json, Level, NewContext, Panel, Screen, Setting, ValueSchema } from '../types'
+import type { Component, ContextEntry, Edit, Here, Json, Level, NewContext, Panel, Screen, Setting, ValueSchema } from '../types'
 import { isObject } from './shapes'
 import { addKey, atKey, choicesAt, display, getAt, isStructuredKind, isTreeSetting, nodeAt, takesEntries, type At } from './tree'
 import { levelLabel, over, under } from './ui/levels'
@@ -84,6 +84,14 @@ export function readDescribe(stdout: string, home: string | undefined, name: str
   }
 }
 
+/** Where `context explain` ran, read as describe's place is: for a new context opened outside a component. */
+export function readExplainHere(stdout: string, home: string | null): Here | null {
+  const answer: unknown = JSON.parse(stdout)
+  if (!isObject(answer)) return null
+  const root = isObject(answer.repo) && typeof answer.repo.root === 'string' ? answer.repo.root : null
+  return readHere(answer.place, root, home)
+}
+
 /** Where describe ran; a CLI before it said so sends no place. */
 function readHere(place: unknown, root: string | null, home: string | null): Here | null {
   if (!isObject(place) || typeof place.cwd !== 'string' || !Array.isArray(place.remotes)) return null
@@ -102,7 +110,29 @@ export function suggestContext(here: Here): NewContext {
   // A context name holds no `:`, `/` or `\`, and does not start with a dot.
   const name = folder.replace(/[:\\]/g, '-').replace(/^\.+/, '')
   const owner = here.remotes[0]?.split('/').slice(0, -1) ?? []
-  return { name, path: shown.endsWith('/') ? shown : `${shown}/`, remote: owner.length >= 2 ? `${owner.join('/')}/**` : '' }
+  return { name, parent: null, paths: [shown.endsWith('/') ? shown : `${shown}/`], remotes: owner.length >= 2 ? [`${owner.join('/')}/**`] : [] }
+}
+
+/** `context list` as the screens read it: each context's filters as globs, a `/i` one marked. */
+export function readContextList(stdout: string): ContextEntry[] {
+  const answer: unknown = JSON.parse(stdout)
+  if (!isObject(answer) || !Array.isArray(answer.contexts)) throw new Error('it answered in another shape')
+  const globs = (entries: unknown, kind: 'remote' | 'path') =>
+    (Array.isArray(entries) ? entries : []).filter(isObject).flatMap(entry => (typeof entry[kind] === 'string' ? [entry[kind] as string] : []))
+  return answer.contexts.filter(isObject).flatMap(one =>
+    typeof one.name === 'string'
+      ? [
+          {
+            name: one.name,
+            parent: typeof one.parent === 'string' ? one.parent : null,
+            remotes: globs(one.team, 'remote'),
+            paths: globs(one.me, 'path'),
+            matched: one.matched === true,
+            components: Array.isArray(one.components) ? one.components.filter((name): name is string => typeof name === 'string') : [],
+          },
+        ]
+      : [],
+  )
 }
 
 const VIAS: readonly string[] = ['remote', 'path', 'parent', 'explicit']

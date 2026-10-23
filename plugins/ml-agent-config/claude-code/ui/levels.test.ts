@@ -3,7 +3,7 @@ import { canHold, chainLine, chainRows, chainState, effect, levelInfo, levelStac
 import { savedAt } from "../panel";
 
 test("context levels are labelled by context and audience", () => {
-  expect(levelInfo("context:acme").label).toBe("Context acme, shared");
+  expect(levelInfo("context:acme").label).toBe("Context acme");
   expect(levelInfo("context:acme:me").label).toBe("Context acme, just me");
 });
 test("the stack follows describe's order, top first", () => {

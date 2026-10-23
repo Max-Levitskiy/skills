@@ -304,7 +304,7 @@ team file and the personal file:
 references, hub local path, `replace`). Both are plain ACS files; `me` merges after the team file.
 The future sync delivers `context.json` and every `config.json`, and never `config.me.json`.
 `write` refuses a credential reference and any key declared `personal: true` in the team
-file, and the pane offers the two as **Project, shared** / **Project, just me** the way it
+file, and the pane offers the two as **Context acme** / **Context acme, just me** the way it
 offers layers today.
 
 **Onboarding into a context.** When `start` finds a missing key whose recommended layer

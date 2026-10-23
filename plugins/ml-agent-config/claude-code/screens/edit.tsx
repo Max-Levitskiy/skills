@@ -72,7 +72,7 @@ export function edit(ctx: Ctx): RenderElement {
       row(ui, {
         key: 'newcontext',
         label: '+ New context…',
-        detail: `values for a set of repos and folders, such as everything under ${suggestContext(now.here).path}`,
+        detail: `values for a set of repos and folders, such as everything under ${suggestContext(now.here).paths[0]}`,
         onPress: () => act.openNewContext(),
       }),
     ...(isTree ? nodeBody(ctx, []) : []),

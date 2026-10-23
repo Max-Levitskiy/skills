@@ -60,14 +60,19 @@ export type Level = { layer: string; path: string; exists: boolean }
 /** Where the pane runs, as describe reports it: what a new context is suggested from. Absolute paths. */
 export type Here = { cwd: string; root: string | null; remotes: string[]; home: string | null }
 
-/** A context being created: its name and the filters it gets, each left empty to go without. */
-export type NewContext = { name: string; path: string; remote: string }
+/** A context being created, until Create: its name, parent and filters. */
+export type NewContext = { name: string; parent: string | null; remotes: string[]; paths: string[] }
+
+/** A context as `context list` reports it: its filters as globs, and whether it applies here. */
+export type ContextEntry = { name: string; parent: string | null; remotes: string[]; paths: string[]; matched: boolean; components: string[] }
 
 /** One screen of the pane. The pane draws the top of the stack; Back pops it. */
 export type Screen = {
-  kind: 'components' | 'settings' | 'show' | 'edit' | 'node' | 'files' | 'newcontext' | 'source' | 'onepassword' | 'filter' | 'fields'
+  kind: 'components' | 'settings' | 'show' | 'edit' | 'node' | 'files' | 'context' | 'parent' | 'source' | 'onepassword' | 'filter' | 'fields'
   /** A node screen's part of the value being edited: property, entry name or item index, outermost first. */
   at?: string[]
+  /** A context screen's context; absent on the one creating a context. */
+  context?: string
   /** A filter screen's subject. */
   by?: 'account' | 'vault' | 'type'
   /** The element pressed to open the next screen, focused again when it closes. */
@@ -133,7 +138,15 @@ export type Panel = {
   contexts: { name: string; via: 'remote' | 'path' | 'parent' | 'explicit' }[]
   /** Where the pane runs; null from a CLI that does not say. */
   here: Here | null
+  /** Which list the first screen shows. */
+  tab: 'components' | 'contexts'
+  /** Every context, as last listed; null until the Contexts tab first loads them. */
+  contextList: ContextEntry[] | null
   newContext: NewContext | null
+  /** The text in a context screen's Add remote and Add folder fields. */
+  typed: { remote: string; path: string }
+  /** The context whose Delete was pressed once; a second press deletes it. */
+  confirmDelete: string | null
   /** What the settings screen shows: the merged value, or one level's own. */
   show: string
   edit: Edit | null
