@@ -214,6 +214,19 @@ describe("the answer", () => {
     expect(fake.calls()).toHaveLength(1);
   });
 
+  test("a schema claude refuses is params.invalid, since every try would fail the same way", () => {
+    fake.answers({
+      exit: 1,
+      stdout: "",
+      stderr: "Error: --json-schema is not a valid JSON Schema: data/properties/answer must be object,boolean",
+    });
+    const step = runStep(fake, { params: JSON_PARAMS });
+
+    expect(step.result).toEqual(nonRetryable("params.invalid"));
+    expect(step.result.error.message).toContain("claude refused the schema: Error: --json-schema is not a valid JSON Schema");
+    expect(fake.calls()).toHaveLength(1);
+  });
+
   test("no answer: one nudge in the same conversation, then output.missing", () => {
     fake.answers({ envelope: { structured_output: null } }, { envelope: { structured_output: null } });
     const step = runStep(fake, { params: JSON_PARAMS });
@@ -223,6 +236,7 @@ describe("the answer", () => {
     expect(fake.calls()).toHaveLength(2);
     expect(flag(nudge!.args, "--resume")).toBe(flag(first!.args, "--session-id"));
     expect(nudge!.stdin).toContain("without giving your answer");
+    expect(flag(nudge!.args, "--json-schema")).toBe(flag(first!.args, "--json-schema"));
   });
 
   test("an answer after the nudge is the step's result", () => {
@@ -313,6 +327,7 @@ describe("parameters", () => {
     ["text without its outcome", { format: "text" }],
     ["a tool Claude Code does not have", { ...JSON_PARAMS, tools: ["Read", "Teleport"] }],
     ["a format that is neither", { format: "yaml", schema: { ok: SUMMARY } }],
+    ["a schema claude would refuse", { format: "json", schema: { ok: { type: "object", properties: { s: { type: "strnig" } } } } }],
   ] as const) {
     test(`${name} is params.invalid before claude runs`, () => {
       fake.answers(answered("ok", { summary: "x" }));
