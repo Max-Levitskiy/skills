@@ -2,6 +2,10 @@
 
 What each ml-voice version changed. Every change to the plugin raises the version and adds its section here with `bun scripts/plugin-version.ts bump` (AGENTS.md, Releasing a plugin).
 
+## 0.1.1
+
+- The pane drops its prev and next buttons (and the j and k keys); click a part to jump to it.
+
 ## 0.1.0
 
 - `/ml-voice:read` opens a pane that reads Claude's latest reply aloud. Haiku first retells it as talk (code, tables and diagrams explained), or with `narration.style: compact` keeps only decisions, results, numbers, risks and actions. The part being read is highlighted, and a click on any part jumps there.
