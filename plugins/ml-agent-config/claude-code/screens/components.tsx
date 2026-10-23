@@ -11,7 +11,7 @@ export function components(ctx: Ctx): RenderElement {
   const { now, ui, act } = ctx
   const { Button, Text } = ui
   const tab = (value: 'components' | 'contexts', label: string) => (
-    <Button key={`tab:${value}`} label={label} variant={now.tab === value ? 'primary' : undefined} plain={now.tab !== value} onPress={() => act.setTab(value)} />
+    <Button key={`tab:${value}`} label={label} variant={now.tab === value ? 'primary' : undefined} plain={now.tab !== value || undefined} onPress={() => act.setTab(value)} />
   )
   const tabs = [tab('components', 'Components'), <Text key="tab-gap"> </Text>, tab('contexts', 'Contexts')]
   if (now.tab === 'contexts') return screen(ui, { path: [], tools: tabs, message: now.message }, contextsBody(ctx))
