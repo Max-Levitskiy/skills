@@ -20,3 +20,6 @@ plugins/*/tsconfig.json
 
 # Python bytecode
 __pycache__/
+
+# Local agent config (may reference secrets) — see standards/agent-config.md
+.agents/config/*/config.local.schema-snapshot.json
