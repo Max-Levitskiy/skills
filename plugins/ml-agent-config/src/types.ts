@@ -93,6 +93,8 @@ export interface DescribedKey {
   credential: boolean;
   /** Declared `personal`: the person's own answer, which a context's team file refuses. */
   personal: boolean;
+  /** Declared `choices`: `agent-config choices` lists its values, searched here or by the script. */
+  choices: { search: "local" | "server" } | null;
   /** The condition this key sits behind, and whether that condition currently holds. */
   group: { when: WhenMatcher; action: string; status: "active" | "inactive" | "unevaluated" } | null;
   /** True when the key is required right now: unconditional, or in a group whose condition holds. */

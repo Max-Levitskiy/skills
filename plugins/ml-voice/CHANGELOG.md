@@ -2,6 +2,13 @@
 
 What each ml-voice version changed. Every change to the plugin raises the version and adds its section here with `bun scripts/plugin-version.ts bump` (AGENTS.md, Releasing a plugin).
 
+## 0.2.0
+
+- The pane's **voice** button lists the voices the provider serves (Fish Audio's library searched as you type, OpenRouter's per model, Kokoro's, a self-hosted server's, macOS say's) through `agent-config choices`; a press plays a sample in that voice, and **use** keeps it in the layer it came from. OpenRouter's model is picked the same way, then its voices.
+- `/ml-voice:read` asks for a voice when no layer sets one: the pane opens on the list, and the reply is read once one is used. **keep default** saves the default voice so it is not asked again; **not now** reads in it and asks next time.
+- `say.voice` picks a macOS voice; empty keeps the system one, and the audio it already cached.
+- The voice and model keys name `scripts/voices.ts` as their `choices`, so `/agent-config` and onboarding offer the same lists. Needs ml-agent-config 0.13.0.
+
 ## 0.1.0
 
 - `/ml-voice:read` opens a pane that reads Claude's latest reply aloud. Haiku first retells it as talk (code, tables and diagrams explained), or with `narration.style: compact` keeps only decisions, results, numbers, risks and actions. The part being read is highlighted, and a click on any part jumps there.

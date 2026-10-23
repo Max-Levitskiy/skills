@@ -98,7 +98,7 @@
       "name": "ml-agent-config",
       "source": "./plugins/ml-agent-config",
       "description": "The Agent Config Standard (ACS v2) as a reusable skill: layered global/repo/local settings, contexts (settings for a group of repositories matched by git remote or path, shared with a team or kept to yourself), credential references that keep secrets out of git, and a re-runnable onboarding flow. Other skills and subagents invoke it instead of restating the rules, and vendor its zero-dependency loader instead of copying their own. On Claude Code, /agent-config opens a settings pane, and 1Password is approved once per session.",
-      "version": "0.13.0",
+      "version": "0.14.0",
       "license": "MIT",
       "author": {
         "name": "Max Levitskiy"
@@ -259,8 +259,8 @@
     {
       "name": "ml-voice",
       "source": "./plugins/ml-voice",
-      "description": "Listen to Claude's replies. /ml-voice:read opens a pane that reads the latest reply aloud, rewritten by Haiku as talk (code, tables and diagrams explained, not recited; or a compact cut that keeps only decisions, results and actions), highlights the part being read and jumps to any part you click; earlier replies are a pick away, and a band above the prompt keeps pause and stop in reach. Voices: Fish Audio (drama-3), OpenRouter, a local Kokoro server, your own OpenAI-shaped server, or macOS say, chosen through ml-agent-config. Audio and rewrites are cached on disk under an age and size policy; paid requests are logged with their cost. Claude Code only.",
-      "version": "0.1.0",
+      "description": "Listen to Claude's replies. /ml-voice:read opens a pane that reads the latest reply aloud, rewritten by Haiku as talk (code, tables and diagrams explained, not recited; or a compact cut that keeps only decisions, results and actions), highlights the part being read and jumps to any part you click; earlier replies are a pick away, and a band above the prompt keeps pause and stop in reach. Voices: Fish Audio (drama-3), OpenRouter, a local Kokoro server, your own OpenAI-shaped server, or macOS say, chosen through ml-agent-config; the pane's voice list, searched as you type, plays each voice before you keep it. Audio and rewrites are cached on disk under an age and size policy; paid requests are logged with their cost. Claude Code only.",
+      "version": "0.2.0",
       "license": "MIT",
       "author": {
         "name": "Max Levitskiy"

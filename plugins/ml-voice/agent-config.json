@@ -71,7 +71,7 @@
         },
         "keys": {
           "credentials.fishAudioKey": {
-            "description": "Where your Fish Audio API key lives (fish.audio → Developers). API credit is billed apart from platform credit. A reference, never the key",
+            "description": "Where your Fish Audio API key lives (fish.audio \u2192 Developers). API credit is billed apart from platform credit. A reference, never the key",
             "layer": "global"
           },
           "fishAudio.model": {
@@ -86,10 +86,14 @@
             ]
           },
           "fishAudio.voice": {
-            "description": "Fish Audio voice model id (reference_id) from fish.audio; empty uses the default voice",
+            "description": "Fish Audio voice model id (reference_id) from fish.audio's library; pick one by name from the list, or leave empty for the default voice",
             "layer": "global",
             "default": "",
-            "type": "string"
+            "type": "string",
+            "choices": {
+              "script": "scripts/voices.ts",
+              "search": "server"
+            }
           }
         }
       },
@@ -99,20 +103,27 @@
         },
         "keys": {
           "credentials.openrouterKey": {
-            "description": "Where your OpenRouter API key lives (openrouter.ai → Keys). A reference, never the key",
+            "description": "Where your OpenRouter API key lives (openrouter.ai \u2192 Keys). A reference, never the key",
             "layer": "global"
           },
           "openrouter.model": {
-            "description": "OpenRouter speech model id",
+            "description": "OpenRouter speech model id; the list shows each one's price and how many voices it has",
             "layer": "global",
             "default": "fish-audio/drama-3",
-            "type": "string"
+            "type": "string",
+            "choices": {
+              "script": "scripts/voices.ts"
+            }
           },
           "openrouter.voice": {
-            "description": "The model's provider-specific voice id; empty uses its default",
+            "description": "The model's provider-specific voice id: the list holds the voices the chosen model names (Fish Audio's library for a fish-audio model); empty uses its default",
             "layer": "global",
             "default": "",
-            "type": "string"
+            "type": "string",
+            "choices": {
+              "script": "scripts/voices.ts",
+              "search": "server"
+            }
           }
         }
       },
@@ -128,10 +139,13 @@
             "type": "string"
           },
           "kokoro.voice": {
-            "description": "Kokoro voice name, or a mix such as af_sky.4+af_nicole.6",
+            "description": "Kokoro voice name, picked from what the server lists, or a mix such as af_sky.4+af_nicole.6",
             "layer": "global",
             "default": "af_bella",
-            "type": "string"
+            "type": "string",
+            "choices": {
+              "script": "scripts/voices.ts"
+            }
           }
         }
       },
@@ -152,10 +166,29 @@
             "type": "string"
           },
           "selfHosted.voice": {
-            "description": "Voice id your server takes; empty uses its default",
+            "description": "Voice id your server takes, listed from its /v1/audio/voices where it has one; empty uses its default",
             "layer": "global",
             "default": "",
-            "type": "string"
+            "type": "string",
+            "choices": {
+              "script": "scripts/voices.ts"
+            }
+          }
+        }
+      },
+      {
+        "when": {
+          "voice.provider": "say"
+        },
+        "keys": {
+          "say.voice": {
+            "description": "macOS voice name, as `say -v '?'` lists them; empty uses the system voice",
+            "layer": "global",
+            "default": "",
+            "type": "string",
+            "choices": {
+              "script": "scripts/voices.ts"
+            }
           }
         }
       }

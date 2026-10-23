@@ -4,6 +4,7 @@ import type { RenderElement } from 'claude-code'
 
 import { top } from '../panel'
 import type { Ctx } from './context'
+import { choices } from './choices'
 import { components } from './components'
 import { edit } from './edit'
 import { fields } from './fields'
@@ -30,6 +31,7 @@ const SCREENS: Record<Screen['kind'], (ctx: Ctx) => RenderElement> = {
   onepassword: onePassword,
   filter,
   fields,
+  choices,
 }
 
 export function draw(ctx: Ctx): RenderElement {

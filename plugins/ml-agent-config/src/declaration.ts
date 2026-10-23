@@ -9,7 +9,7 @@
 // D4: the declaration is found by scanning the plugin registry for a matching `name`. Two matches
 // is an ambiguity error, never a guess.
 
-import { join, dirname } from "path";
+import { dirname, isAbsolute, join, normalize } from "path";
 import { existsSync, readFileSync, readdirSync } from "fs";
 import { ConfigError, ownValueAt, type ConfigObject, type ConfigValue, type Layer } from "./layers";
 import { pluginInstalls, type DependencyKind, type Harness } from "./harness";
@@ -31,6 +31,18 @@ export interface KeyEntry extends ValueSchema {
   /** The person's own answer, never the team's: a context team file refuses it. */
   personal?: boolean;
   default?: ConfigValue;
+  /** Where the values it can take are listed: a script the component ships (`agent-config choices`). */
+  choices?: Choices;
+}
+
+/**
+ * A script beside the declaration that lists the values a key can take, for an editor to offer:
+ * voices a speech API serves, models, anything a fixed enum cannot hold. `local`: the script lists
+ * them all and the editor searches; `server`: the script is handed the search and answers it.
+ */
+export interface Choices {
+  script: string;
+  search?: "local" | "server";
 }
 
 /** The person's own answer, which a context keeps in its me file: a credential, or a key declared `personal`. */
@@ -123,6 +135,19 @@ export function valueProblems(declaration: Declaration, config: ConfigObject, pa
   return out;
 }
 
+/** Why a key's `choices` cannot be run, or null. The script stays inside the component's folder. */
+function choicesProblem(choices: Choices): string | null {
+  if (typeof choices !== "object" || choices === null) return "choices needs a script";
+  if (typeof choices.script !== "string" || !choices.script) return "choices needs a script";
+  if (isAbsolute(choices.script) || normalize(choices.script).split(/[\\/]/)[0] === "..") {
+    return `script ${choices.script} is outside the declaration's folder`;
+  }
+  if (choices.search !== undefined && choices.search !== "local" && choices.search !== "server") {
+    return `search is ${JSON.stringify(choices.search)}; it takes "local" or "server"`;
+  }
+  return null;
+}
+
 function validate(declaration: Declaration, expectedName: string, path: string): void {
   const fail = (message: string): never => {
     throw new ConfigError(`${path}: ${message}`);
@@ -140,6 +165,10 @@ function validate(declaration: Declaration, expectedName: string, path: string):
   for (const { path: keyPath, entry } of declaredKeys(declaration)) {
     if (!entry || typeof entry.description !== "string" || !entry.description) {
       fail(`key "${keyPath}" needs a description — onboarding has nothing to ask without one`);
+    }
+    if (entry.choices !== undefined) {
+      const problem = choicesProblem(entry.choices);
+      if (problem) fail(`key "${keyPath}" has choices it cannot run: ${problem}`);
     }
     const schema = keySchema(entry);
     if (!schema) continue;

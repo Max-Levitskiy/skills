@@ -4,6 +4,7 @@
 // conflating them is what makes "not configured" look like a failure — so needing onboarding is
 // exit 0, and a caller that genuinely wants it fatal passes --require-ready.
 
+import { spawnSync } from "child_process";
 import { existsSync, readFileSync, statSync, writeSync } from "fs";
 import { join, resolve as absolute } from "path";
 import { detectHarness } from "./harness";
@@ -88,6 +89,9 @@ const USAGE = `agent-config <command>
   write <name> --layer <layer> [--from <dir>]     replace one layer from JSON on stdin
   describe <name> [--from <dir>]                  the full questionnaire, with current answers
   path <name> [--layer <layer>] [--from <dir>]    where the layers live
+  choices <name> <key> [--search <text>] [--from <dir>]
+                                                  the values a key can take, from the script
+                                                  its declaration names
   list                                            every installed component that declares a name
   1password accounts | vaults | items | fields    browse for a reference: --account, --vault, --item;
                                                   names and op:// addresses only, never a value;
@@ -124,6 +128,7 @@ interface ParsedArgs {
   account?: string;
   vault?: string;
   item?: string;
+  search?: string;
   cwd?: string;
   context?: string;
   noContext: boolean;
@@ -178,11 +183,13 @@ function parseArgs(argv: string[]): ParsedArgs {
       collecting = null;
       parsed.force = true;
     } else if (
-      ["--from", "--layer", "--alias", "--account", "--vault", "--item", "--cwd", "--context", "--parent", "--remote", "--path", "--add-remote", "--remove-remote", "--add-path", "--remove-path"].includes(argument)
+      ["--from", "--layer", "--alias", "--account", "--vault", "--item", "--search", "--cwd", "--context", "--parent", "--remote", "--path", "--add-remote", "--remove-remote", "--add-path", "--remove-path"].includes(argument)
     ) {
       collecting = null;
       const value = argv[index + 1];
-      if (!value || value.startsWith("--")) throw new ConfigError(`${argument} needs a value`);
+      // An empty search is a search for everything; every other flag needs its value.
+      const isEmptySearch = argument === "--search" && value === "";
+      if (!isEmptySearch && (!value || value.startsWith("--"))) throw new ConfigError(`${argument} needs a value`);
       index += 1;
       if (argument === "--from") parsed.from = value;
       if (argument === "--layer") parsed.layer = value;
@@ -190,6 +197,7 @@ function parseArgs(argv: string[]): ParsedArgs {
       if (argument === "--account") parsed.account = value;
       if (argument === "--vault") parsed.vault = value;
       if (argument === "--item") parsed.item = value;
+      if (argument === "--search") parsed.search = value;
       if (argument === "--cwd") parsed.cwd = value;
       if (argument === "--context") parsed.context = value;
       if (argument === "--parent") parsed.parent = value;
@@ -717,6 +725,71 @@ function path(parsed: ParsedArgs): number {
   return EXIT.ok;
 }
 
+/**
+ * The values a key can take, from the script its declaration names. The script is run with bun from
+ * the declaration's folder and handed, as JSON on stdin, the key, the search (a `server` key's only)
+ * and the effective config: references, never a secret, so a script that needs one loads it through
+ * this CLI like any consumer. It prints `{ "choices": [{ "value", "label"?, "detail"? }], "note"? }`.
+ */
+function choices(parsed: ParsedArgs): number {
+  const name = requireName(parsed);
+  const key = parsed.positionals[1];
+  if (!key) throw new ConfigError(`choices needs a key: agent-config choices ${name} <key>`);
+  const { found, effective } = resolve(name, parsed);
+  const declared = declaredKeys(found.declaration).find((one) => one.path === key);
+  if (!declared) throw new ConfigError(`${name} declares no key ${key}`);
+  const listing = declared.entry.choices;
+  if (!listing) throw new ConfigError(`${name}'s ${key} declares no choices; its value is typed`);
+  const search = listing.search ?? "local";
+
+  const ran = spawnSync(process.execPath, [join(found.dir, listing.script), key], {
+    cwd: found.dir,
+    input: JSON.stringify({ key, search: search === "server" ? (parsed.search ?? "") : "", config: effective.config }),
+    encoding: "utf8",
+    timeout: 30_000,
+    maxBuffer: 16 * 1024 * 1024,
+    env: { ...process.env, AGENT_CONFIG_ROOT: join(import.meta.dir, "..") },
+  });
+  const said = (ran.stderr ?? "").trim().split("\n")[0];
+  if (ran.error) {
+    report(`${listing.script} did not answer: ${ran.error.message}\n`);
+    return EXIT.internal;
+  }
+  if (ran.status !== 0) {
+    report(`${listing.script} could not list ${key}: ${said || `it exited ${ran.status}`}\n`);
+    return EXIT.internal;
+  }
+  const listed = parseChoices(ran.stdout);
+  if (typeof listed === "string") {
+    report(`${listing.script} answered in another shape: ${listed}\n`);
+    return EXIT.internal;
+  }
+  out(`${JSON.stringify({ acs: ACS_VERSION, name, key, search, ...listed }, null, 2)}\n`);
+  return EXIT.ok;
+}
+
+type Choice = { value: string; label: string; detail?: string };
+
+/** A choices script's answer, each choice labelled by its value when it names no label; else why it is not one. */
+export function parseChoices(stdout: string): { choices: Choice[]; note?: string } | string {
+  let answer: unknown;
+  try {
+    answer = JSON.parse(stdout);
+  } catch {
+    return "it is not JSON";
+  }
+  const listed = (answer as { choices?: unknown } | null)?.choices;
+  if (!Array.isArray(listed)) return "it has no choices list";
+  const choices: Choice[] = [];
+  for (const one of listed) {
+    const { value, label, detail } = (one ?? {}) as Record<string, unknown>;
+    if (typeof value !== "string") return "a choice has no text value";
+    choices.push({ value, label: typeof label === "string" && label ? label : value, ...(typeof detail === "string" && detail ? { detail } : {}) });
+  }
+  const note = (answer as { note?: unknown }).note;
+  return typeof note === "string" && note ? { choices, note } : { choices };
+}
+
 const CONTEXT_USAGE =
   `context list | explain [--cwd <dir>] [--context <name>] [--no-context] | add <name> [--parent <p>] [--remote <glob>]... [--path <glob>]... | set <name> [--parent <p> | --no-parent] [--add-remote|--remove-remote|--add-path|--remove-path <glob>]... | remove <name> [--force]`;
 
@@ -830,6 +903,8 @@ export function main(argv: string[]): number {
         return describe(parsed);
       case "path":
         return path(parsed);
+      case "choices":
+        return choices(parsed);
       case "list":
         return list();
       case "1password":

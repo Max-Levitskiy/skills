@@ -43,6 +43,11 @@ export type Actions = {
   setFilter: (by: 'account' | 'vault' | 'type', value: string | null) => Promise<void>
   openItem: (id: string) => Promise<void>
   pickField: (reference: string) => Promise<void>
+  /** The edited key's values, as its component's script lists them: open the list, search it, pick one. */
+  openChoices: () => Promise<void>
+  loadChoices: () => Promise<void>
+  searchChoices: (text: string) => Promise<void>
+  pickChoice: (value: string) => Promise<void>
   /** A structured key's parts, each a place in the draft value: open one, pick or type its value. */
   openNode: (at: string[]) => Promise<void>
   /** No value takes the part out of the draft. */

@@ -88,6 +88,21 @@
           "type": "boolean",
           "description": "The person's own answer rather than the team's: onboarding into a context writes it to the context's me file, and the team file refuses it."
         },
+        "choices": {
+          "type": "object",
+          "description": "A script that lists the values this key can take, for an editor to offer and search: `agent-config choices <name> <key>` runs it with bun from the declaration's folder, the key, the search and the effective config (references, never secrets) as JSON on stdin, and reads `{ \"choices\": [{ \"value\", \"label\", \"detail\" }], \"note\" }` from its stdout.",
+          "properties": {
+            "script": { "type": "string", "description": "The script's path, relative to the declaration's folder and inside it." },
+            "search": {
+              "type": "string",
+              "enum": ["local", "server"],
+              "default": "local",
+              "description": "local: the script lists every value and the editor searches them; server: the script is handed the search text and answers it, for a list too long to send whole."
+            }
+          },
+          "required": ["script"],
+          "additionalProperties": false
+        },
         "default": {
           "description": "Default value used when the key is not set."
         },
