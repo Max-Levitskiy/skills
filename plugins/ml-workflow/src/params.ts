@@ -1,6 +1,6 @@
 // Node parameters (docs/spec.md, p.14): the rules `check` applies to a workflow folder and `run`
 // applies again to the values it gets on stdin.
-import { isObject, notStrict, type Schemas } from "./schema.ts";
+import { invalidSchema, isObject, notStrict, type Schemas } from "./schema.ts";
 import { isToolName } from "./tools.ts";
 
 export const PARAMETERS = ["format", "schema", "outcome", "model", "tools", "skill", "keepSeconds", "context"] as const;
@@ -51,6 +51,14 @@ export function checkParams(params: Record<string, unknown>, outcomes?: string[]
       for (const outcome of Object.keys(schema)) {
         if (outcomes && !outcomes.includes(outcome)) {
           error("params.schema-outcome", `"schema" names outcome "${outcome}", which the action does not declare`);
+        }
+        const invalid = invalidSchema(schema[outcome]);
+        if (invalid) {
+          error(
+            "params.schema-invalid",
+            `the schema of outcome "${outcome}" is not a valid JSON Schema (${invalid}); claude refuses it before any model call`,
+          );
+          continue;
         }
         const reason = notStrict(schema[outcome]);
         if (reason) {
