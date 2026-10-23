@@ -119,6 +119,7 @@ describe("contexts through the CLI", () => {
     const r = run("context", "explain", "--cwd", repoDir);
     expect(r.json.chain[0]).toMatchObject({ name: "acme", via: "remote" });
     expect(r.json.layers).toContain("context:acme:me");
+    expect(r.json.repo.root).toBe(r.json.place.paths[0].replace(/\/$/, ""));
   });
 
   test("--context with an unknown name exits 2", () => {
@@ -157,12 +158,64 @@ describe("contexts through the CLI", () => {
     expect(run("context", "list").json.contexts.map((c: any) => c.name)).toEqual(["acme"]);
   });
 
+  test("context set changes the parent and the filters, keeping every other field", () => {
+    const { run, home } = sandbox();
+    expect(run("context", "add", "beta", "--remote", "github.com/beta/**").code).toBe(0);
+    const r = run("context", "set", "beta", "--parent", "acme", "--add-remote", "gitlab.com/beta/**", "--remove-remote", "github.com/beta/**", "--add-path", "~/git/beta/");
+    expect(r.code).toBe(0);
+    const team = JSON.parse(readFileSync(join(home, ".agents/contexts/beta/context.json"), "utf8"));
+    expect(team).toMatchObject({ parent: "acme", match: [{ remote: "gitlab.com/beta/**" }] });
+    expect(team.id).toMatch(/^ctx_/);
+    expect(JSON.parse(readFileSync(join(home, ".agents/contexts/beta/context.me.json"), "utf8")).match).toEqual([{ path: "~/git/beta/" }]);
+    expect(run("context", "set", "beta", "--no-parent").code).toBe(0);
+    expect(JSON.parse(readFileSync(join(home, ".agents/contexts/beta/context.json"), "utf8")).parent).toBeUndefined();
+  });
+
+  test("context set refuses a parent under the context, and a filter it does not hold", () => {
+    const { run } = sandbox();
+    expect(run("context", "add", "beta", "--parent", "acme").code).toBe(0);
+    const cycle = run("context", "set", "acme", "--parent", "beta");
+    expect(cycle.code).toBe(2);
+    expect(cycle.stderr).toContain("cannot be its parent");
+    const typo = run("context", "set", "beta", "--remove-remote", "github.com/nope/**");
+    expect(typo.code).toBe(2);
+    expect(typo.stderr).toContain("has no remote filter");
+  });
+
+  test("context remove refuses a parent and a context holding values unless forced, and drops it from order.json", () => {
+    const { run, home, putContext } = sandbox();
+    expect(run("context", "add", "beta", "--parent", "acme").code).toBe(0);
+    expect(run("context", "remove", "acme").stderr).toContain("is the parent of beta");
+    putContext("beta", "demo", { site: "beta" });
+    writeFileSync(join(home, ".agents", "contexts", "order.json"), JSON.stringify(["beta", "acme"]));
+    expect(run("context", "list").json.contexts.find((c: any) => c.name === "beta").components).toEqual(["demo"]);
+    const held = run("context", "remove", "beta");
+    expect(held.code).toBe(2);
+    expect(held.stderr).toContain("holds values for demo");
+    expect(run("context", "remove", "beta", "--force").code).toBe(0);
+    expect(existsSync(join(home, ".agents/contexts/beta"))).toBe(false);
+    expect(JSON.parse(readFileSync(join(home, ".agents/contexts/order.json"), "utf8"))).toEqual(["acme"]);
+  });
+
   test("write --layer context:acme:me lands in the me file and shows in describe levels", () => {
     const { run, runWithStdin, repoDir } = sandbox();
     const r = runWithStdin("write", "demo", "--layer", "context:acme:me", JSON.stringify({ site: "me" }));
     expect(r.code).toBe(0);
     const d = run("describe", "demo", "--cwd", repoDir).json;
     expect(d.keys.find((k: any) => k.path === "site").levels["context:acme:me"]).toBe("me");
+  });
+
+  test("outside a repository a path context still applies, and describe reports the place", () => {
+    const { run, put, home } = sandbox();
+    put("global", { site: "mine" });
+    const folder = join(home, "git", "beta");
+    mkdirSync(join(folder, "notes"), { recursive: true });
+    expect(run("context", "add", "beta", "--path", "~/git/beta/").code).toBe(0);
+    const d = run("describe", "demo", "--cwd", join(folder, "notes")).json;
+    expect(d.contexts.map((c: any) => c.name)).toEqual(["beta"]);
+    expect(d.layers.map((l: any) => l.layer)).toContain("context:beta:me");
+    expect(d.place.cwd).toBe(join(folder, "notes"));
+    expect(d.place.remotes).toEqual([]);
   });
 
   test("describe marks a key declared personal, so an editor offers it no team context level", () => {

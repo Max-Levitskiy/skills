@@ -126,6 +126,8 @@ export interface DescribeOutput {
     journal: { at: string; config: ConfigObject }[];
   }[];
   contexts: MatchedContext[];
+  /** Where this ran: what a context's filters match, and what a new context is suggested from. */
+  place: Place;
   problems: Problem[];
 }
 
@@ -166,6 +168,8 @@ export interface ContextListOutput {
     team: MatchEntry[];
     me: MatchEntry[];
     matched: boolean;
+    /** The components that keep values in it. */
+    components: string[];
   }[];
   problems: Problem[];
 }
@@ -173,6 +177,8 @@ export interface ContextListOutput {
 export interface ContextExplainOutput {
   acs: typeof ACS_VERSION;
   place: Place;
+  /** The repository the place is in, as describe reports it. */
+  repo: RepoReport;
   chain: MatchedContext[];
   /** The merge order the chain makes. */
   layers: Layer[];

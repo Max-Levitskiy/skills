@@ -7,7 +7,7 @@
 
 import { homedir } from "os";
 import { join } from "path";
-import { existsSync, readdirSync, readFileSync, statSync } from "fs";
+import { existsSync, readdirSync, readFileSync, rmSync, statSync } from "fs";
 import { randomBytes } from "crypto";
 import { compileGlob } from "./glob";
 import { ConfigError, invalidContextName, writeFileAtomic } from "./layers";
@@ -241,6 +241,89 @@ export function addContext(opts: {
   const me = paths.length > 0 ? join(dir, ME_FILE) : null;
   if (me) writeFileAtomic(me, `${JSON.stringify({ match: paths.map((path) => ({ path })) }, null, 2)}\n`);
   return { dir, id, team, me };
+}
+
+/** What `setContext` changes: the parent (null drops it), and filters added or removed by glob. */
+export interface ContextChange {
+  parent?: string | null;
+  addRemote?: string[];
+  removeRemote?: string[];
+  addPath?: string[];
+  removePath?: string[];
+}
+
+/**
+ * A file's `match` with the `kind` filters named in `remove` taken out and those in `add` put in
+ * once each; every other entry is kept as it is. Removing a glob the file does not hold is refused,
+ * so a typo does not pass for a change.
+ */
+function editedMatch(match: unknown, kind: MatchKind, add: string[], remove: string[], file: string): unknown[] {
+  const globOf = (item: unknown) => (isObject(item) ? (item[kind] ?? item[`${kind}/i`]) : undefined);
+  const list = Array.isArray(match) ? match : [];
+  for (const glob of remove) {
+    if (!list.some((item) => globOf(item) === glob)) throw new ConfigError(`${file} has no ${kind} filter ${JSON.stringify(glob)}`);
+  }
+  const kept = list.filter((item) => !remove.includes(globOf(item) as string));
+  for (const glob of add) if (!kept.some((item) => globOf(item) === glob)) kept.push({ [kind]: glob });
+  return kept;
+}
+
+/**
+ * Change the context `name`: its parent in the team file, remote filters in the team file and path
+ * filters in the user's own, which is created when a path is added. Every other field is kept.
+ * Refused when the context or the new parent is not usable, or the parent is `name` or under it.
+ */
+export function setContext(name: string, change: ContextChange, home: string = homedir()): ContextDef {
+  const store = readContexts(home);
+  const def = lookup(store, name, `context "${name}"`);
+  if (typeof change.parent === "string") {
+    lookup(store, change.parent, `context "${name}" names parent "${change.parent}"`);
+    if (change.parent === name || isAncestor(store, name, change.parent)) {
+      throw new ConfigError(`context "${change.parent}" is "${name}" or under it, so it cannot be its parent`);
+    }
+  }
+  const teamFile = join(def.dir, TEAM_FILE);
+  const team = JSON.parse(readFileSync(teamFile, "utf8")) as JsonObject;
+  if (change.parent === null) delete team.parent;
+  else if (change.parent !== undefined) team.parent = change.parent;
+  team.match = editedMatch(team.match, "remote", change.addRemote ?? [], change.removeRemote ?? [], teamFile);
+  const meFile = join(def.dir, ME_FILE);
+  const touchesMe = (change.addPath?.length ?? 0) + (change.removePath?.length ?? 0) > 0;
+  const me = touchesMe ? (existsSync(meFile) ? (JSON.parse(readFileSync(meFile, "utf8")) as JsonObject) : {}) : null;
+  if (me) me.match = editedMatch(me.match, "path", change.addPath ?? [], change.removePath ?? [], meFile);
+  // Both checked before either is written, so a refused path leaves the team file as it was.
+  writeFileAtomic(teamFile, `${JSON.stringify(team, null, 2)}\n`);
+  if (me) writeFileAtomic(meFile, `${JSON.stringify(me, null, 2)}\n`);
+  return lookup(readContexts(home), name, `context "${name}"`);
+}
+
+/** The components that keep values in a context: each directory in it with a config file. */
+export function contextComponents(def: ContextDef): string[] {
+  return readdirSync(def.dir)
+    .filter((entry) => !entry.startsWith(".") && isDirectory(join(def.dir, entry)))
+    .filter((entry) => ["config.json", "config.me.json"].some((file) => existsSync(join(def.dir, entry, file))))
+    .sort();
+}
+
+/**
+ * Delete the context `name`: its directory, and its name in `order.json`. Refused while another
+ * context names it as parent, and, without `force`, while components keep values in it.
+ */
+export function removeContext(name: string, opts: { force?: boolean } = {}, home: string = homedir()): { dir: string; components: string[] } {
+  const store = readContexts(home);
+  const def = lookup(store, name, `context "${name}"`);
+  const children = [...store.defs.values()].filter((one) => one.parent === name).map((one) => one.name);
+  if (children.length > 0) throw new ConfigError(`context "${name}" is the parent of ${children.join(", ")}; give them another parent first`);
+  const components = contextComponents(def);
+  if (components.length > 0 && !opts.force) {
+    throw new ConfigError(`context "${name}" holds values for ${components.join(", ")}; pass --force to delete them with it`);
+  }
+  if (store.order.includes(name)) {
+    const orderFile = join(home, CONTEXTS_DIR, ORDER_FILE);
+    writeFileAtomic(orderFile, `${JSON.stringify(store.order.filter((one) => one !== name), null, 2)}\n`);
+  }
+  rmSync(def.dir, { recursive: true, force: true });
+  return { dir: def.dir, components };
 }
 
 /** Whether `ancestor` is on `name`'s parent line. Throws, as `resolveChain` does, on a broken line. */

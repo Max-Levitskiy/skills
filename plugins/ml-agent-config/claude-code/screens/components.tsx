@@ -1,12 +1,21 @@
-// The first screen: every component with a declaration, agent-config's own included.
+// The first screen, in two tabs: every component with a declaration, agent-config's own included,
+// and every context.
 
 import type { RenderElement } from 'claude-code'
 
 import { note, row, screen } from '../ui/screen'
 import type { Ctx } from './context'
+import { contextsBody } from './contexts'
 
-export function components({ now, ui, act }: Ctx): RenderElement {
-  return screen(ui, { path: ['Components'], message: now.message }, [
+export function components(ctx: Ctx): RenderElement {
+  const { now, ui, act } = ctx
+  const { Button, Text } = ui
+  const tab = (value: 'components' | 'contexts', label: string) => (
+    <Button key={`tab:${value}`} label={label} variant={now.tab === value ? 'primary' : undefined} plain={now.tab !== value || undefined} onPress={() => act.setTab(value)} />
+  )
+  const tabs = [tab('components', 'Components'), <Text key="tab-gap"> </Text>, tab('contexts', 'Contexts')]
+  if (now.tab === 'contexts') return screen(ui, { path: [], tools: tabs, message: now.message }, contextsBody(ctx))
+  return screen(ui, { path: [], tools: tabs, message: now.message }, [
     now.isLoading && note(ui, 'Loading…'),
     ...now.components.map(one =>
       row(ui, {

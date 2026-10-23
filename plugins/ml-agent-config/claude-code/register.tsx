@@ -16,9 +16,9 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import { cacheKey, parseCache } from '../src/secret-cache'
-import type { Component, Json, OnePassword, Panel, Screen, Setting, Unlock } from '../types'
+import type { Component, Here, Json, OnePassword, Panel, Screen, Setting, Unlock } from '../types'
 import { HARNESS, OWN, blockedParent, firstLine, withValue, type Plan, type Reference } from './cli'
-import { PANE, editAt, editing, inheritedFields, referenceAt, firstEdit, firstKey, firstSetting, layerNames, readDescribe, savedAt, selected, switchLevel, top } from './panel'
+import { PANE, editAt, editing, inheritedFields, referenceAt, firstEdit, firstKey, firstSetting, layerNames, readContextList, readDescribe, readExplainHere, savedAt, selected, suggestContext, switchLevel, top } from './panel'
 import { draw } from './screens'
 import { emptyOf, has, kindOf } from '../src/key-schema'
 import { atKey, fold, getAt, isStructured, isTreeSetting, kindAt, mergedBelow, moveTexts, nameTaken, nodeAt, parseAs, pointer, renameAt, schemaAt, setAt, withRemovals, withoutPart } from './tree'
@@ -26,7 +26,7 @@ import { readableReference } from './screens/onepassword'
 import type { Actions } from './screens/context'
 import { isObject, isPlan, listedComponents, onePasswordFields, onePasswordListing, pathLayer } from './shapes'
 import { EMPTY_PANEL, NO_ONE_PASSWORD } from './state'
-import { canHold } from './ui/levels'
+import { canHold, levelLabel } from './ui/levels'
 import { SOURCES, isReference, parseText, targetLayer, type Stored } from './values'
 
 export type { Plan } from './cli'
@@ -373,14 +373,14 @@ async function components($: EngineInterface): Promise<Component[]> {
   return Promise.all(all.map(async one => ({ ...one, ready: (await start($, one.name, one.from))?.ready ?? null })))
 }
 
-async function describe($: EngineInterface, component: Component): Promise<Pick<Panel, 'settings' | 'defs' | 'layers' | 'contexts' | 'message'>> {
+async function describe($: EngineInterface, component: Component): Promise<Pick<Panel, 'settings' | 'defs' | 'layers' | 'contexts' | 'here' | 'message'>> {
   const from = component.from ? ['--from', component.from] : []
   try {
     const ran = await $.process.run([await bin($), 'describe', component.name, ...from], { env: HARNESS, timeoutMs: 15000 })
-    if (ran.exitCode !== 0) return { settings: [], defs: {}, layers: [], contexts: [], message: firstLine(ran.stderr) || 'describe failed' }
+    if (ran.exitCode !== 0) return { settings: [], defs: {}, layers: [], contexts: [], here: null, message: firstLine(ran.stderr) || 'describe failed' }
     return { ...readDescribe(ran.stdout, await $.env.get('HOME'), component.name), message: null }
   } catch (error) {
-    return { settings: [], defs: {}, layers: [], contexts: [], message: `describe failed: ${(error as Error).message}` }
+    return { settings: [], defs: {}, layers: [], contexts: [], here: null, message: `describe failed: ${(error as Error).message}` }
   }
 }
 
@@ -417,7 +417,7 @@ async function openComponent($: EngineInterface, name: string): Promise<void> {
   const component = (await read($, panel)).components.find(one => one.name === name)
   if (!component) return
   const mine = ++componentOpens
-  await update($, panel, now => ({ ...now, selected: name, settings: [], layers: [], contexts: [], show: 'effective', isLoading: true }))
+  await update($, panel, now => ({ ...now, selected: name, settings: [], layers: [], contexts: [], here: null, newContext: null, show: 'effective', isLoading: true }))
   await go($, { kind: 'settings' }, `component:${name}`)
   const detail = await describe($, component)
   // Opened again, this one or another, while it loaded: its answer is not that open's.
@@ -465,6 +465,145 @@ async function save($: EngineInterface, layer: string, path: string, value: Json
     return { ...latest, ...detail, components, message: failed ? `Not saved: ${failed}` : detail.message }
   })
   return failed
+}
+
+/** Every context, read again: after a change, and when the Contexts tab opens. */
+async function loadContexts($: EngineInterface): Promise<void> {
+  try {
+    const ran = await $.process.run([await bin($), 'context', 'list'], { env: HARNESS, timeoutMs: 15000 })
+    if (ran.exitCode !== 0) throw new Error(firstLine(ran.stderr) || 'context list failed')
+    const contextList = readContextList(ran.stdout)
+    await update($, panel, now => ({ ...now, contextList }))
+  } catch (error) {
+    await update($, panel, now => ({ ...now, contextList: now.contextList ?? [], message: `Could not list contexts: ${(error as Error).message}` }))
+  }
+}
+
+/** Where the pane runs, from `context explain`, when no component's describe has said. */
+async function explainedHere($: EngineInterface): Promise<Here | null> {
+  try {
+    const ran = await $.process.run([await bin($), 'context', 'explain'], { env: HARNESS, timeoutMs: 15000 })
+    return ran.exitCode === 0 ? readExplainHere(ran.stdout, (await $.env.get('HOME')) ?? null) : null
+  } catch {
+    return null
+  }
+}
+
+async function setTab($: EngineInterface, tab: Panel['tab']): Promise<void> {
+  await update($, panel, now => ({ ...now, tab, message: null }))
+  if (tab === 'contexts') await loadContexts($)
+}
+
+/** The screen creating a context, filled in with what this place suggests; outside a component, from the cwd alone. */
+async function openNewContext($: EngineInterface): Promise<void> {
+  const here = (await read($, panel)).here ?? (await explainedHere($))
+  const newContext = here ? suggestContext(here) : { name: '', parent: null, remotes: [], paths: [] }
+  await update($, panel, latest => ({ ...latest, newContext, typed: { remote: '', path: '' } }))
+  await go($, { kind: 'context' }, 'newcontext', 'name')
+}
+
+async function openContext($: EngineInterface, name: string): Promise<void> {
+  await update($, panel, now => ({ ...now, typed: { remote: '', path: '' }, confirmDelete: null }))
+  await go($, { kind: 'context', context: name }, `context:${name}`)
+}
+
+/**
+ * `agent-config context <args>`, then the contexts and the open component read again, since a
+ * context's levels come and go with its filters. The refusal, if any, is the screen's message.
+ */
+async function contextCommand($: EngineInterface, args: string[]): Promise<boolean> {
+  const ran = await $.process.run([await bin($), 'context', ...args], { env: HARNESS, timeoutMs: 15000 })
+  if (ran.exitCode !== 0) {
+    await update($, panel, now => ({ ...now, message: `Not changed: ${firstLine(ran.stderr) || `context ${args[0]} failed`}` }))
+    return false
+  }
+  await loadContexts($)
+  const component = selected(await read($, panel))
+  if (component) {
+    const detail = await describe($, component)
+    await update($, panel, now => (now.selected === component.name ? { ...now, ...detail } : now))
+  }
+  return true
+}
+
+/** A filter added or removed: in the draft while creating, else in the context's files. */
+async function changeFilter($: EngineInterface, kind: 'remote' | 'path', glob: string, isAdd: boolean): Promise<void> {
+  const now = await read($, panel)
+  const name = top(now).context
+  const field = kind === 'remote' ? 'remotes' : 'paths'
+  if (isAdd && !glob.trim()) return
+  if (!name) {
+    await update($, panel, latest => {
+      const draft = latest.newContext
+      if (!draft) return latest
+      const list = isAdd ? [...draft[field].filter(one => one !== glob.trim()), glob.trim()] : draft[field].filter(one => one !== glob)
+      return { ...latest, newContext: { ...draft, [field]: list }, typed: isAdd ? { ...latest.typed, [kind]: '' } : latest.typed }
+    })
+    return
+  }
+  const changed = await contextCommand($, ['set', name, isAdd ? `--add-${kind}` : `--remove-${kind}`, isAdd ? glob.trim() : glob])
+  if (changed && isAdd) await update($, panel, latest => ({ ...latest, typed: { ...latest.typed, [kind]: '' } }))
+}
+
+async function chooseParent($: EngineInterface, parent: string | null): Promise<void> {
+  const now = await read($, panel)
+  const name = now.stack.at(-2)?.context
+  if (!name) {
+    await update($, panel, latest => ({ ...latest, newContext: latest.newContext && { ...latest.newContext, parent } }))
+    return back($)
+  }
+  if (await contextCommand($, ['set', name, ...(parent ? ['--parent', parent] : ['--no-parent'])])) await back($)
+}
+
+/** Delete on the second press; the first says what goes with it. */
+async function deleteContext($: EngineInterface, name: string): Promise<void> {
+  const now = await read($, panel)
+  if (now.confirmDelete !== name) {
+    await update($, panel, latest => ({ ...latest, confirmDelete: name }))
+    return
+  }
+  if (await contextCommand($, ['remove', name, '--force'])) await back($, 1, { message: `Deleted context ${name}.` })
+}
+
+/**
+ * `agent-config context add`, then the contexts and the component read again, so the new context's
+ * levels show. An edit open moves to the new context's level that can hold its key; one the context
+ * does not match here stays where it was, and the message says so.
+ */
+async function createContext($: EngineInterface): Promise<void> {
+  const now = await read($, panel)
+  const draft = now.newContext
+  if (!draft) return
+  const name = draft.name.trim()
+  const refuse = (why: string) => update($, panel, latest => ({ ...latest, message: `Not created: ${why}` }))
+  if (!name) return refuse('give it a name')
+  if (draft.paths.length + draft.remotes.length === 0 && !draft.parent) return refuse('give it folders, a remote or a parent to match by, or it applies nowhere')
+  const argv = [
+    await bin($),
+    'context',
+    'add',
+    name,
+    ...(draft.parent ? ['--parent', draft.parent] : []),
+    ...draft.paths.flatMap(path => ['--path', path]),
+    ...draft.remotes.flatMap(remote => ['--remote', remote]),
+  ]
+  const ran = await $.process.run(argv, { env: HARNESS, timeoutMs: 15000 })
+  if (ran.exitCode !== 0) return refuse(firstLine(ran.stderr) || 'context add failed')
+  await loadContexts($)
+  const component = selected(now)
+  const detail = component ? await describe($, component) : undefined
+  let moved: string | undefined
+  await update($, panel, latest => {
+    if (!detail || latest.selected !== component?.name) return { ...latest, newContext: null }
+    const next = { ...latest, ...detail, newContext: null }
+    const setting = editing(next)
+    const layers = layerNames(next)
+    moved = setting && [`context:${name}`, `context:${name}:me`].find(layer => layers.includes(layer) && canHold(setting, layer))
+    return { ...next, edit: next.edit && setting && moved ? switchLevel(next.edit, setting, moved, layers, next.defs) : next.edit }
+  })
+  const applies = detail ? detail.contexts.some(one => one.name === name) : (await read($, panel)).contextList?.some(one => one.name === name && one.matched)
+  const where = moved ? ` Editing at ${levelLabel(moved)}.` : ''
+  await back($, 1, { message: applies ? `Created context ${name}.${where}` : `Created context ${name}; it does not match here.` })
 }
 
 /** An on/off key flips in place: at the level shown, or where it lives now. */
@@ -768,6 +907,20 @@ function actions($: EngineInterface, canType: boolean): Actions {
     },
     openEdit: setting => openEdit($, setting, canType),
     setLevel: layer => setLevel($, layer),
+    setTab: tab => setTab($, tab),
+    openNewContext: () => openNewContext($),
+    openContext: name => openContext($, name),
+    typeContextName: async text => {
+      await update($, panel, now => ({ ...now, newContext: now.newContext && { ...now.newContext, name: text } }))
+    },
+    typeFilter: async (kind, text) => {
+      await update($, panel, now => ({ ...now, typed: { ...now.typed, [kind]: text } }))
+    },
+    addFilter: (kind, glob) => changeFilter($, kind, glob, true),
+    removeFilter: (kind, glob) => changeFilter($, kind, glob, false),
+    chooseParent: parent => chooseParent($, parent),
+    createContext: () => createContext($),
+    deleteContext: name => deleteContext($, name),
     chooseSource: source => chooseSource($, source),
     typeText: async text => {
       await update($, panel, now => ({ ...now, edit: now.edit && { ...now.edit, text, isDirty: true } }))

@@ -4,7 +4,7 @@ import type { RenderElement } from 'claude-code'
 
 import { selected } from '../panel'
 import { chainLine, levelLabel } from '../ui/levels'
-import { note, screen } from '../ui/screen'
+import { note, row, screen } from '../ui/screen'
 import type { Ctx } from './context'
 
 export function files({ now, ui, act }: Ctx): RenderElement {
@@ -30,7 +30,8 @@ export function files({ now, ui, act }: Ctx): RenderElement {
         </Box>
       )
     }),
-    shown.length === 1 && note(ui, 'Outside a repository only Everywhere is offered.'),
+    shown.length === 1 && note(ui, 'No repo or context applies here, so only Everywhere.'),
+    now.here && row(ui, { key: 'newcontext', label: '+ New context…', detail: 'values for a set of repos and folders', onPress: () => act.openNewContext() }),
     note(ui, 'Merged lowest first: a higher level overrides a lower one, key by key.'),
   ])
 }

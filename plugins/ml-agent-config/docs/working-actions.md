@@ -41,7 +41,9 @@ Read this when a `start` came back with `ready: false`.
   below it matched; `explicit` means `--context` named it. The last one is the innermost, where
   onboarding writes. `load`, `describe` and `path` return the same field. Contexts are defined in
   the standard, under *Contexts*; `agent-config context explain` prints the chain with the place it
-  was resolved for and the layer order it makes.
+  was resolved for and the layer order it makes. `describe` also returns **`place`**, the `cwd`,
+  `paths` and normalised `remotes` the chain was resolved for, from which an editor suggests a new
+  context.
 
 Exit codes, for a script that cares: `0` a plan was produced (ready or not), `1` internal, `2` the
 declaration is missing or invalid or the name is ambiguous, `3` a credential is unresolvable

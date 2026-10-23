@@ -12,8 +12,8 @@ export type LevelInfo = { label: string; short: string; hint: string; audience: 
 
 const FIXED: Record<string, LevelInfo> = {
   global: { label: 'Everywhere', short: 'Everywhere', hint: '~/.agents, every project', audience: 'in every project, for you', offer: 'Everywhere, in all my projects' },
-  repo: { label: 'Project, shared', short: 'Project', hint: 'committed, the whole team', audience: 'for the whole team in this repo', offer: 'For the team in this repo' },
-  'user-repo': { label: 'Project, just me', short: 'Me', hint: '~/.agents, this repo, only you', audience: 'for you in this repo', offer: 'Just for me in this repo' },
+  repo: { label: 'Repo, shared', short: 'Repo', hint: 'committed, the whole team', audience: 'for the whole team in this repo', offer: 'For the team in this repo' },
+  'user-repo': { label: 'Repo, just me', short: 'Repo (me)', hint: '~/.agents, this repo, only you', audience: 'for you in this repo', offer: 'Just for me in this repo' },
   local: { label: 'This checkout', short: 'Checkout', hint: 'gitignored, this folder only', audience: 'in this checkout only', offer: 'In this checkout only' },
 }
 
@@ -27,11 +27,11 @@ export function levelInfo(layer: string): LevelInfo {
   if (fixed) return fixed
   const team = teamContext(layer)
   if (team) {
-    return { label: `Project ${team}, shared`, short: team, hint: `~/.agents/contexts/${team}, shared with the team`, audience: `for the whole team in ${team}`, offer: `For the team in ${team}` }
+    return { label: `Context ${team}`, short: team, hint: `~/.agents/contexts/${team}/, no secrets, can be handed to a team`, audience: `wherever ${team} applies`, offer: `In context ${team}` }
   }
   const me = /^context:([^:]+):me$/.exec(layer)?.[1]
   if (me) {
-    return { label: `Project ${me}, just me`, short: `${me} (me)`, hint: `~/.agents/contexts/${me}, only you`, audience: `for you in ${me}`, offer: `Just for me in ${me}` }
+    return { label: `Context ${me}, just me`, short: `${me} (me)`, hint: `~/.agents/contexts/${me}/, only you`, audience: `for you, wherever ${me} applies`, offer: `Just for me in context ${me}` }
   }
   return { label: layer, short: layer, hint: 'another level', audience: 'at this level', offer: layer }
 }
@@ -69,7 +69,7 @@ export function levelStack(setting: Setting, layers: readonly string[]): LevelRo
 
 /** Why a level cannot hold this key: the repo's file is committed, a context's team file is shared. */
 export function refusal(layer: string): string {
-  return layer === 'repo' ? 'committed: not for a credential' : 'team file: not for a credential or personal key'
+  return layer === 'repo' ? 'committed: not for a credential' : 'context.json: not for a credential or a personal key'
 }
 
 /** One step of a setting's path, top first: what the level sets, and what that does to the value in effect. */
@@ -105,7 +105,7 @@ export function chainState(row: ChainRow): string {
 }
 
 /**
- * The value in effect and every value it overrides, top first: `acme · Project, just me ← beta
+ * The value in effect and every value it overrides, top first: `acme · Repo, just me ← beta
  * (Everywhere) ← gamma (default)`. A block ends the path; the default shows when it differs.
  */
 export function pathLine(setting: Setting, layers: readonly string[], names: Names, defs: Defs): string {

@@ -9,7 +9,7 @@ import { join, resolve as absolute } from "path";
 import { detectHarness } from "./harness";
 import { repoContext, registerRepo, type RepoContext } from "./repo";
 import { placeOf, type Place } from "./place";
-import { addContext, isAncestor, readContexts, resolveChain, type ContextStore, type MatchedContext } from "./contexts";
+import { addContext, contextComponents, isAncestor, readContexts, removeContext, resolveChain, setContext, type ContextStore, type MatchedContext } from "./contexts";
 import {
   ConfigError,
   LAYERS,
@@ -100,6 +100,11 @@ const USAGE = `agent-config <command>
   context add <name> [--parent <p>] [--remote <glob>]... [--path <glob>]...
                                                   create a context: remotes in its team file,
                                                   paths in your own
+  context set <name> [--parent <p> | --no-parent] [--add-remote <glob>]... [--remove-remote <glob>]...
+                     [--add-path <glob>]... [--remove-path <glob>]...
+                                                  change a context's parent and filters
+  context remove <name> [--force]                 delete a context; --force also deletes the
+                                                  component values it holds
 
 Where:  --cwd <dir>        the place to resolve for, instead of the current directory
         --context <name>   apply this context too (and its parents), matched or not
@@ -123,8 +128,14 @@ interface ParsedArgs {
   context?: string;
   noContext: boolean;
   parent?: string;
+  noParent: boolean;
   remotes: string[];
   paths: string[];
+  addRemotes: string[];
+  removeRemotes: string[];
+  addPaths: string[];
+  removePaths: string[];
+  force: boolean;
   secrets: string[];
   requireReady: boolean;
   withReferences: boolean;
@@ -137,6 +148,12 @@ function parseArgs(argv: string[]): ParsedArgs {
     secrets: [],
     remotes: [],
     paths: [],
+    addRemotes: [],
+    removeRemotes: [],
+    addPaths: [],
+    removePaths: [],
+    noParent: false,
+    force: false,
     requireReady: false,
     withReferences: false,
     noContext: false,
@@ -154,7 +171,15 @@ function parseArgs(argv: string[]): ParsedArgs {
     } else if (argument === "--no-context") {
       collecting = null;
       parsed.noContext = true;
-    } else if (["--from", "--layer", "--alias", "--account", "--vault", "--item", "--cwd", "--context", "--parent", "--remote", "--path"].includes(argument)) {
+    } else if (argument === "--no-parent") {
+      collecting = null;
+      parsed.noParent = true;
+    } else if (argument === "--force") {
+      collecting = null;
+      parsed.force = true;
+    } else if (
+      ["--from", "--layer", "--alias", "--account", "--vault", "--item", "--cwd", "--context", "--parent", "--remote", "--path", "--add-remote", "--remove-remote", "--add-path", "--remove-path"].includes(argument)
+    ) {
       collecting = null;
       const value = argv[index + 1];
       if (!value || value.startsWith("--")) throw new ConfigError(`${argument} needs a value`);
@@ -170,6 +195,10 @@ function parseArgs(argv: string[]): ParsedArgs {
       if (argument === "--parent") parsed.parent = value;
       if (argument === "--remote") parsed.remotes.push(value);
       if (argument === "--path") parsed.paths.push(value);
+      if (argument === "--add-remote") parsed.addRemotes.push(value);
+      if (argument === "--remove-remote") parsed.removeRemotes.push(value);
+      if (argument === "--add-path") parsed.addPaths.push(value);
+      if (argument === "--remove-path") parsed.removePaths.push(value);
     } else if (argument === "--secrets") {
       // Several keys in one call, so a script needing two secrets does not trigger two prompts.
       collecting = "secrets";
@@ -180,6 +209,9 @@ function parseArgs(argv: string[]): ParsedArgs {
     } else {
       parsed.positionals.push(argument);
     }
+  }
+  if (parsed.parent !== undefined && parsed.noParent) {
+    throw new ConfigError("--parent and --no-parent cannot be combined: one sets the parent, the other drops it");
   }
   if (parsed.context !== undefined && parsed.noContext) {
     throw new ConfigError("--context and --no-context cannot be combined: one adds a context, the other drops them all");
@@ -624,7 +656,7 @@ function write(parsed: ParsedArgs): number {
 function describe(parsed: ParsedArgs): number {
   const name = requireName(parsed);
   const harness = detectHarness();
-  const { found, repo, loaded, effective, layerProblems, chain } = resolve(name, parsed);
+  const { found, repo, loaded, effective, layerProblems, chain, place } = resolve(name, parsed);
   // An untrusted file's credentials are left out here too, so no level or source names a reference
   // the merge ignored.
   const own = loaded.files
@@ -641,6 +673,7 @@ function describe(parsed: ParsedArgs): number {
     defs: found.declaration.schema?.$defs ?? {},
     layers: loaded.files.map((file) => ({ ...file, journal: readJournal(name, file.layer, repo) })),
     contexts: chain,
+    place,
     problems: [...effective.problems, ...legacyProblems(name, repo), ...layerProblems],
   };
   out(`${JSON.stringify(output, null, 2)}\n`);
@@ -685,11 +718,11 @@ function path(parsed: ParsedArgs): number {
 }
 
 const CONTEXT_USAGE =
-  `context list | explain [--cwd <dir>] [--context <name>] [--no-context] | add <name> [--parent <p>] [--remote <glob>]... [--path <glob>]...`;
+  `context list | explain [--cwd <dir>] [--context <name>] [--no-context] | add <name> [--parent <p>] [--remote <glob>]... [--path <glob>]... | set <name> [--parent <p> | --no-parent] [--add-remote|--remove-remote|--add-path|--remove-path <glob>]... | remove <name> [--force]`;
 
 /**
  * `list`: every context and whether it applies here. `explain`: the place, the chain and its layers.
- * `add`: create a context.
+ * `add`: create a context. `set`: change its parent and filters. `remove`: delete it.
  */
 function context(parsed: ParsedArgs): number {
   const subcommand = parsed.positionals[0];
@@ -700,19 +733,39 @@ function context(parsed: ParsedArgs): number {
     out(`${JSON.stringify({ acs: ACS_VERSION, name, id, dir, team, me }, null, 2)}\n`);
     return EXIT.ok;
   }
+  if (subcommand === "set" || subcommand === "remove") {
+    const name = parsed.positionals[1];
+    if (!name) throw new ConfigError(`context ${subcommand} needs a context name: ${CONTEXT_USAGE}`);
+    if (subcommand === "remove") {
+      out(`${JSON.stringify({ acs: ACS_VERSION, name, ...removeContext(name, { force: parsed.force }) }, null, 2)}\n`);
+      return EXIT.ok;
+    }
+    const def = setContext(name, {
+      parent: parsed.noParent ? null : parsed.parent,
+      addRemote: parsed.addRemotes,
+      removeRemote: parsed.removeRemotes,
+      addPath: parsed.addPaths,
+      removePath: parsed.removePaths,
+    });
+    out(`${JSON.stringify({ acs: ACS_VERSION, name, parent: def.parent, team: def.team, me: def.me }, null, 2)}\n`);
+    return EXIT.ok;
+  }
   if (subcommand !== "list" && subcommand !== "explain") {
     throw new ConfigError(`Unknown context subcommand ${JSON.stringify(subcommand ?? "")}: ${CONTEXT_USAGE}\n\n${USAGE}`);
   }
-  const { place, store, chain } = locate(parsed);
+  const { place, store, chain, repo } = locate(parsed);
   let output: ContextListOutput | ContextExplainOutput;
   if (subcommand === "list") {
     const applied = new Set(chain.map((one) => one.name));
     const contexts = [...store.defs.values()]
       .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
-      .map(({ name, id, parent, abstract, team, me }) => ({ name, id, parent, abstract, team, me, matched: applied.has(name) }));
+      .map((def) => {
+        const { name, id, parent, abstract, team, me } = def;
+        return { name, id, parent, abstract, team, me, matched: applied.has(name), components: contextComponents(def) };
+      });
     output = { acs: ACS_VERSION, contexts, problems: store.problems };
   } else {
-    output = { acs: ACS_VERSION, place, chain, layers: layerOrder(chain) };
+    output = { acs: ACS_VERSION, place, repo: repoReport(repo), chain, layers: layerOrder(chain) };
   }
   out(`${JSON.stringify(output, null, 2)}\n`);
   return EXIT.ok;
