@@ -2,6 +2,10 @@
 
 What each ml-voice version changed. Every change to the plugin raises the version and adds its section here with `bun scripts/plugin-version.ts bump` (AGENTS.md, Releasing a plugin).
 
+## 0.2.1
+
+- The pane drops its prev and next buttons and their j and k keys; click a part to jump to it.
+
 ## 0.2.0
 
 - The pane's **voice** button lists the voices the provider serves (Fish Audio's library searched as you type, OpenRouter's per model, Kokoro's, a self-hosted server's, macOS say's) through `agent-config choices`; a press plays a sample in that voice, and **use** keeps it in the layer it came from. OpenRouter's model is picked the same way, then its voices.
