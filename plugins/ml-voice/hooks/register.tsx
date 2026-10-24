@@ -1132,8 +1132,6 @@ export const register: Register = on => {
       <Box flexDirection="column">
         <Box flexDirection="row" gap={1}>
           {controls}
-          <Button key="prev" hotkey="k" label="prev" onPress={() => go(r.current - 1)} />
-          <Button key="next" hotkey="j" label="next" onPress={() => go(r.current + 1)} />
           <Button key="view" hotkey="v" label={r.view === 'source' ? 'show spoken' : 'show original'}
             onPress={() => update($, reader, (s): Reader => ({ ...s, view: s.view === 'source' ? 'spoken' : 'source' }))} />
           <Button key="replies" hotkey="r" label="earlier replies" onPress={() => update($, reader, (s): Reader => ({ ...s, mode: 'picker' }))} />

@@ -260,7 +260,7 @@
       "name": "ml-voice",
       "source": "./plugins/ml-voice",
       "description": "Listen to Claude's replies. /ml-voice:read opens a pane that reads the latest reply aloud, rewritten by Haiku as talk (code, tables and diagrams explained, not recited; or a compact cut that keeps only decisions, results and actions), highlights the part being read and jumps to any part you click; earlier replies are a pick away, and a band above the prompt keeps pause and stop in reach. Voices: Fish Audio (drama-3), OpenRouter, a local Kokoro server, your own OpenAI-shaped server, or macOS say, chosen through ml-agent-config; the pane's voice list, searched as you type, plays each voice before you keep it. Audio and rewrites are cached on disk under an age and size policy; paid requests are logged with their cost. Claude Code only.",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "license": "MIT",
       "author": {
         "name": "Max Levitskiy"
