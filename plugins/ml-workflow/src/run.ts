@@ -131,6 +131,11 @@ function callFailure(call: Call): Result | null {
   if (envelope?.terminal_reason === "structured_output_retry_exhausted") {
     return failure("output.invalid", `Claude's answer did not fit the schema after two repairs: ${errorsOf(call)}`, false);
   }
+  // A schema claude's own meta-schema check refuses ends the call before any model turn, and would
+  // on every try.
+  if (call.exitCode !== 0 && /--json-schema is not a valid JSON Schema/.test(`${call.stderr}\n${errorsOf(call)}`)) {
+    return failure("params.invalid", `claude refused the schema: ${errorsOf(call)}`, false);
+  }
   if (call.exitCode !== 0 || envelope === null || envelope.is_error) {
     return failure("claude.failed", `claude exited ${call.exitCode}: ${errorsOf(call)}`, true);
   }
