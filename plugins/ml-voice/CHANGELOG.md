@@ -2,6 +2,12 @@
 
 What each ml-voice version changed. Every change to the plugin raises the version and adds its section here with `bun scripts/plugin-version.ts bump` (AGENTS.md, Releasing a plugin).
 
+## 0.3.0
+
+- `/ml-voice:read` plays on a laptop when Claude Code runs on a remote box reached over SSH: the laptop's own connection carries a `RemoteForward 4714`, and a small listener there plays each clip; pause stops it there too. `/ml-voice:remote-audio` sets it up with one line run on the laptop (macOS launchd or a Linux systemd user service).
+- The voice pane's status line names where the sound goes (`♪ laptop (SSH)`, `♪ this PC (box)`, `♪ this Mac`); when both work, `o` or a click switches, and the pick is kept. Voice samples play there too. With no speaker reachable the pane says why and what to do instead of reading silently.
+- On Linux, parts play through mpv, ffplay, pw-play or paplay when one is installed; Claude Code plays nothing there by itself.
+
 ## 0.2.1
 
 - The pane drops its prev and next buttons and their j and k keys; click a part to jump to it.

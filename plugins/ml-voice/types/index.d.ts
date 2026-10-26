@@ -5,6 +5,17 @@ export type Block = { kind: BlockKind; source: string; spoken?: string }
 /** How a provider states what a request cost: OpenRouter per generation, Fish Audio not at all. */
 export type Billing = 'openrouter' | 'chars' | 'free'
 
+/** Where the sound goes: this machine's speakers, or a laptop at the far end of an SSH RemoteForward. */
+export type Output = {
+  at: 'here' | 'laptop' | 'none'
+  /** How the pane names this machine: "this Mac", "this PC (max-minipc)". */
+  here: string
+  /** Both work, so the pane offers the switch. */
+  canSwitch: boolean
+  /** With nothing to play on, what the person can do about it. */
+  hint?: string
+}
+
 export type Reader = {
   blocks: Block[]
   current: number
@@ -20,6 +31,7 @@ export type Reader = {
   mode: 'reader' | 'picker' | 'voices'
   /** Which reply is being read, by its place among the session's replies; -1 before any. */
   replyIndex: number
+  output: Output
 }
 
 /** One value `agent-config choices` listed: a voice or a model, its id and what to call it. */
