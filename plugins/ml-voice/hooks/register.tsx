@@ -7,7 +7,7 @@ import { atom, read, update } from 'claude-code'
 import type { FsEntry, Register } from 'claude-code'
 
 import { matching } from '../scripts/matching'
-import type { Billing, Block, Choice, Picker, Reader } from '../types'
+import type { Billing, Block, Choice, Output, Picker, Reader } from '../types'
 
 const PANE = 'ml-voice'
 // The skill the person types; the mod answers it before it is rendered.
@@ -21,9 +21,10 @@ const EMPTY: Reader = {
   usage: { chars: 0, cost: 0, total: 0, billing: 'free' },
   mode: 'reader',
   replyIndex: -1,
+  output: { at: 'here', here: 'this computer', canSwitch: false },
 }
 // Bump the shape when Reader changes: a value an older version wrote then reads as absent.
-const reader = atom({ plugin: 'ml-voice', key: 'reader' } as const, EMPTY, { shape: 'reader-3' })
+const reader = atom({ plugin: 'ml-voice', key: 'reader' } as const, EMPTY, { shape: 'reader-4' })
 const NO_PICKER: Picker = { key: '', search: 'local', choices: [], text: '', note: null, error: null, isLoading: false, current: '', model: null, picked: null, isHearing: false, message: null, isAsking: false }
 const picker = atom({ plugin: 'ml-voice', key: 'picker' } as const, NO_PICKER)
 
@@ -369,6 +370,76 @@ export function expired(files: Cached[], policy: Policy, now: number): string[] 
   return [...doomed]
 }
 
+// ---------------------------------------------------------------- output
+
+// Claude Code plays sound only on macOS (and in the desktop app), and a box
+// reached over SSH cannot tell from its environment whether the person sits at
+// it: herdr's server outlives the connection that started it, so
+// SSH_CONNECTION goes stale. The one sure sign of a laptop at the far end is
+// its listener answering through the RemoteForward that its own SSH connection
+// opens (/ml-voice:remote-audio sets both up).
+export const REMOTE_PORT = 4714
+
+// What this machine is, its first player for mp3 on Linux, its name, and
+// whether the laptop's listener answers a ping.
+const PROBE = `
+env=linux
+[ "$(uname -s)" = Darwin ] && env=macos
+grep -qi microsoft /proc/sys/kernel/osrelease 2>/dev/null && env=wsl
+{ [ -f /.dockerenv ] || [ -f /run/.containerenv ]; } && env=container
+player=
+[ "$env" = macos ] || for p in mpv ffplay pw-play paplay; do command -v "$p" >/dev/null 2>&1 && { player=$p; break; }; done
+echo "$env"; echo "$player"; hostname -s 2>/dev/null || hostname
+bash -c 'exec 3<>"/dev/tcp/127.0.0.1/$0" && echo ping >&3 && read -t 2 -r said <&3 && [ "$said" = pong ]' "$0" 2>/dev/null && echo laptop
+`
+
+// Sends one clip to the laptop and waits for it to finish playing there. The
+// pid comes first, so a pause can kill it, and the closed connection stops the
+// laptop's player too. $0 the file, $1 its extension, $2 the port.
+const SEND = `
+echo $$
+exec 3<>"/dev/tcp/127.0.0.1/$2" || exit 3
+printf 'play %s %s\\n' "$(wc -c < "$0" | tr -d ' ')" "$1" >&3
+cat "$0" >&3
+read -r said <&3
+[ "$said" = done ] || { echo "the laptop's listener did not answer on port $2" >&2; exit 1; }
+`
+
+const PLAYERS: Record<string, string[]> = {
+  mpv: ['mpv', '--no-video', '--really-quiet'],
+  ffplay: ['ffplay', '-nodisp', '-autoexit', '-loglevel', 'error'],
+  'pw-play': ['pw-play'],
+  paplay: ['paplay'],
+}
+
+type Machine = { env: string; player: string; host: string; hasLaptop: boolean }
+
+export function machineOf(said: string): Machine {
+  const [env = '', player = '', host = '', laptop = ''] = said.split('\n').map(line => line.trim())
+  return { env: env || 'unknown', player: Object.hasOwn(PLAYERS, player) ? player : '', host, hasLaptop: laptop === 'laptop' }
+}
+
+const PLACES: Record<string, string> = { wsl: 'WSL box', container: 'container', linux: 'Linux box' }
+
+// The laptop when its listener answers, unless the person picked this machine;
+// this machine when it can play; else nothing, and what to do about it. An
+// unknown machine (the probe did not run) is left to Claude Code's own player.
+export function outputOf(m: Machine, picked: unknown): Output {
+  const canHere = m.env === 'macos' || m.env === 'unknown' || m.player !== ''
+  const here = m.env === 'macos' ? 'this Mac' : m.env === 'unknown' ? 'this computer' : `this PC (${m.host || 'here'})`
+  const canSwitch = canHere && m.hasLaptop
+  if (m.hasLaptop && (picked !== 'here' || !canHere)) return { at: 'laptop', here, canSwitch }
+  if (canHere) return { at: 'here', here, canSwitch }
+  return {
+    at: 'none',
+    here,
+    canSwitch,
+    hint: `No speaker reachable from this ${PLACES[m.env] ?? 'machine'}. Install mpv to play here, or run /ml-voice:remote-audio to play on your laptop.`,
+  }
+}
+
+const outputName = (o: Output) => (o.at === 'laptop' ? 'laptop (SSH)' : o.here)
+
 // ---------------------------------------------------------------- playback
 
 // What one /ml-voice:read loaded from agent-config. Replaced whole on each
@@ -382,6 +453,8 @@ type Settings = {
   cacheDir: string
 }
 let settings: Settings = { voice: sayVoice(), narrator: 'haiku', style: 'full', autoStart: true, usageLog: '', cacheDir: '' }
+// Probed again on each read, since the laptop's SSH connection comes and goes.
+let machine: Machine = { env: 'unknown', player: '', host: '', hasLaptop: false }
 
 // The agent-config binary, found once for the module's life.
 let agentConfig = ''
@@ -416,6 +489,7 @@ function stop() {
 let playFrom: (start: number) => Promise<void> = async () => {}
 let playAt: (k: number) => void = () => {}
 let narrateThenPlay: (mine: number) => Promise<void> = async () => {}
+let switchOutput: () => Promise<void> = async () => {}
 let pause: () => Promise<void> = async () => {}
 let halt: () => Promise<void> = async () => {}
 let openPane: () => Promise<void> = async () => {}
@@ -580,11 +654,50 @@ export const register: Register = on => {
       for (let i = 0; i < doomed.length; i += 200) await remove(doomed.slice(i, i + 200))
     }
 
+    // Runs a player until the part ends. The child prints its pid first, so a
+    // pause kills it there and then.
+    const playOn = async (argv: string[], signal: AbortSignal) => {
+      const child = $.process.spawn({ argv })
+      let pid = ''
+      let said = ''
+      const kill = () => {
+        if (pid) void $.process.run(['kill', pid]).catch(() => undefined)
+      }
+      signal.addEventListener('abort', kill, { once: true })
+      try {
+        for await (const piece of child) {
+          if (piece.stream === 'stderr') said += piece.text
+          else if (!pid) {
+            pid = piece.text.trim().split('\n')[0] ?? ''
+            if (signal.aborted) kill()
+          }
+        }
+        const ended = await child.result
+        if (ended.code !== 0 && !signal.aborted) throw new Error(said.trim() || `${argv[0]} ended with ${ended.code ?? ended.signal}`)
+      } finally {
+        signal.removeEventListener('abort', kill)
+      }
+    }
+
+    const sound = async (file: string, s: Settings, at: Output['at'], signal: AbortSignal) => {
+      if (at === 'none') throw new Error('no speaker is reachable from here; /ml-voice:remote-audio sets up your laptop')
+      if (at === 'laptop') return playOn(['bash', '-c', SEND, file, s.voice.ext, String(REMOTE_PORT)], signal)
+      const player = PLAYERS[machine.player]
+      if (player) return playOn(['sh', '-c', 'echo $$; exec "$@"', 'sh', ...player, file], signal)
+      const { base64 } = await $.fs.read(file, { as: 'bytes' })
+      if (!signal.aborted) await $.audio.play({ base64, mime: s.voice.mime }, { signal })
+    }
+
     playFrom = async start => {
       stop()
       const control = new AbortController()
       playing = control
       const s = settings
+      const { output } = await read($, reader)
+      if (output.at === 'none') {
+        await update($, reader, (r): Reader => ({ ...r, status: 'ready' }))
+        return
+      }
       for (let k = Math.max(0, start); ; k++) {
         const r = await read($, reader)
         if (control.signal.aborted) return
@@ -597,26 +710,27 @@ export const register: Register = on => {
         const text = block ? spokenOf(block) : ''
         if (!text) continue
         let file: string
-        let base64: string
         try {
           file = await clip(text, s)
           const following = r.blocks[k + 1]
           if (following && spokenOf(following)) clip(spokenOf(following), s).catch(() => {})
-          if (control.signal.aborted) return
-          base64 = (await $.fs.read(file, { as: 'bytes' })).base64
         } catch (err) {
           if (!control.signal.aborted) await update($, reader, (r): Reader => ({ ...r, status: 'error', note: String(err) }))
           return
         }
         if (control.signal.aborted) return
         try {
-          await $.audio.play({ base64, mime: s.voice.mime }, { signal: control.signal })
+          await sound(file, s, output.at, control.signal)
         } catch (err) {
           if (control.signal.aborted) return
-          // Audio that cannot be played leaves the cache, so the next try makes it again.
-          clips.delete(file)
-          await remove([file])
-          await update($, reader, (r): Reader => ({ ...r, status: 'error', note: `The audio for this part did not play: ${String(err)}` }))
+          // Audio this machine cannot play leaves the cache, so the next try makes
+          // it again; a laptop that went away says nothing about the file.
+          if (output.at === 'here') {
+            clips.delete(file)
+            await remove([file])
+          }
+          const where = output.at === 'laptop' ? ' on the laptop' : ''
+          await update($, reader, (r): Reader => ({ ...r, status: 'error', note: `The audio for this part did not play${where}: ${String(err)}` }))
           return
         }
         if (control.signal.aborted) return
@@ -672,6 +786,22 @@ export const register: Register = on => {
     }
     pause = end('paused')
     halt = end('stopped')
+
+    // The pick is kept across sessions; a part being read starts again on the other side.
+    switchOutput = async () => {
+      const r = await read($, reader)
+      if (!r.output.canSwitch) return
+      const at = r.output.at === 'laptop' ? 'here' : 'laptop'
+      await $.store.set('output', at)
+      await update($, reader, (s): Reader => ({ ...s, output: { ...s.output, at } }))
+      if (r.status === 'playing') playAt(r.current)
+    }
+
+    const findOutput = async (): Promise<Output> => {
+      const said = await $.process.run(['sh', '-c', PROBE, String(REMOTE_PORT)], { timeoutMs: 10_000 }).catch(() => undefined)
+      machine = machineOf(said?.exitCode === 0 ? said.stdout : '')
+      return outputOf(machine, await $.store.get('output'))
+    }
 
     // The band draws itself from whether the pane is on screen, so it is drawn
     // again whenever that changes.
@@ -790,6 +920,7 @@ export const register: Register = on => {
       const { voice, style } = settings
       const blocks = split(reply.text)
       const total = Number((await $.store.get('totalCost')) ?? 0)
+      const output = await findOutput()
       if (call !== loads) return overtaken
       await update($, reader, (previous): Reader => ({
         ...EMPTY,
@@ -799,6 +930,7 @@ export const register: Register = on => {
         usage: { ...EMPTY.usage, total, billing: voice.billing },
         logError: previous.logError,
         replyIndex: index,
+        output,
       }))
       const mine = doc
       $.clock.after(0, () => void narrateThenPlay(mine))
@@ -911,10 +1043,11 @@ export const register: Register = on => {
         const s = await settingsOf(config, provider.voice(withValue(config, p.key, choice.value) as VoiceConfig, pickerSecret))
         await update($, picker, (r): Picker => ({ ...r, isHearing: true }))
         const file = await clip(SAMPLE, s, -1)
-        const { base64 } = await $.fs.read(file, { as: 'bytes' })
+        // Heard where the reading plays; a picker opened before any read probes first.
+        const output = machine.env === 'unknown' ? await findOutput() : (await read($, reader)).output
         stop()
         playing = control
-        await $.audio.play({ base64, mime: s.voice.mime }, { signal: control.signal })
+        await sound(file, s, output.at, control.signal)
       } catch (err) {
         if (!control.signal.aborted) await update($, picker, (r): Picker => ({ ...r, message: `${choice.label} could not be heard: ${(err as Error).message ?? String(err)}` }))
       }
@@ -1005,11 +1138,13 @@ export const register: Register = on => {
     const where = r.status === 'narrating' ? 'preparing' : r.status === 'ready' ? 'ready' : `${isPlaying ? 'reading' : 'paused at'} ${partOf(r)}`
     const reply = r.replyIndex >= 0 ? `reply ${r.replyIndex + 1}` : 'reply'
     const cost = r.usage.billing === 'openrouter' ? ` · ${dollars(r.usage.cost)}` : ''
+    // Where the sound goes is named only where it could go elsewhere.
+    const to = r.output.canSwitch ? ` → ${r.output.at === 'laptop' ? 'laptop' : r.output.here}` : ''
     return (
       <Box flexDirection="row" gap={1}>
         <Text color="claude">♪</Text>
         <Text dimColor>
-          {reply} · {where}{cost}
+          {reply} · {where}{to}{cost}
         </Text>
         <Button key="band-toggle" variant="primary" label={isPlaying ? 'pause' : 'play'}
           onPress={() => (isPlaying ? pause() : playAt(r.current))} />
@@ -1137,7 +1272,24 @@ export const register: Register = on => {
           <Button key="replies" hotkey="r" label="earlier replies" onPress={() => update($, reader, (s): Reader => ({ ...s, mode: 'picker' }))} />
           <Button key="voices" hotkey="c" label="voice" onPress={() => openVoices()} />
         </Box>
-        <Text dimColor>{status} · {r.backend}{r.replyIndex >= 0 ? ` · reply ${r.replyIndex + 1}` : ''}</Text>
+        {/* The output's name is the switch when both work: o or a click flips it. */}
+        <Box flexDirection="row">
+          <Text dimColor>
+            {status} · {r.backend}
+            {r.replyIndex >= 0 ? ` · reply ${r.replyIndex + 1}` : ''}
+            {r.status !== 'idle' && r.output.at !== 'none' ? ' · ' : ''}
+          </Text>
+          {r.status !== 'idle' && r.output.at !== 'none' && (r.output.canSwitch ? (
+            <Box key="output-switch">
+              <Button key="output" hotkey="o" plain onPress={() => switchOutput()}>
+                <Text dimColor hover={{ underline: true }}>♪ {outputName(r.output)} ⇄</Text>
+              </Button>
+            </Box>
+          ) : (
+            <Text dimColor>♪ {outputName(r.output)}</Text>
+          ))}
+        </Box>
+        {r.status !== 'idle' && r.output.hint && <Text color="warning">{r.output.hint}</Text>}
         {r.usage.billing !== 'free' && <Text dimColor>{spent(r.usage)}</Text>}
         {r.logError && <Text color="error">{r.logError}</Text>}
         {r.note && <Text color="error">{r.note}</Text>}
