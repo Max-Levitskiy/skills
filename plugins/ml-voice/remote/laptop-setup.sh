@@ -16,7 +16,8 @@ port=${3:-4714}
 dir=$HOME/.ml-voice
 
 mkdir -p "$dir"
-ssh "$host" cat "$root/remote/listen.pl" > "$dir/listen.pl.new"
+# -n: this script arrives on stdin, and ssh would read the rest of it.
+ssh -n "$host" cat "$root/remote/listen.pl" > "$dir/listen.pl.new"
 mv "$dir/listen.pl.new" "$dir/listen.pl"
 chmod +x "$dir/listen.pl"
 
