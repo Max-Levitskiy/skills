@@ -418,6 +418,31 @@ features land, this decision reopens.
     the process.
   - The `component` form of `probe`, `watch` and `stop` on other actions is still refused, with
     `action.component-unsupported`.
+- **Tried while building the runner module** (skills#152; herdr 0.9.3, Claude Code 2.1.314,
+  spore 0.7.1):
+  - The folder-trust prompt shows as `agent_status: "blocked"` with `launch_pending: true` and no
+    `interactive_ready`, for as long as nobody answers. The runner fails the start for good
+    (`claude.start-blocked`, naming the folder) and closes the pane; it never answers for you.
+    After the trust answer, `interactive_ready` came, and a later dialog (a renderer offer)
+    showed `blocked` with `interactive_ready: true`, so ready is not "at its prompt".
+  - `agent.start` refuses a pane whose shell is not at its prompt yet (`agent_pane_busy`), and
+    any argument with a control character, newline and tab included (`invalid_agent_argument`);
+    a 20 KB argument went in. So the first message is one line, the input as compact JSON.
+    `--allowedTools` takes every argument after it, the message too, unless `--` ends the flags.
+  - `interactive_ready` came about 6 s before the argument's turn started, `idle` meanwhile;
+    `completion_seq` is absent until the agent's first finished turn, then a number from one
+    sequence for all agents.
+  - **Queued prompts:** a prompt sent mid-turn is queued ("Press up to edit queued messages").
+    Up moves the queued messages into the input box (`popAll` in the transcript), Ctrl+U clears
+    it, and Escape then interrupts: the queued prompt never ran. An interrupt raises
+    `completion_seq` and leaves the status `done`.
+  - A closed workspace's agent is `agent_not_found`; a Claude that exits leaves the agent with
+    `agent: null`.
+  - **herdr 0.9.5** answers protocol 22 like 0.9.3 (`PROTOCOL_VERSION` in `src/protocol/wire.rs`
+    at both tags), and its socket API changes since 0.9.3 touch none of the methods the runner
+    calls; not run live.
+  - spore 0.7.1 refuses a path that does not exist inside a granted folder as
+    `component.not-granted`, so the runner lists a folder before it names a file in it.
 - **Runspore's security chapter** already plans WASM activities with an import allowlist, memory
   and CPU limits and capability-scoped host calls (`docs/11-security.md`).
 
@@ -452,7 +477,9 @@ None.
   run mode).
 - Whether the hook parts should start before the open runspore features (decision 9 as recorded
   says no).
-- **How the step's token and run reach the hooks.** The token-file choice assumed the runner writes
+- **How the step's token and run reach the hooks** (settled: runspore#290 adds `write-file`,
+  `grants.writeFolders` and `"passToken": false`, and the runner writes `claude-step.json`; the
+  thread as it stood). The token-file choice assumed the runner writes
   the file, but a 0.7.0 runner cannot write files. And the two run modes differ: a program the
   runner starts always gets `RUNSPORE_TOKEN` and the other `RUNSPORE_*` variables after the
   spawn's own (`runner.wit`), so a background Claude has the token in its environment whatever the
