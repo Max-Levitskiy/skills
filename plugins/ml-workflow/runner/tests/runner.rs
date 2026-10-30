@@ -249,6 +249,23 @@ fn a_new_attempt_goes_to_the_live_pane_after_an_interrupt() {
 }
 
 #[test]
+fn a_repeated_watched_start_finds_its_pane_and_prompts_nothing() {
+    let fake = Fake::new();
+    let first = runner::start(&fake, &context(watched())).expect("started");
+    fake.reset_clock();
+    let again = runner::start(&fake, &context(watched())).expect("started again");
+    assert_eq!(again, first);
+    assert!(
+        !fake
+            .methods()
+            .iter()
+            .any(|m| m == "agent.prompt" || m == "workspace.create" || m == "agent.start"),
+        "{:?}",
+        fake.methods()
+    );
+}
+
+#[test]
 fn a_prompt_claude_did_not_take_is_sent_again() {
     let fake = Fake::new();
     let mut live = fake.live_agent(AGENT, SESSION, "idle", 7);

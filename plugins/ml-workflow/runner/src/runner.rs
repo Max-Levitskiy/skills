@@ -31,8 +31,9 @@ const PROMPT_TRIES: usize = 6;
 /// hook plugin (mode 0600, written by `write-file`), so Claude is started without
 /// `RUNSPORE_TOKEN` in its environment (`"passToken": false`).
 pub const STEP_FILE: &str = "claude-step.json";
-/// What a background start started, so a repeated start of the same attempt finds it.
-pub const BACKGROUND_FILE: &str = "claude-runner.json";
+/// The attempt and the handle the last start returned, so a repeated start of the same
+/// attempt finds what it started.
+pub const RECORD_FILE: &str = "claude-runner.json";
 
 pub fn start<H: Host>(host: &H, context: &Context) -> Result<String, Failure> {
     let params = Params::parse(&context.params)?;
@@ -42,11 +43,25 @@ pub fn start<H: Host>(host: &H, context: &Context) -> Result<String, Failure> {
     if let Some(path) = &step_file {
         env.push(("RUNSPORE_STEP_FILE".into(), path.clone()));
     }
+    // What an earlier start in this work folder started, kept only by a host with
+    // `write-file`: a start repeated for the same attempt (a worker that died before spore
+    // held the handle) finds its job there instead of starting or prompting it again.
+    let work = context
+        .work_dir
+        .as_deref()
+        .filter(|_| host.writes_files())
+        .map(|w| w.trim_end_matches('/'));
+    let earlier = work.and_then(|w| read_record(host, w));
     let handle = match params.run_mode {
-        RunMode::Watched => start_watched(host, context, &params, &session, &env)?,
-        RunMode::Background => start_background(host, context, &params, &session, &env)?,
+        RunMode::Watched => start_watched(host, context, &params, &session, &env, earlier.as_ref())?,
+        RunMode::Background => start_background(host, context, &params, &session, &env, earlier.as_ref())?,
     };
     let text = handle.to_json();
+    if let Some(work) = work {
+        let body = json!({"attempt": context.attempt, "handle": text}).to_string();
+        // Best effort: without it, a repeated start starts again.
+        let _ = host.write_file(&format!("{work}/{RECORD_FILE}"), body.as_bytes());
+    }
     if text.len() > MAX_HANDLE_BYTES {
         return Err(Failure::new(
             "runner.handle-too-large",
@@ -144,6 +159,7 @@ fn start_watched<H: Host>(
     params: &Params,
     session: &str,
     env: &[(String, String)],
+    earlier: Option<&(u32, Handle)>,
 ) -> Result<Handle, Failure> {
     let herdr = Herdr::new(host, &params.socket);
     let mut budget = Budget::polling(params.start_timeout_ms);
@@ -175,6 +191,13 @@ fn start_watched<H: Host>(
     match herdr.agent(&mut budget, &name, 2_000) {
         Err(e) => return Err(herdr_failure("looking for this step's pane", &e)),
         Ok(Some(agent)) if holds(&agent, session) => {
+            // This attempt already prompted this pane: it is the job, as it is.
+            if let Some((attempt, handle @ Handle::Watched { pane, .. })) = earlier
+                && *attempt == context.attempt
+                && *pane == agent.pane
+            {
+                return Ok(handle.clone());
+            }
             let message = claude::message(params, context, Occasion::of(context, SessionMode::Resume));
             let prompt_seq = deliver(&herdr, &mut budget, &name, &message)?;
             return Ok(Handle::Watched {
@@ -362,25 +385,17 @@ fn start_background<H: Host>(
     params: &Params,
     session: &str,
     env: &[(String, String)],
+    earlier: Option<&(u32, Handle)>,
 ) -> Result<Handle, Failure> {
-    let work = context
-        .work_dir
-        .as_deref()
-        .filter(|_| host.writes_files())
-        .map(|w| w.trim_end_matches('/'));
-    // What an earlier start in this work folder left running: this attempt's own (a worker
-    // that died before spore held the handle) is the job; an earlier attempt's is ended
+    // This attempt's own Claude still running is the job; an earlier attempt's is ended
     // first, so two never write to one conversation.
-    if let Some((attempt, Handle::Background { process, .. })) = work.and_then(|w| read_record(host, w))
-        && host.process_alive(&process) == Liveness::Alive
+    if let Some((attempt, handle @ Handle::Background { process, .. })) = earlier
+        && host.process_alive(process) == Liveness::Alive
     {
-        if attempt == context.attempt {
-            return Ok(Handle::Background {
-                process,
-                session: session.to_string(),
-            });
+        if *attempt == context.attempt {
+            return Ok(handle.clone());
         }
-        let _ = end_process(host, &process, &mut Budget::strict(PROBE_BUDGET_MS));
+        let _ = end_process(host, process, &mut Budget::strict(PROBE_BUDGET_MS));
     }
     let cwd = params.cwd(context);
     let mode = session_mode(host, context, params, &cwd, session)?;
@@ -394,24 +409,18 @@ fn start_background<H: Host>(
             env: env.to_vec(),
         })
         .map_err(|e| Failure::new("claude.start-failed", format!("could not start claude: {e}"), true))?;
-    let handle = Handle::Background {
+    Ok(Handle::Background {
         process,
         session: session.to_string(),
-    };
-    if let Some(work) = work {
-        let body = json!({"attempt": context.attempt, "handle": handle.to_json()}).to_string();
-        // Only a host with `write-file` keeps it; without, a repeated start starts again.
-        let _ = host.write_file(&format!("{work}/{BACKGROUND_FILE}"), body.as_bytes());
-    }
-    Ok(handle)
+    })
 }
 
 fn read_record<H: Host>(host: &H, work: &str) -> Option<(u32, Handle)> {
     // Listed first: a missing file is never named (see `transcript_exists`).
-    if !host.list_folder(work).ok()?.iter().any(|name| name == BACKGROUND_FILE) {
+    if !host.list_folder(work).ok()?.iter().any(|name| name == RECORD_FILE) {
         return None;
     }
-    let path = format!("{work}/{BACKGROUND_FILE}");
+    let path = format!("{work}/{RECORD_FILE}");
     let value: serde_json::Value = serde_json::from_slice(&host.read_file(&path).ok()?).ok()?;
     let attempt = u32::try_from(value.get("attempt")?.as_u64()?).ok()?;
     Some((attempt, Handle::parse(value.get("handle")?.as_str()?)?))
