@@ -13,7 +13,7 @@ To try it in one project without changing your own plugin set, install it there 
 claude plugin install ml-workflow@max-skills --scope project
 ```
 
-**This release starts, follows, continues and cancels runs, names each unfinished run when a session starts, offers what each run needs in a menu, shows where a followed run is in a line above the prompt and in a live view that draws the workflow's graph, folded around the current node, or a text tree, with a button that brings a watched step's herdr pane to the front, does background and watched Claude steps, writes workflows by interview, and installs or updates `spore` when you say yes.** [docs/spec.md](docs/spec.md) is the whole design and says what is built.
+**This release starts, follows, continues and cancels runs, names each unfinished run when a session starts, offers what each run needs in a menu, shows where a followed run is in a line above the prompt and in a live view that draws the workflow's graph, folded around the current node, or a text tree, with a button that brings a watched step's herdr pane to the front, does background and watched Claude steps, writes workflows by interview, installs or updates `spore` when you say yes, and ships the [runner module](#the-runner-module) that will start, probe and stop Claude steps, which the shipped workflows do not use yet.** [docs/spec.md](docs/spec.md) is the whole design and says what is built.
 
 ## Requirements
 
@@ -21,7 +21,7 @@ claude plugin install ml-workflow@max-skills --scope project
 |---|---|---|
 | Claude Code, in a terminal | **2.1.290** | every sub-skill, before anything else; the mod at session start. Older: `claude update` |
 | Bun | **1.2.0** | `claude-spore`, before anything else; it exits 2 naming the version. Older: `bun upgrade` |
-| [`spore`](https://github.com/Web-tree/runspore) | **0.6.0**, answering `spore capabilities` with the `cli`, `host`, `kernel` and `store` contracts at 0.2. Older releases lack `continue --wait` (0.2.0), the fixes following a run relies on (0.3.0), or the mark on a try cut off by a kill, so the start line and the menu's Continue never see one (0.4.0, 0.5.0) | `claude-spore doctor`: the mod at session start, silent when it fits, and `start`, `status`, `continue` and `author` after the Claude Code check. Missing or older: one line naming the version needed, the one found and the install or update command, run only when you say yes |
+| [`spore`](https://github.com/Web-tree/runspore) | **0.7.0**, answering `spore capabilities` with the `cli`, `host`, `kernel` and `store` contracts at 0.2. Older releases lack `continue --wait` (0.2.0), the fixes following a run relies on (0.3.0), the mark on a try cut off by a kill, so the start line and the menu's Continue never see one (0.4.0, 0.5.0), or step runner modules (0.6.0). The runner module (below) needs the release after 0.7 that ships runspore#290 and #278 | `claude-spore doctor`: the mod at session start, silent when it fits, and `start`, `status`, `continue` and `author` after the Claude Code check. Missing or older: one line naming the version needed, the one found and the install or update command, run only when you say yes |
 
 claude.ai and Cowork refuse a plugin with a top-level `bin/`, so this plugin is for terminal Claude Code only.
 
@@ -127,6 +127,27 @@ A step you want to watch and type into runs Claude in a [herdr](https://herdr.de
 
 `claude-spore start` opens the pane in the action's working folder, starts Claude there with the step's tools approved (anything else asks in the pane), and gives it the instructions, the input and the command to hand in its answer, `claude-spore report`, which checks the answer against the step's schema and lets Claude fix it twice. The message goes only once Claude is ready for it, like traffic to a Kubernetes container whose readiness probe passed, and is typed again until Claude takes it. The watch tells the run when the pane waits for you, including a pane that stays quiet with no answer, and delivers the answer once Claude is quiet. A pane whose machine went down is found dead by its boot ID and process start time, and the next try resumes the same conversation in a new pane. Starting again for the same step reuses its live pane. The pane closes once the run leaves the step: when the watch hands in the answer, when the run is cancelled, or when a later visit opens its own. Set `keepSeconds` on the node to keep it open that long after the answer, like a Kubernetes Job's `ttlSecondsAfterFinished`. `claude-spore check` refuses a workflow with watched steps when no herdr server answers.
 
+## The runner module
+
+`runner/claude-runner.wasm` is the step runner that will replace `claude-spore start|probe|watch|stop` ([design](../../docs/claude-step-runner-design.md)): a Rust WebAssembly component that spore loads from the workflow artifact (a `component` action) and grants only what the workflow lists. The shipped workflows do not use it yet ([#154](https://github.com/Max-Levitskiy/skills/issues/154)), and it needs a spore that runs `runspore:runner/runner@0.2.0` (`spore capabilities`, `componentWorlds`), the release that ships [runspore#290](https://github.com/Web-tree/runspore/issues/290) (a runner writes a file, and starts a program without the token) and [#278](https://github.com/Web-tree/runspore/issues/278) (a probe says the work has stopped).
+
+```json
+"claude": { "kind": "component", "module": "claude-runner.wasm", "effect": "idempotent", "outcomes": ["ok"],
+            "retry": {"maxAttempts": 3}, "passToken": false,
+            "grants": { "programs": ["claude"], "sockets": ["~/.config/herdr/herdr.sock"],
+                        "folders": ["$RUNSPORE_WORK_DIR", "~/.claude/projects"], "writeFolders": ["$RUNSPORE_WORK_DIR"] },
+            "async": { "timeoutMs": "60000" } }
+```
+
+A node sets the runner up in its `params` and gives Claude its data in `input`: `runMode` (`watched` or `background`), `format` with `schema` (`{"$outputSchemas": {}}`) or `outcome`, `tools`, `model`, `skill`, `instructions` (the node's instructions file in the step files), `cwd`, `socket`, `pluginDirs`, `transcripts` and `startTimeoutMs`. The run mode's default is the agent-config key `claude.runMode` (`background` unless set), which a workflow takes through a run input: `"runMode": {"$get": ["input", "claudeRunMode"], "default": "background"}`; a node's own value wins.
+
+- **Watched:** `start` pings herdr over its socket and refuses a protocol it was not built for, opens a workspace in the project folder without taking the focus, starts Claude there with the step's first message as its argument, and returns once herdr says Claude is `interactive_ready`. A question before that, most often whether to trust the folder, fails the step for good with what to do. A later try or visit on a live pane prompts it there, only while Claude is `idle` or `done`, after an interrupt when it works, and again when herdr says Claude did not take it. `probe` asks `agent.get`: a closed pane, an unknown agent, a Claude that left the pane or holds another conversation is `dead`; a turn whose `completion_seq` rose above its value at the prompt, and stayed so for 3 s, is `stopped`, so spore commits the hooks' answer. `stop` closes the workspace.
+- **Background:** `start` starts `claude -p` detached; `probe` checks its process group, start time and boot; `stop` sends SIGTERM, then SIGKILL. Its exit code is never read: it is 0 even when a hook blocked the prompt.
+- **The token** goes into `claude-step.json` in the work folder, mode 0600, which the runner's hook plugin ([#153](https://github.com/Max-Levitskiy/skills/issues/153)) reads; Claude starts without `RUNSPORE_TOKEN` and finds the file through `RUNSPORE_STEP_FILE`.
+- **Inside the deadline:** a probe and a stop count each herdr call's whole timeout and finish inside spore's 10 s; the world gives a runner no clock.
+
+The module is committed, not built at install: a plugin is installed by copying the repository, and a module built on each machine would differ by toolchain. CI rebuilds it and fails when the bytes differ. After a change under `runner/`, run `cargo run -p claude-runner-build` there and commit `claude-runner.wasm`; `cargo test` runs its specs against a fake host, and `cargo run -p claude-runner-build -- --world 0.1 --out <file>` builds one a released spore 0.7 runs, for trying it.
+
 ## Writing a workflow
 
 `/ml-workflow:author` asks what the workflow should do, from start to finish, and shows the whole draft as a numbered list. You correct it in plain words; it asks only what changes the outcome (who does each step, whether you watch each Claude step, where each ending goes, loop limits, approvals, inputs, steps unsafe to repeat, running several at once) and fills in the rest. On save it runs `spore init` if needed, writes `.spore/workflows/<name>/`, runs `spore validate` and `claude-spore check` and fixes its own errors, then lists every default it filled in. It never commits. `/ml-workflow:author <workflow>` changes a workflow in place, keeping comments, hand-written instructions and render attributes.
@@ -143,6 +164,8 @@ ml-workflow/
 ├── CHANGELOG.md                 what each version changed
 ├── bin/claude-spore             the helper (Bun); checks Bun first, then runs src/cli.ts
 ├── src/                         the helper's code; version.ts holds the minimums and contracts
+├── runner/                      the Claude step runner module (Rust), its WIT and claude-runner.wasm
+├── agent-config.json            the plugin's agent-config keys: claude.runMode
 ├── launcher/claude-spore        the launcher `claude-spore launcher install` copies to ~/.local/bin
 ├── claude-code/                 the mod: register.ts and its registration test
 ├── skills/                      the seven sub-skills
@@ -156,12 +179,13 @@ ml-workflow/
 ```bash
 bun test plugins/ml-workflow/test                # the helper, run as a subprocess
 claude plugin test plugins/ml-workflow           # the mod, in the engine's own runner
+(cd plugins/ml-workflow/runner && cargo test)    # the runner module, against a fake host
 bun test --bail ./plugins/ml-workflow/test/reference-loop.e2e.ts   # before a release: real Claude, spore and herdr
 ```
 
 The last is the end-to-end check, gated because it spends real Claude turns and opens herdr panes: `bun test` leaves it out. It kills the reference coding loop at every row of the C11 table, with `implement` in the background and in a pane. [docs/release-check.md](docs/release-check.md) says how to run it and what to check by hand in Claude Code.
 
-The helper's specs put a fake `claude` and a fake `herdr` (`test/fixtures/bin/`) first on PATH. The install specs need `ssh-keygen` and `tar`: they sign local release folders with a throwaway key pinned into a copy of the plugin. The ones that run a real `spore` use `$SPORE`, else `spore` on PATH, and are skipped when that is older than 0.6.0, the oldest supported one, for the watched step when it does not run async commands, for following a run when it has no `continue --wait` or `cancel`. CI runs both, against `spore` 0.6.0, the newest release and runspore's main, and runs the helper under Bun 1.1 to check that it refuses.
+The helper's specs put a fake `claude` and a fake `herdr` (`test/fixtures/bin/`) first on PATH. The install specs need `ssh-keygen` and `tar`: they sign local release folders with a throwaway key pinned into a copy of the plugin. The ones that run a real `spore` use `$SPORE`, else `spore` on PATH, and are skipped when that is older than 0.7.0, the oldest supported one, for the watched step when it does not run async commands, for following a run when it has no `continue --wait` or `cancel`. CI runs both, against `spore` 0.7.0, the newest release and runspore's main, and runs the helper under Bun 1.1 to check that it refuses.
 
 ## License
 

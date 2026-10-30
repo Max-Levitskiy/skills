@@ -6,14 +6,18 @@ export const CLAUDE_CODE_MINIMUM = "2.1.290";
 
 // The plugin's version for the mod, which cannot import `.claude-plugin/plugin.json`: a hooks
 // module loads only script files. test/claude-spore.spec.ts holds it equal to the manifest's.
-export const PLUGIN_VERSION = "0.13.0";
+export const PLUGIN_VERSION = "0.14.0";
 
 // The oldest supported spore, and the contracts of `spore capabilities` the plugin drives
-// (docs/spec.md, p.3). Below 1.0 a contract's range is its one minor version. 0.6.0 is the first
-// release that marks a try cut off by a kill (`needs: "driver"`, Web-tree/runspore#224), which the
-// start line and the menu's Continue rely on; 0.4.0 brought `continue --wait`, `cancel` and the
-// checkpoint E and F fixes.
-export const SPORE_MINIMUM = "0.6.0";
+// (docs/spec.md, p.3). Below 1.0 a contract's range is its one minor version. 0.7.0 is the first
+// release that hosts step runner modules (`component` actions, Web-tree/runspore#233), which the
+// Claude step runner (runner/) is; 0.6.0 marks a try cut off by a kill (`needs: "driver"`, #224),
+// which the start line and the menu's Continue rely on; 0.4.0 brought `continue --wait`, `cancel`
+// and the checkpoint E and F fixes.
+// TODO(skills#154): the runner module is built for runspore:runner@0.2.0, which needs the spore
+// release that ships Web-tree/runspore#290 and #278 (unreleased as of 0.7.x); raise this to that
+// release when the shipped workflows switch to the module.
+export const SPORE_MINIMUM = "0.7.0";
 export const SPORE_CONTRACTS: Record<string, string> = { cli: "0.2", host: "0.2", kernel: "0.2", store: "0.2" };
 
 /** Whether a contract version `have` (`major.minor`) is in the range of the supported `need`. */

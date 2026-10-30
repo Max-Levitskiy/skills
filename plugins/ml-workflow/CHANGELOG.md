@@ -2,6 +2,12 @@
 
 What each ml-workflow version changed. Every change to the plugin raises the version and adds its section here with `bun scripts/plugin-version.ts bump` (AGENTS.md, Releasing a plugin). Versions up to 0.9.0 are in the git history of `.claude-plugin/plugin.json`.
 
+## 0.14.0
+
+- The Claude step runner module, runner/claude-runner.wasm: a Rust WebAssembly component of world runspore:runner/runner@0.2.0 that starts, probes and stops Claude Code for a step, in a herdr pane over herdr's socket or as a windowless claude -p, handing the attempt's token to the hooks through a 0600 file in the work folder (skills#152). The shipped workflows do not use it yet (skills#154).
+- The oldest supported spore is 0.7.0, the first that hosts step runner modules.
+- The agent-config key claude.runMode, the default run mode of a Claude step.
+
 ## 0.13.0
 
 - A run held by a watched Claude step's herdr pane gets a `pane` button (hotkey p) on its run line and in its live view, which brings that pane to the front with `herdr agent focus`.

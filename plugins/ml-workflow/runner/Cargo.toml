@@ -1,0 +1,42 @@
+[workspace]
+members = [".", "build"]
+resolver = "3"
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.99"
+license = "MIT"
+publish = false
+
+[package]
+name = "claude-runner"
+description = "The step runner of ml-workflow's Claude steps: a WebAssembly component of world `runspore:runner/runner` that starts, probes and stops Claude Code in a herdr pane or as a windowless process."
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+# Build against the released `runspore:runner@0.1.0` (spore 0.7.x) instead of 0.2.0: no
+# `write-file`, and a probe that cannot say `stopped`. For trying the runner on a released
+# spore; the shipped module is the default build.
+runner-0-1 = []
+
+[dependencies]
+serde_json = { version = "1.0.154", default-features = false, features = ["std"] }
+sha1_smol = "1.0.1"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wit-bindgen = { version = "0.63.0", default-features = false, features = ["macros", "realloc"] }
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+debug = false
