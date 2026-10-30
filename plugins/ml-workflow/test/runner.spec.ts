@@ -8,7 +8,7 @@
 // needs Web-tree/runspore#290 and #278; CLAUDE_RUNNER_WASM names another build, such as the
 // 0.1.0 one CI makes for a released spore 0.7 (`cargo run -p claude-runner-build -- --world 0.1`).
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { SPORE, remove, scratch, sporeVersion } from "./helpers.ts";
@@ -16,10 +16,11 @@ import { SPORE, remove, scratch, sporeVersion } from "./helpers.ts";
 const COMMITTED = join(import.meta.dir, "..", "runner", "claude-runner.wasm");
 const WORLD_02 = "runspore:runner/runner@0.2.0";
 
+let worlds: string[] = [];
+
 /** The module to seal and why it fits, or null after saying why none does. */
 function pickModule(): string | null {
   if (!sporeVersion("runner.spec.ts")) return null;
-  let worlds: string[] = [];
   try {
     worlds = JSON.parse(Bun.spawnSync([SPORE, "--json", "capabilities"]).stdout.toString()).componentWorlds ?? [];
   } catch {}
@@ -32,6 +33,8 @@ function pickModule(): string | null {
 }
 
 const module = pickModule();
+/** The committed module on a spore that runs it: the runner writes into the work folder, which the action grants, and Claude starts without the token. */
+const writes = module === COMMITTED;
 
 const FAKE_CLAUDE = `#!/bin/sh
 # Records its arguments and environment, then stays at work until it is killed.
@@ -50,7 +53,10 @@ function settings(programs: string[], transcripts: string) {
         effect: "idempotent",
         outcomes: ["ok"],
         retry: { maxAttempts: 2 },
-        grants: { programs, sockets: ["~/.config/herdr/herdr.sock"], folders: [transcripts] },
+        grants: writes
+          ? { programs, sockets: ["~/.config/herdr/herdr.sock"], folders: ["$RUNSPORE_WORK_DIR", transcripts], writeFolders: ["$RUNSPORE_WORK_DIR"] }
+          : { programs, sockets: ["~/.config/herdr/herdr.sock"], folders: [transcripts] },
+        ...(writes ? { passToken: false } : {}),
         async: { timeoutMs: "600000" },
       },
     },
@@ -147,6 +153,12 @@ describe.skipIf(!module)("the runner module under a real spore", () => {
     // host; a 0.2.0 one writes it to the step file instead ("passToken": false).
     const claudeEnv = readFileSync(join(calls, `env.${pgid}`), "utf8");
     expect(claudeEnv).toContain("RUNSPORE_WORK_DIR=");
+    if (writes) {
+      expect(claudeEnv).not.toContain("RUNSPORE_TOKEN=");
+      const stepFile = /^RUNSPORE_STEP_FILE=(.*)$/m.exec(claudeEnv)![1]!;
+      expect(statSync(stepFile).mode & 0o777).toBe(0o600);
+      expect(JSON.parse(readFileSync(stepFile, "utf8"))).toMatchObject({ attempt: 1, nodeId: "work", token: expect.any(String) });
+    }
 
     expect(JSON.parse(spore("--json", "status", runId).stdout).step).toMatchObject({ state: "held" });
     process.kill(-pgid, "SIGKILL");
