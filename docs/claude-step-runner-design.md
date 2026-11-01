@@ -215,8 +215,9 @@ Rejected:
 ### 8. ml-workflow records "this step needs you", not spore (Q3)
 
 When Claude in a watched pane waits on the person (a permission prompt, idle with a question), a
-hook (Claude Code's `Notification` hook) records it for the step in ml-workflow itself, beside the
-step's token in its work folder, where herdr's agent status can back it up. The Claude Code menu
+hook (Claude Code's `Notification` hook) records it for the step in ml-workflow itself, as a file
+beside the step's token in its work folder, naming the run, the invocation and the attempt; herdr's
+agent status can back it up. The Claude Code menu
 and `/ml-workflow:status` show it. It is a file, so it survives a closed Claude session. Spore
 does not record it: a pane that waits for keystrokes is a fact about the pane, not about the
 workflow, and the person answers in the pane anyway. A question that is part of the work is
@@ -232,8 +233,10 @@ hook that shows Claude is past the wait, not only by the happy path:
 - `Stop`: Claude ended its turn. If it then sits idle, the later `idle_prompt` notification sets
   the mark again.
 
-The mark goes when the step's attempt ends. Clearing a mark that is not set does nothing, so these
-hooks can clear on every call. A background Claude never sets it: decision 3's list decides up
+The mark belongs to one attempt. The menu shows it only while `spore status` still reports that
+attempt as the run's held step, so a mark left by a pane killed before any clearing hook ran is
+ignored once the probe ends the attempt, and a retry starts with none. Clearing a mark that is not
+set does nothing, so these hooks can clear on every call. A background Claude never sets it: decision 3's list decides up
 front what it may do, so it never stops at a permission prompt.
 
 Rejected:
