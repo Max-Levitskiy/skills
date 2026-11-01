@@ -155,7 +155,9 @@ They go in the node's `input`, every one but `context` as a `$literal`. The set 
   {"type": "object", "additionalProperties": false, "required": ["summary"],
    "properties": {"summary": {"type": "string", "description": "What you did and why, in a few sentences."}}}
   ```
-- A Claude step's schemas use only Claude Code's strict form, so `claude-spore check` reports no warning: `type`, `description`, `title`, `properties`, `required`, `additionalProperties: false`, `items`, `enum`, `const` and `anyOf`, every object with `properties`. No `minLength`, `pattern` or numeric bounds there.
+- A Claude step's schemas use only Claude Code's strict form, so `claude-spore check` reports no warning: `type`, `description`, `title`, `properties`, `required`, `additionalProperties: false`, `items`, `enum`, `const` and `anyOf`, every object with `properties`, every array with `items`. No `minLength`, `pattern` or numeric bounds there.
+- A schema fixes the answer's shape, not its truth. Claude bends the data to fit: told to give an age of at least 100, it gives a toddler's age in days; told to match a pattern, it cuts the value down to it. So a limit on what the answer says goes in the instructions file (5.6), in words, and a step that must check it does so after.
+- Every object of a Claude step's schema is closed: the answer carries the declared fields and nothing else. A field the next step needs is declared.
 - A person's answers may use any keyword spore's subset has. A reason that must be given is `{"type": "string", "minLength": 1}`.
 - Schemas are written inline in `settings.json`, never as separate files.
 
