@@ -27,7 +27,7 @@ jobs:
       matrix:
         # The oldest supported spore, SPORE_MINIMUM in src/version.ts, and the newest release
         # (docs/spec.md, Testing).
-        spore: ["0.6.0", latest]
+        spore: ["0.7.0", latest]
     steps:
       - uses: actions/checkout@v4
       # runspore publishes a release before its archives, minutes apart: the newest is the newest
@@ -85,6 +85,52 @@ jobs:
         env:
           SPORE: ${{ github.workspace }}/runspore/target/release/spore
           REQUIRE_SPORE: "1"
+
+  # The Claude step runner (plugins/ml-workflow/runner, skills#152): its specs, and the committed
+  # module rebuilt byte for byte from its source, so what ships is what the source says. Then a
+  # build for runspore:runner@0.1.0 run by the newest spore release, since no release runs the
+  # committed 0.2.0 module yet (Web-tree/runspore#290, #278).
+  runner:
+    name: runner module (cargo test, reproducible build, spore latest)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: plugins/ml-workflow/runner
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: plugins/ml-workflow/runner
+      # The first cargo call installs the toolchain rust-toolchain.toml pins.
+      - run: cargo test --locked
+      - run: cargo clippy --locked --all-targets -- -D warnings
+      - run: cargo fmt --check
+      - name: The committed module is what its source builds
+        run: cargo run --locked -p claude-runner-build -- --check
+      - name: Build for runspore:runner@0.1.0
+        run: cargo run --locked -p claude-runner-build -- --world 0.1 --out "$RUNNER_TEMP/claude-runner-0.1.wasm"
+      - name: Pick the newest release
+        run: |
+          tag=$(gh api 'repos/Web-tree/runspore/releases?per_page=10' --jq '[.[]
+            | select((.draft or .prerelease) | not)
+            | select([.assets[].name] | contains(["spore-x86_64-unknown-linux-musl.tar.gz", "SHA256SUMS", "SHA256SUMS.sig"]))
+            ][0].tag_name // empty')
+          test -n "$tag"
+          echo "SPORE_VERSION=$tag" >> "$GITHUB_ENV"
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Install spore
+        run: curl -fsSL https://raw.githubusercontent.com/Web-tree/runspore/main/install.sh | sh
+        env:
+          SPORE_INSTALL_DIR: ${{ runner.temp }}/spore
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun test ../test/runner.spec.ts
+        env:
+          SPORE: ${{ runner.temp }}/spore/spore
+          REQUIRE_SPORE: "1"
+          CLAUDE_RUNNER_WASM: ${{ runner.temp }}/claude-runner-0.1.wasm
 
   old-bun:
     name: claude-spore refuses Bun 1.1

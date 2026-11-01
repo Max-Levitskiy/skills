@@ -34,8 +34,8 @@ type World = {
   order: string[]
 }
 
-const FINE = JSON.stringify({ ok: true, spore: { path: '/bin/spore', version: '0.6.0' }, problems: [], launcher: 'offer' })
-const MISSING = 'ml-workflow needs spore 0.6.0 or later, and none is on PATH. Install it with: claude-spore install-spore'
+const FINE = JSON.stringify({ ok: true, spore: { path: '/bin/spore', version: '0.7.0' }, problems: [], launcher: 'offer' })
+const MISSING = 'ml-workflow needs spore 0.7.0 or later, and none is on PATH. Install it with: claude-spore install-spore'
 const RELOAD = `ml-workflow changed since this session loaded it (helper 9.9.9, session ${PLUGIN_VERSION}). Run /reload-plugins, then try again.`
 const PROBLEMS = JSON.stringify({
   ok: false,
