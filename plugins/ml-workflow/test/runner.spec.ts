@@ -7,11 +7,13 @@
 // `componentWorlds`): the committed runner/claude-runner.wasm is runspore:runner@0.2.0, which
 // needs Web-tree/runspore#290 and #278; CLAUDE_RUNNER_WASM names another build, such as the
 // 0.1.0 one CI makes for a released spore 0.7 (`cargo run -p claude-runner-build -- --world 0.1`).
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { SPORE, remove, scratch, sporeVersion } from "./helpers.ts";
+import { SPORE, SPORE_TIMEOUT_MS, remove, scratch, sporeVersion } from "./helpers.ts";
+
+setDefaultTimeout(SPORE_TIMEOUT_MS);
 
 const COMMITTED = join(import.meta.dir, "..", "runner", "claude-runner.wasm");
 const WORLD_02 = "runspore:runner/runner@0.2.0";
