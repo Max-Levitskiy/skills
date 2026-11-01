@@ -329,10 +329,11 @@ The interview and every start run the check; the helper checks the same again wh
 
 A Claude step is a `command` action whose `argv` runs `claude-spore run` or `claude-spore start` (by name or by a path ending in `/claude-spore`). Its outcomes are the action's `outcomes`, `["ok"]` when it declares none. The check reads the folder's `settings.json` and builds nothing; `spore validate` checks the rest.
 
-- **Strict form.** A schema fits Claude Code's strict form when it uses only `$schema`, `type`, `description`, `title`, `properties`, `required`, `additionalProperties`, `items`, `enum`, `const` and `anyOf`; every object declares `properties`; `additionalProperties` is absent or `false`; `anyOf` stands alone (beside `description` or `title` at most); and it is at most 32 levels deep ([C12][c12] W02).
+- **A valid schema.** Each outcome's schema must be a JSON Schema claude accepts: a `type` that names JSON types, `properties` an object, `required` a list of names, `enum` a list, `pattern` a regular expression, length and count bounds counts, numeric bounds numbers, and `anyOf`, `oneOf` and `allOf` non-empty lists. Anything else is the error `params.schema-invalid`: claude checks `--json-schema` against the meta-schema and exits 1 before any model call, so every try would fail the same way ([W02][w02]).
+- **Strict form.** A schema fits Claude Code's strict form when it uses only `$schema`, `type`, `description`, `title`, `properties`, `required`, `additionalProperties`, `items`, `enum`, `const` and `anyOf`; every object declares `properties`, and every name in `required` is one of them; every array declares one `items` schema; a `type` list holds neither `object` nor `array`; `additionalProperties` is absent or `false`; `anyOf` stands alone (beside `description` or `title` at most); and it is at most 32 levels deep ([C12][c12] W02). Claude Code closes every object of a strict schema (`additionalProperties: false`, also where it was absent), so the answer carries only the declared fields: `{"type": "object", "properties": {}}` admits only `{}`. A map with open keys needs a schema outside the strict form, and gets the warning.
 - **Output.** One line per problem, `error: <node>: <message>` or `warning: <node>: <message>`, and exit 2 when there is an error, else 0. With `--json`, one object `{"ok", "errors", "warnings"}`, each problem `{"node", "code", "message"}`, with the same exit codes.
 - **herdr.** Like `kubectl cluster-info`, the check asks the server and says what answered. herdr 0.9 prints the answer flat, `{"status": "running", "running": true, …}`, and the server runs when `running` is `true` at the top level. A folder with an interactive step gets `<folder>: herdr server running, herdr answered <answer>` before the summary line, and `"herdr": "herdr answered <answer>"` in the `--json` object; when the server does not run, `herdr.unreachable` carries herdr's answer or error.
-- **Codes.** `params.unknown`, `params.not-literal`, `params.format`, `params.schema-missing`, `params.schema-outcome`, `params.outcome`, `params.model`, `params.tools`, `params.skill`, `params.keep`; the warning `schema.not-strict`; `workflow.unreadable` for a folder without a readable `settings.json`; and `herdr.unreachable`, once for the folder, when it has an interactive step and `herdr status server --json` does not answer with a running server.
+- **Codes.** `params.unknown`, `params.not-literal`, `params.format`, `params.schema-missing`, `params.schema-outcome`, `params.schema-invalid`, `params.outcome`, `params.model`, `params.tools`, `params.skill`, `params.keep`; the warning `schema.not-strict`; `workflow.unreadable` for a folder without a readable `settings.json`; and `herdr.unreachable`, once for the folder, when it has an interactive step and `herdr status server --json` does not answer with a running server.
 
 ## Background step, `claude-spore run` (p.16)
 
@@ -440,6 +441,8 @@ Each resume message carries the current input. "The run came back" names the vis
 ## Repair (p.19)
 
 `MAX_STRUCTURED_OUTPUT_RETRIES=3` gives Claude two repairs in the same conversation. When they run out, the step prints the non-retryable `output.invalid`. A null `structured_output` gets one nudge by resume, then the non-retryable `output.missing`. A conversation that cannot be resumed is non-retryable ([C12][c12]).
+
+A null `structured_output` comes with `subtype: "success"`, `is_error: false`, `terminal_reason: "completed"` and exit 0, so the step reads the payload, never those fields, to tell an answer from none. It is also the common way repairs end: a Claude whose answer was refused often stops before the repairs run out, so the step sees `output.missing` (without the refusal's text, which `--output-format json` does not carry) more often than `output.invalid`. The nudge is a new `claude -p` call with the same `--json-schema`, so it brings two repairs of its own ([W02][w02]).
 
 The answer schema, built from `schema`, with one branch per outcome in the map's order:
 
@@ -625,6 +628,7 @@ The Desktop app, claude.ai, Cowork, and `claude -p` as a surface for the menu; r
 [c10]: https://github.com/Web-tree/runspore/blob/main/docs/design/c10-plugin-home.md
 [c11]: https://github.com/Web-tree/runspore/blob/main/docs/design/c11-reference-loop.md
 [c12]: https://github.com/Web-tree/runspore/blob/main/docs/design/c12-output-schemas.md
+[w02]: https://github.com/Max-Levitskiy/skills/issues/20
 [c13]: https://github.com/Web-tree/runspore/blob/main/docs/design/c13-bounded-loops.md
 [c14]: https://github.com/Web-tree/runspore/blob/main/docs/design/c14-step-files.md
 [c17]: https://github.com/Web-tree/runspore/blob/main/docs/design/c17-live-run-view.md

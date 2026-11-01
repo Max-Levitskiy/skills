@@ -218,6 +218,9 @@ describe("schemas outside Claude Code's strict form warn but pass", () => {
     ["an object without properties", { type: "object" }, 'an object without "properties" at (root)'],
     ["an open object", { type: "object", properties: {}, additionalProperties: true }, '"additionalProperties" other than false at (root)'],
     ["anyOf beside type", { type: "object", anyOf: [SUMMARY] }, '"anyOf" beside other keywords at (root)'],
+    ["an array without items", { type: "object", properties: { xs: { type: "array" } } }, 'an array without one "items" schema at /properties/xs'],
+    ["a required name not declared", { type: "object", properties: {}, required: ["summary"] }, '"required" names "summary", which "properties" does not declare, at (root)'],
+    ["a type list with object", { type: "object", properties: { v: { type: ["object", "null"] } } }, 'a "type" list with "object" or "array" at /properties/v'],
   ] as const) {
     test(name, () => {
       workflow(JSON_STEP, { node: { outputSchemas: { ok: schema } } });
@@ -225,6 +228,24 @@ describe("schemas outside Claude Code's strict form warn but pass", () => {
 
       expect(exitCode).toBe(0);
       expect(stdout).toContain(`warning: review: the schema of outcome "ok" is outside Claude Code's strict form (${reason})`);
+    });
+  }
+});
+
+describe("schemas claude would refuse are errors", () => {
+  for (const [name, schema, reason] of [
+    ["a type that is not a JSON type", { type: "object", properties: { s: { type: "strnig" } } }, '"type" "strnig", which is not a JSON type, at /properties/s'],
+    ["required that is not a list", { type: "object", properties: {}, required: "summary" }, '"required" that is not a list of names at (root)'],
+    ["a pattern that does not compile", { type: "object", properties: { s: { type: "string", pattern: "(" } } }, '"pattern" that is not a regular expression at /properties/s'],
+    ["an empty anyOf", { anyOf: [] }, '"anyOf" that is not a non-empty list at (root)'],
+  ] as const) {
+    test(name, () => {
+      workflow(JSON_STEP, { node: { outputSchemas: { ok: schema } } });
+      const { exitCode, stdout } = check();
+
+      expect(exitCode).toBe(2);
+      expect(stdout).toContain(`error: review: the schema of outcome "ok" is not a valid JSON Schema (${reason})`);
+      expect(codes()).toEqual(["params.schema-invalid"]);
     });
   }
 });

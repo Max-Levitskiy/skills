@@ -5,9 +5,10 @@ a small **runner module** (WASM, written in Rust, owned by ml-workflow) is seale
 artifact. Spore loads it and grants it only the rights the workflow lists. The module starts Claude
 Code for the step, in a herdr pane or as a plain windowless process, then detaches. Claude Code's own
 **hooks** tell spore what happens next: still working, finished (with the answer, which spore checks
-against the step's output schema), asking you, needs you, session closed. The runner's `probe`,
+against the step's output schema), asking you, session closed; "needs you" stays in ml-workflow
+(decision 8). The runner's `probe`,
 which spore calls on a held step, catches the cases where no hook fires. Spore 0.7.0 hosts runner
-modules; two more runspore features (decision 9) block the switch, and `claude-spore` stays as it
+modules; one more runspore feature (decision 9) blocks the switch, and `claude-spore` stays as it
 is until then. Diagram:
 [claude-step-runner-visual.html](claude-step-runner-visual.html).
 
@@ -211,13 +212,16 @@ Rejected:
   repeatable, but drops the person's own plugins and needs the runner to add herdr's hook itself.
 - **Only the step plugin.** Most repeatable, but loses the project's own instructions.
 
-### 8. Spore records "this step needs you" (Q3)
+### 8. ml-workflow records "this step needs you", not spore (Q3)
 
 When Claude in a watched pane waits on the person (a permission prompt, idle with a question), a
-hook (Claude Code's `Notification` hook) tells spore, and spore records it on the step. `spore
-status`, `spore continue` and the Claude Code menu all show it, and it survives a closed Claude
-session. It needs a small runspore feature: today a signal goes to the run, not to the step it is
-in.
+hook (Claude Code's `Notification` hook) records it for the step in ml-workflow itself, as a file
+beside the step's token in its work folder, naming the run, the invocation and the attempt; herdr's
+agent status can back it up. The Claude Code menu
+and `/ml-workflow:status` show it. It is a file, so it survives a closed Claude session. Spore
+does not record it: a pane that waits for keystrokes is a fact about the pane, not about the
+workflow, and the person answers in the pane anyway. A question that is part of the work is
+decision 6's `question` outcome, a wait in the workflow that spore already shows.
 
 Claude Code sends no "working again" notification, so the mark is cleared explicitly, by every
 hook that shows Claude is past the wait, not only by the happy path:
@@ -229,12 +233,21 @@ hook that shows Claude is past the wait, not only by the happy path:
 - `Stop`: Claude ended its turn. If it then sits idle, the later `idle_prompt` notification sets
   the mark again.
 
-The mark also clears when the step completes, fails or is abandoned. Clearing a mark that is not
-set does nothing, so these hooks can clear on every call.
+The mark belongs to one attempt. The menu shows it only while `spore status` still reports that
+attempt as the run's held step, so a mark left by a pane killed before any clearing hook ran is
+ignored once the probe ends the attempt, and a retry starts with none. Clearing a mark that is not
+set does nothing, so these hooks can clear on every call. A background Claude never sets it: decision 3's list decides up
+front what it may do, so it never stops at a permission prompt.
 
 Rejected:
-- **Only the Claude Code menu and run line show it.** No runspore change, but invisible from a
-  plain terminal or after the session closes.
+- **Spore records it on the step** (the original answer, as
+  [Web-tree/runspore#234](https://github.com/Web-tree/runspore/issues/234)). Built twice, in
+  runspore PRs #283 and #292, then closed as not planned: spore already says "a person is needed"
+  with an `await-signal` node and with a watch's `needs` line, and a mark would be a third way to
+  say it, for one kind of step.
+- **A signal to the run.** A signal is an event in the run's history, which the kernel replays.
+  These hooks fire on every tool call, and a buffered signal can be taken later by an
+  `await-signal` node waiting for the same name.
 - **Nowhere: you notice by looking at the pane.** Loses what the watcher does today.
 
 ### 9. The switch is blocked by runspore issues (Q9)
@@ -243,13 +256,14 @@ Hosting modules was runspore work: rights to start programs and reach herdr (WAS
 spawning and no Unix sockets, so spore provides its own imports), granting them per workflow,
 sealing the module, and crash tests at each failpoint. It was
 [Web-tree/runspore#233](https://github.com/Web-tree/runspore/issues/233), shipped in spore 0.7.0
-(runspore PR #269) as a `component` action kind; Verified facts lists what it offers. Two runspore
-features are still open: the "needs you" mark of decision 8,
-[Web-tree/runspore#234](https://github.com/Web-tree/runspore/issues/234), and the candidate answer
-of decision 4, [Web-tree/runspore#278](https://github.com/Web-tree/runspore/issues/278). The
+(runspore PR #269) as a `component` action kind; Verified facts lists what it offers. One runspore
+feature is still open: the candidate answer of decision 4,
+[Web-tree/runspore#278](https://github.com/Web-tree/runspore/issues/278). Decision 8's "needs you"
+mark, once [Web-tree/runspore#234](https://github.com/Web-tree/runspore/issues/234), no longer needs
+spore. The
 ml-workflow move to the runner module,
-[Max-Levitskiy/skills#123](https://github.com/Max-Levitskiy/skills/issues/123), is blocked by all
-three with native GitHub blocking dependencies, not a note in the text. Until the open ones are
+[Max-Levitskiy/skills#123](https://github.com/Max-Levitskiy/skills/issues/123), is blocked by #233 and
+#278 with native GitHub blocking dependencies, not a note in the text. Until the open ones are
 done, `claude-spore` stays as it is.
 
 Rejected:
@@ -257,8 +271,8 @@ Rejected:
   recommendation). Would shrink claude-spore early, at the cost of a period with both.
 - **Build the small separate runner first as a stepping stone.** Builds a runner twice.
 
-If the hook parts (decisions 4, 5, 8 and the liveness probe) should start before the open runspore
-features land, this decision reopens.
+If the hook parts (decisions 4, 5 and the liveness probe) should start before the open runspore
+feature lands, this decision reopens.
 
 ## Routine choices
 
@@ -445,6 +459,11 @@ features land, this decision reopens.
     `component.not-granted`, so the runner lists a folder before it names a file in it.
 - **Runspore's security chapter** already plans WASM activities with an import allowlist, memory
   and CPU limits and capability-scoped host calls (`docs/11-security.md`).
+- **A signal nothing waits for** (runspore `spec/host.md`, `signal`) is appended to the run. A
+  later `await-signal` node waiting for that name takes it; otherwise the kernel drops it with
+  `signal.outcome-unrouted`. Decision 6's reply uses the reply node's `activationId` as its
+  signal ID, so a pane reply cannot reach another wait. The Claude node that follows reads the
+  reply with `{"$get": ["from", "output"]}` (runspore `spec/kernel.md`, `from`).
 
 ## Risks
 
@@ -461,8 +480,6 @@ features land, this decision reopens.
   how a workflow behaves, or slow it.
 - **A trusted workflow list** (decision 3) does not protect against a workflow copied without
   reading it.
-- **What spore does with a signal nothing waits for** has not been checked; the "needs you" mark
-  (decision 8) is a new step-level feature, not a signal.
 - **The runner acts only inside `start`, `probe` and `stop`,** so a prompt typed again or decision
   6's Escape happens on a probe, up to 30 seconds apart. The first prompt can go in as Claude's
   argument at `agent.start`; a later one is a new attempt's `start`.

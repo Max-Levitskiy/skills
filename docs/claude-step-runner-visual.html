@@ -3,14 +3,14 @@ Topic: Claude steps without the claude-spore binary (diagram, v1 first cut).
 Reflects:
   q1  one step runner, both run modes; run mode = agent-config default, node parameter wins
   q2  answer handed in through a Claude Code hook (Stop), same path in a herdr pane
-  q3  spore records "step needs you"; status, continue and the menu show it
+  q3  ml-workflow records "step needs you" (runspore#234 closed); the menu and /ml-workflow:status show it
   q4  runner is a WASM module sealed into the workflow; a run keeps the runner it started with
   q5  Claude starts in the project folder with the normal setup, plus the runner's hook plugin
       (always) and an optional step plugin that adds and switches off plugins, tool servers, tools
   q6  herdr unreachable = ordinary retryable failure, back-off, then pause for a person
   q7  spore checks the final message against the step's output schema; refused -> fix, up to the limit
   q8  the workflow lists the runner's rights; spore enforces exactly that list
-  q9  runspore issues (module host done in 0.7.0; #234, #278 open) block the plugin switch; claude-spore stays until then
+  q9  runspore issues (module host done in 0.7.0; #278 open) block the plugin switch; claude-spore stays until then
   q10 "asking you" is an allowed answer; run waits for the reply, then resumes the same conversation
 Assumed regions: none (every question answered).
 Marked "to check": switching a plugin off for one session (q5 thread: not yet tried).
@@ -64,13 +64,13 @@ Proposed default, not a question: 3 tries from a 30 s wait (q6 thread).
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--ink);
          font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
-  header { padding: 16px 16px 4px; max-width: 1320px; margin: 0 auto; }
+  header { padding: 16px 16px 4px; max-width: 1590px; margin: 0 auto; }
   h1 { font-size: 18px; margin: 0 0 4px; }
   header p { margin: 0 0 10px; color: var(--muted); }
   .legend { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 12.5px; color: var(--muted); }
   .legend span { display: inline-flex; align-items: center; gap: 6px; }
   .sw { width: 22px; height: 14px; border-radius: 3px; border: 1.5px solid; display: inline-block; }
-  .wrap { padding: 8px 16px 24px; max-width: 1320px; margin: 0 auto; overflow-x: auto; }
+  .wrap { padding: 8px 16px 24px; max-width: 1590px; margin: 0 auto; overflow-x: auto; }
   svg { width: 100%; min-width: 900px; height: auto; display: block; }
   svg text { fill: var(--ink); font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; font-size: 12.5px; }
   svg .t { font-weight: 650; font-size: 13.5px; }
@@ -98,7 +98,7 @@ Proposed default, not a question: 3 tries from a 30 s wait (q6 thread).
 <body>
 <header>
   <h1>How a Claude step runs once claude-spore is gone</h1>
-  <p>Every question is answered, so nothing on this page is assumed. Hooks report to spore; spore owns the probe, the schema check and the "needs you" mark.</p>
+  <p>Every question is answered, so nothing on this page is assumed. Hooks report to spore; spore owns the probe and the schema check. The "needs you" mark stays in ml-workflow.</p>
   <div class="legend">
     <span><i class="sw" style="background:var(--spore);border-color:var(--spore-stroke)"></i>spore (Rust, Wasmtime)</span>
     <span><i class="sw" style="background:var(--seal);border-color:var(--seal-stroke)"></i>sealed in the workflow</span>
@@ -110,7 +110,7 @@ Proposed default, not a question: 3 tries from a 30 s wait (q6 thread).
   </div>
 </header>
 <div class="wrap">
-<svg viewBox="0 0 1310 940" role="img" aria-label="Diagram: spore hosts the sealed runner module, which starts Claude Code in a herdr pane or as a plain process; Claude Code hooks report back to spore.">
+<svg viewBox="0 0 1580 940" role="img" aria-label="Diagram: spore hosts the sealed runner module, which starts Claude Code in a herdr pane or as a plain process; Claude Code hooks report back to spore.">
   <defs>
     <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0,0 L10,5 L0,10 z"/></marker>
     <marker id="ahb" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ahb" d="M0,0 L10,5 L0,10 z"/></marker>
@@ -186,12 +186,14 @@ Proposed default, not a question: 3 tries from a 30 s wait (q6 thread).
   <text x="754" y="354" class="m">a fit is only a candidate:</text>
   <text x="754" y="371" class="m">committed once Claude stops</text>
 
-  <rect class="b" x="1010" y="270" width="230" height="124" rx="6"/>
-  <text x="1024" y="291" class="t">step needs you (Q3)</text>
-  <text x="1024" y="311">recorded on the step in spore</text>
-  <text x="1024" y="330">shown by spore status, continue</text>
-  <text x="1024" y="349">and the Claude Code menu</text>
-  <text x="1024" y="371" class="m">from any terminal</text>
+  <!-- ========== ML-WORKFLOW, outside spore ========== -->
+  <text x="1320" y="258" class="big">ml-workflow</text>
+  <rect class="hook" x="1320" y="270" width="240" height="124" rx="6"/>
+  <text x="1334" y="291" class="t">step needs you (Q3)</text>
+  <text x="1334" y="311">a file for one attempt,</text>
+  <text x="1334" y="330">kept by ml-workflow, not spore</text>
+  <text x="1334" y="349">shown by the Claude Code menu</text>
+  <text x="1334" y="371" class="m">ignored once the attempt ends</text>
 
   <!-- arrows inside spore -->
   <path class="a-you" d="M1125,52 L1125,104"/>
@@ -209,8 +211,6 @@ Proposed default, not a question: 3 tries from a 30 s wait (q6 thread).
   <path class="a" d="M960,270 L1022,232"/>
   <text x="976" y="246" class="lbl">"asking you"</text>
 
-  <path class="a" d="M1125,230 L1125,268"/>
-  <text x="1133" y="254" class="lbl">shown as</text>
 
   <!-- resume: back into the same conversation -->
   <path class="a-you" d="M1240,150 L1280,150 L1280,720 L1242,720"/>
@@ -280,8 +280,8 @@ Proposed default, not a question: 3 tries from a 30 s wait (q6 thread).
   <text x="898" y="447" class="lbl lbl-bad">back to Claude to fix,</text>
   <text x="898" y="462" class="lbl lbl-bad">up to the fix limit</text>
 
-  <path class="a" d="M1125,526 L1125,396"/>
-  <text x="1133" y="440" class="lbl">mark: needs you</text>
+  <path class="a" d="M1224,561 L1440,561 L1440,396"/>
+  <text x="1448" y="440" class="lbl">needs you</text>
 
   <!-- setup -->
   <text x="486" y="614" class="m">these hooks call the spore CLI</text>
@@ -309,9 +309,9 @@ Proposed default, not a question: 3 tries from a 30 s wait (q6 thread).
   <text x="234" y="812" class="m">a GitHub blocking link, not a note in the text</text>
 
   <rect class="spore" x="40" y="826" width="360" height="96" rx="8"/>
-  <text x="56" y="849" class="t">runspore: host (done), #234, #278</text>
-  <text x="56" y="869">still open: the "needs you" mark</text>
-  <text x="56" y="888">and the answer candidate</text>
+  <text x="56" y="849" class="t">runspore: host (done), #278</text>
+  <text x="56" y="869">still open: the answer candidate</text>
+  <text x="56" y="888" class="m">#234 closed: "needs you" stays in ml-workflow</text>
 
   <path class="a" d="M400,874 L478,874"/>
   <text x="439" y="866" class="lbl" text-anchor="middle">blocks</text>

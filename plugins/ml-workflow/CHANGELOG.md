@@ -8,6 +8,10 @@ What each ml-workflow version changed. Every change to the plugin raises the ver
 - The oldest supported spore is 0.7.0, the first that hosts step runner modules.
 - The agent-config key claude.runMode, the default run mode of a Claude step.
 
+## 0.13.1
+
+- A schema claude would refuse is an error in check and a non-retryable params.invalid in a step, not a retried claude.failed; three more strict-form rules warn; the docs say what a schema cannot enforce
+
 ## 0.13.0
 
 - A run held by a watched Claude step's herdr pane gets a `pane` button (hotkey p) on its run line and in its live view, which brings that pane to the front with `herdr agent focus`.
