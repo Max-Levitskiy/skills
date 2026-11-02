@@ -99,7 +99,7 @@ five are code-specific:
 | `over-abstraction` | Single-use wrappers, speculative generality |
 | `error-masking` | Broad/silent catches, redundant defensive checks |
 | `convention-adherence` | Ignoring repo idioms or existing utilities *(diff mode only)* |
-| `boilerplate-template` | Generic tutorial-style scaffolding |
+| `boilerplate-template` | Generic tutorial-style scaffolding and repetitive valid-import streaks |
 | `hallucinated-deps` | Imports / APIs that plausibly don't exist |
 | `perf-waste` | Obvious inefficiencies (I/O in loops, N+1, quadratic lookups) |
 
@@ -109,6 +109,11 @@ dense · **60–79** acceptable · **40–59** bloated · **<40** sloppy. Method
 fail or don't apply drop out and the remaining weights renormalize.
 
 ### Status
+
+**This release (0.3.2):** adds an evidence-backed `import-streak` pattern and
+paired positive/negative fixtures. It does not change weights, penalties, or
+score bands; model-harness comparison is still required before claiming an
+accuracy improvement.
 
 v1, smoke-validated in both input modes across Python and TypeScript (see
 [`skills/code/workspace/SMOKE.md`](skills/code/workspace/SMOKE.md)). The composite **weights, the
