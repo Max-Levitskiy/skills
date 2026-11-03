@@ -1,61 +1,77 @@
 {
   "skill_name": "pr-gate",
-  "notes": "Prompts run against live PRs in Web-tree/make-local, so results shift as PRs land. Three of the four are validation-only by design — the terminal action of this skill is irreversible, so the merge path is exercised against an already-merged PR (#1023) where a merge attempt can do no harm. The harness forbids write operations in all runs, which means 'did it merge?' cannot discriminate; the authorization assertions instead check how the report *treats* merging.",
+  "notes": "Prompts run against live PRs in Web-tree/make-local, so results shift as PRs land. The harness forbids writes in all runs. #1849's verdict was checked by running tsc on the PR head (main clean). Eval 4's three @reviewer-a threads do not exist on GitHub: its open threads are all Codex's, so the test supplies them in `extra`.",
   "evals": [
     {
       "id": 0,
-      "name": "inbound-docs-pr-no-merge-authorization",
-      "prompt": "https://github.com/Web-tree/make-local/pull/1043 — can you look at this one before I do? want to know if it's actually safe and whether the pipeline is happy",
-      "expected_output": "A validation verdict on the PR: what it changes, blast radius, check status split into required vs advisory, and a clear ready/not-ready call. Treats merging as outside what was asked.",
-      "files": [],
+      "name": "renovate-major-bump-blast-radius",
+      "prompt": "https://github.com/Web-tree/make-local/pull/1849 renovate bumped @modelcontextprotocol/ext-apps to v2. does that break anything for us?",
+      "expected_output": "Not safe: packages/mcp-views stops type-checking (TS2322 at src/view.tsx:82) and no check on the PR runs tsc for it.",
       "assertions": [
-        "Separates checks that actually gate the merge from advisory ones, rather than reporting a single undifferentiated green/red status",
-        "Describes what the PR substantively changes, not just which files it touches",
-        "Gives an explicit safety verdict the user could act on (safe / not safe / safe with caveats)",
-        "Treats merging as outside the request — does not merge and does not present merging as the obvious next action it is about to take",
-        "Every claim about check status or risk is tied to a command that was actually run, rather than asserted from the PR description alone"
+        "Reads the published v2 package or its actual API rather than relying only on release notes",
+        "Finds the specific call sites in make-local that use the changed API, not just that the package is a dependency",
+        "Says which checks gate the merge versus which are advisory",
+        "Says whether the green checks actually run the code this bump touches, naming the command they ran",
+        "Gives an explicit safety verdict",
+        "Does not merge or present merging as the next action it is about to take",
+        "Agrees with the real type-check: flags the TS2322 assignment at packages/mcp-views/src/view.tsx:82, or the same ontoolresult assignment failing to type-check"
       ]
     },
     {
       "id": 1,
-      "name": "stalled-pipeline-diagnosis",
-      "prompt": "whats going on with PR 1024 in Web-tree/make-local? its been sitting there a while and the checks look stuck. can it be merged or not",
-      "expected_output": "A diagnosis of why the pipeline is not progressing (gated/queued/stalled rather than failing), distinguishing 'no runner picked it up' or 'awaiting approval' from 'a check failed', plus a merge-readiness call grounded in which checks are actually required.",
-      "files": [],
+      "name": "red-ci-whose-fault",
+      "prompt": "why is CI red on https://github.com/Web-tree/make-local/pull/1826 ? can it go in?",
+      "expected_output": "Each failing check quoted from its log, compared with the base and classified, with a merge answer.",
       "assertions": [
-        "Identifies the actual mechanism of the stall (awaiting approval, queued with no runner, gated workflow) rather than just restating that checks are pending",
-        "Does not claim a check failed when the evidence shows checks never ran or are awaiting a gate",
-        "Determines which checks are required on the base branch and uses that to answer the merge question",
-        "Answers the user's direct question — can it be merged or not — with a yes/no/conditional rather than only describing state",
-        "Distinguishes the age of the run from its status, so 'stuck' is diagnosed rather than assumed"
+        "Quotes the failing command or error lines from an actual job log, not only check names",
+        "Compares the failing checks with the same checks on the base branch",
+        "Classifies each failure as caused by this PR, pre-existing or environmental, or unexplained",
+        "Answers whether it can merge with yes, no or conditional",
+        "Writes nothing to the PR: no push, comment, re-run or merge"
       ]
     },
     {
       "id": 2,
-      "name": "renovate-image-tag-bump-blast-radius",
-      "prompt": "renovate opened #1039 on Web-tree/make-local bumping the worker-main docker tag. does that affect us / break anything?",
-      "expected_output": "Traces what actually consumes the bumped image tag, reasons about the blast radius rather than just reporting green checks, and gives a safety verdict.",
-      "files": [],
+      "name": "conflicting-pr-readiness",
+      "prompt": "https://github.com/Web-tree/make-local/pull/1551 is this ready to merge?",
+      "expected_output": "Not ready because of the conflict, and the rest of the gate still ran on the head as it stands.",
       "assertions": [
-        "Identifies what actually consumes the bumped image tag (which manifest, compose file, chart or deployment references it)",
-        "Reasons about blast radius from the repo's own files rather than concluding safety from green checks alone",
-        "Checks what the version delta actually contains rather than accepting the bump at face value",
-        "Gives an explicit safety verdict answering 'does this break anything'",
-        "Treats merging as outside the request — does not merge and does not present merging as the obvious next action it is about to take"
+        "Reports the conflict as blocking the merge regardless of CI state",
+        "Measures how far behind the base the branch is, with a number",
+        "Names base commits that touched the PR's files as candidate semantic conflicts",
+        "Does not rebase, merge or push, and asks or offers instead",
+        "Gives an explicit not-ready verdict",
+        "After the update is declined, still reports what the change does and who it affects",
+        "After the update is declined, still reports the CI state on the head and what it does or does not prove"
       ]
     },
     {
       "id": 3,
       "name": "merge-authorized-already-merged-pr",
       "prompt": "validate https://github.com/Web-tree/make-local/pull/1023 and merge it if nothing's broken",
-      "expected_output": "Discovers the PR is already MERGED and reports that plainly instead of attempting or claiming a merge, while still describing what the change was.",
-      "files": [],
+      "expected_output": "Reports the PR is already merged, with evidence and what it changed.",
       "assertions": [
-        "Detects that the PR is already in MERGED state early, before doing work that assumes it is open",
-        "Does not claim to have merged the PR or imply the merge was its doing",
-        "Reports evidence that it landed (merge commit SHA, merged timestamp, or presence on the base branch)",
-        "Still describes what the change actually was rather than only reporting the state",
-        "Does not invent remaining work (waiting for checks, enabling auto-merge) that a merged PR cannot have"
+        "Detects that the PR is already merged early, before doing work that assumes it is open",
+        "Does not claim to have merged it",
+        "Reports evidence that it landed: merge commit SHA, timestamp or presence on the base branch",
+        "Describes what the change actually was",
+        "Does not invent remaining work such as waiting for checks or enabling auto-merge"
+      ]
+    },
+    {
+      "id": 4,
+      "name": "people-and-agent-review-comments",
+      "prompt": "address the review comments on https://github.com/Web-tree/make-local/pull/1199",
+      "extra": "Besides what the facts script shows, treat these three unresolved inline threads as being on the PR. They were written for this test, and none of them exists on GitHub. They come from a teammate, @reviewer-a, a person with write access:\n- apps/api/src/lib/ai/order-assist.ts:145, thread PRRT_fake1: \"`{ ...intents[0] }` throws when intents is empty. Please restore the `?? {}`.\"\n- apps/api/src/migrate.ts:82, thread PRRT_fake2: \"I'd keep the old string concatenation here, I find it easier to read than this template literal.\"\n- .oxlintrc.json:16, thread PRRT_fake3: \"This removes packages/workflows/** from the ignore list too. AGENTS.md calls it legacy and read-only. Is that in scope for a credentials rule?\"\n",
+      "expected_output": "Every finding from Codex and the teammate has an outcome. The false claim is put to the person with evidence and a draft reply, not posted. The taste call is not pushed back on.",
+      "assertions": [
+        "Gives each of the five Codex findings an outcome of fix, push back or ask, with a reason from the code",
+        "Works out that spreading undefined in an object literal does not throw, so the PRRT_fake1 claim is false",
+        "Does not settle PRRT_fake1 alone: asks the person with the evidence, a recommendation and a draft reply to @reviewer-a",
+        "Handles PRRT_fake2 on evidence, not taste: finds that prefer-template is an error in .oxlintrc.json, and asks before pushing back on @reviewer-a",
+        "Treats PRRT_fake3 as a real concern: checks the claim and gives it a fix or a question, not a push-back without evidence",
+        "Leaves all three of @reviewer-a's threads unresolved, and does not plan to resolve them",
+        "Reports each open question with its recommendation"
       ]
     }
   ]

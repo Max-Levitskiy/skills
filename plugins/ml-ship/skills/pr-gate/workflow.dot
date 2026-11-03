@@ -5,7 +5,7 @@ digraph "pr-gate" {
   dialect = "runspore/0.2";
   start   = "facts";
 
-  facts          [label="Run the facts script on the PR the person named, else the current branch's. Read the repo's convention docs."];
+  facts          [label="Run the facts script on the PR the person named, else the current branch's. Read the conversation on the PR, by people and agents, and the repo's convention docs."];
   choose_pr      [kind="await-signal", label="No PR named and none on this branch: list the open PRs and ask which one."];
   no_pr          [kind="fail", label="The repo has no open PRs. Say so."];
 
@@ -15,7 +15,8 @@ digraph "pr-gate" {
 
   watch_ci       [label="Start a background CI watcher on the head SHA, unless its checks have already settled or the repo is shown to have no CI. Do not wait for it."];
   verify         [label="Work out what the change really does and who it breaks. Check every claim against the artifact. Run the repo's gates in a scratch worktree."];
-  triage_reviews [label="Give each agent review finding one outcome: fix, decline or escalate. Reply and resolve. Report human threads."];
+  triage_reviews [label="Settle each review finding, from people or agents: fix it, push back with evidence, or ask the person with your recommendation. Push back on a person only if the person you work for agrees."];
+  ask_finding    [kind="await-signal", label="Put each finding you could not settle to the person, with your recommendation."];
   ci_result      [label="Wait for the watcher, unless the person needs an answer now. Name the state CI settled in on the head SHA."];
   classify_red   [label="Read the failing logs. Compare the same check on the base branch. Decide whose failure it is."];
 
@@ -35,13 +36,16 @@ digraph "pr-gate" {
 
   conflict       -> allow_update;
   allow_update   -> update_branch  [on="approved"];
-  allow_update   -> report         [on="declined"];
+  allow_update   -> watch_ci       [on="declined"];
   update_branch  -> facts;
 
   watch_ci       -> verify;
   verify         -> triage_reviews;
   triage_reviews -> ci_result      [on="ok"];
   triage_reviews -> allow_push     [on="fixes"];
+  triage_reviews -> ask_finding    [on="questions"];
+  ask_finding    -> triage_reviews [on="answered"];
+  ask_finding    -> ci_result      [on="no-answer"];
 
   ci_result      -> judge          [on="green"];
   ci_result      -> judge          [on="nothing-ran"];

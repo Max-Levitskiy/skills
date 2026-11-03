@@ -1,218 +1,75 @@
 # GitLab
 
-The `glab` side of each node, and where GitLab's model changes a verdict. Commands take the project from the checkout:
+What differs from `gh`. Commands take the project from the checkout:
 
 ```bash
-P="projects/:fullpath"          # glab fills :fullpath from the checkout's remote
-# For an MR in another project or on another host:
-#   P="projects/<group%2Fsubgroup%2Fproject>"  and add  --hostname <host>  to each glab api call
-#   add  -R <project URL>  to each glab mr call: without it glab looks the IID up in the checkout's project
+P="projects/:fullpath"
+# Another project or host: P="projects/<group%2Fproject>", add --hostname <host> to glab api, and -R <project URL> to glab mr
 ```
 
-
-## How the terms map
-
-| This skill says | On GitLab |
+| The skill says | On GitLab |
 |---|---|
-| PR, `#12` | Merge request (MR), `!12` |
-| Required vs advisory checks | Blocking vs `allow_failure` jobs in one pipeline. The project setting "pipelines must succeed" decides whether the pipeline blocks the merge at all |
-| `mergeable` / `mergeStateStatus` | `detailed_merge_status` |
+| PR, `#12` | MR, `!12` |
+| Required vs advisory | Blocking vs `allow_failure` jobs. "Pipelines must succeed" decides whether the pipeline blocks at all |
 | `UNKNOWN` | `unchecked`, `checking` |
-| `CONFLICTING` | `conflict`, or `conflicts: YES` beside any other status |
+| `CONFLICTING` | `conflict`, or `conflicts: YES` beside any status |
 | `BEHIND` | `need_rebase` |
-| Review thread, `PRRT_…` | Discussion, a 40-character hex ID |
-| Branch rules | Project merge settings, plus approval rules on paid tiers |
+| Thread, `PRRT_…` | Discussion, a 40-character hex ID |
 | `--match-head-commit` | `--sha` |
 
+## facts
 
-## What misleads in the facts output
+- With `pipeline must succeed` false, `mergeable` says nothing about CI: read the PIPELINE section.
+- A `success` pipeline can hold failed `allow_failure` jobs. They still need explaining.
+- `ran on: … NOT the MR head` and `no pipeline on this MR` mean CI has not run on this code: `rules:`, `[skip ci]`, a fork pipeline awaiting a member, or no runner.
+- A blocking `manual` job waits forever. Report it, and start one only if asked: they are often deploys.
+- With `ff` or `rebase_merge`, any new target commit gives `need_rebase`. The rebase moves the head, so validation restarts.
+- `approvals: none required` is only what GitLab enforces. Free enforces none: read the convention docs.
+- The `agent` tag is a guess. Name bots on ordinary accounts with `AGENT_USERS=a,b`.
 
-- **`mergeable` says nothing about CI when `pipeline must succeed` is false.**
-  GitLab then merges over a red pipeline, or over none. The PIPELINE section is
-  the CI gate on such a project; the status line is not.
-- **A `success` pipeline can hold failed jobs.** Jobs marked `allow_failure`
-  fail without failing the pipeline. They are listed as advisory: a failed one
-  is still evidence about the change, and still needs an explanation.
-- **A pipeline that ran on another commit is not this MR's CI.** `ran on: … NOT
-  the MR head` and `no pipeline on this MR` both mean CI has not run on the code
-  you are judging. The usual causes: `rules:` or `workflow:rules` excluded the
-  change, a `[skip ci]` commit, a fork pipeline waiting for a project member to
-  start it, or no runner picked it up.
-- **A blocking `manual` job stops the pipeline until a person runs it.** The
-  pipeline waits forever, so waiting is not the fix. Report it. Manual jobs are
-  often deploys, so start one only when the user asks.
-- **`need_rebase` comes from the merge method.** With `ff` or `rebase_merge`,
-  one new commit on the target makes every open MR unmergeable until it is
-  rebased. The rebase moves the head SHA and starts a new pipeline, so the
-  validation starts over.
-- **`approvals: none required` is what GitLab enforces.** The Free tier
-  enforces none. Read the convention docs for the review the team expects.
-- **The `agent` tag is a guess.** It comes from GitLab's `bot` flag (project and
-  group access tokens, service accounts) and a name pattern. A review bot that
-  runs on an ordinary user account shows as `human`. Name such accounts:
-  `AGENT_USERS=review-bot,ci-reviewer bun pr-facts.ts <MR>`.
+## ci_result, classify_red
 
-
-## CI: watch, read, classify
-
-**Watch** the MR's own pipeline to a settled result:
+`--wait` also exits 11 on a blocking manual job. An `external status check` not `passed` under MERGE GATES is not waited for, so exit 0 beside one is not green. Do not use `glab ci status --wait`: it misses MR pipelines.
 
 ```bash
-bun "<this-skill-dir>/scripts/pr-facts.ts" --wait <MR>      # run it in the background
+glab api "$P/jobs/<id>/trace" | tail -200
+glab api "$P/pipelines/<id>/jobs?scope[]=failed&per_page=100"
+glab api "$P/pipelines?ref=<target>&per_page=5"                    # the same job on the target
+glab api "$P/pipelines?source=merge_request_event&per_page=20"     # a job the target never runs
+glab api -X POST "$P/jobs/<id>/retry"
 ```
 
-It exits 0 on success, 10 on failed or canceled, 11 when there is nothing to
-wait for (no pipeline on the head commit, or a blocking manual job), and 12
-when the pipeline is still running after `WAIT_TIMEOUT` seconds (3600 by
-default), then prints the facts. It
-follows the MR's head pipeline. `glab ci status --wait` follows a branch, and
-misses merge request pipelines.
+- `runs in: project N` means the jobs are under `projects/<N>`, and `$P` answers 404.
+- The trace ends in cleanup, so the failure sits above the last screen.
+- `reason`: `script_failure` is the job's commands. `runner_system_failure`, `stuck_or_timeout_failure` and `scheduler_failure` are the environment.
+- A failed `downstream of …` is in a child pipeline: read that one by its own project and ID.
 
-The exit code covers the pipeline alone. An `external status check` line under
-MERGE GATES that is not `passed` is a gate the watch did not wait for: exit 0
-beside one is not green.
+## fix
 
-**Read the real failure.** Job IDs are in the `FAILING / STALLED` section:
+`(from a fork, project N)`: push to `ssh_url_to_repo` of `projects/<N>`, and only with `allow_collaboration` true on the MR. Fork pipelines lack the parent's variables and protected runners, so a missing variable there is by design.
+
+## triage_reviews
 
 ```bash
-glab api "$P/jobs/<job-id>/trace" | tail -200                        # the job log
-glab api "$P/pipelines/<pipeline-id>/jobs?scope[]=failed&per_page=100"
-glab ci config compile                                               # .gitlab-ci.yml with every include: merged in
+glab api "$P/merge_requests/<iid>/discussions/<id>"                        # position.head_sha older than the head = outdated
+glab api -X POST "$P/merge_requests/<iid>/discussions/<id>/notes" -f body='...'
+glab api -X PUT "$P/merge_requests/<iid>/discussions/<id>?resolved=true"
+glab mr note <iid> -m '<one line per finding>'                             # top-level comments cannot be hidden: say so
 ```
 
-A pipeline can run in another project than the MR's: a fork's pipeline runs in
-the fork. The PIPELINE section then prints `runs in: project N`. Its jobs,
-traces and retries are under `projects/<N>`, and `$P` answers 404 for them.
+With `thread resolution required to merge: true`, a person's open thread blocks the merge. Report it.
 
-The trace ends with cleanup sections, so the failing command sits above the
-last screen. The job's `reason` separates the classes early: `script_failure`
-is the job's own commands; `runner_system_failure`, `stuck_or_timeout_failure`
-and `scheduler_failure` are the environment.
-
-A failed `downstream of …` line means the failing job is in a child or
-multi-project pipeline. Read that pipeline's jobs by its own project and ID.
-
-**Compare with the target branch.** The facts output prints the last pipelines
-on the target. To compare one job:
+## merge
 
 ```bash
-glab api "$P/pipelines?ref=<target>&per_page=5"
-glab api "$P/pipelines/<pipeline-id>/jobs?per_page=100"
+glab mr merge <iid> --sha "$SHA" --auto-merge=false --yes    # now
+glab mr merge <iid> --sha "$SHA" --yes                       # when the pipeline succeeds
+glab api "$P/merge_requests/<iid>"                           # confirm: state, merge_commit_sha, squash_commit_sha, sha
 ```
 
-`rules:` often give merge request pipelines jobs that branch pipelines lack. A
-job with no run on the target has its base rate in other MRs' pipelines:
-`glab api "$P/pipelines?source=merge_request_event&per_page=20"`.
-
-**Re-run** a known-flaky job:
-
-```bash
-glab api -X POST "$P/jobs/<job-id>/retry"
-glab api -X POST "$P/pipelines/<pipeline-id>/retry"       # every failed job
-```
-
-
-## Fixing forward, and forks
-
-The facts output marks a fork with `(from a fork, project N)`. The branch
-lives in that project, so push there:
-
-```bash
-glab api "projects/<N>" | bun -e 'console.log((await Bun.stdin.json()).ssh_url_to_repo)'
-glab api "$P/merge_requests/<iid>" | bun -e 'console.log((await Bun.stdin.json()).allow_collaboration)'
-```
-
-`allow_collaboration` is the author's consent to maintainer pushes. Without
-it, the push is refused.
-
-Fork pipelines run in the fork, without the parent project's CI variables or
-protected runners. A job that fails there for a missing variable is working as
-designed.
-
-
-## Review threads
-
-Read the whole thread; the facts output shows 160 characters of it:
-
-```bash
-glab api "$P/merge_requests/<iid>/discussions/<discussion-id>"
-```
-
-Each note carries `body` and `position` (`new_path`, `new_line`, `head_sha`).
-A `head_sha` older than the MR head makes the thread outdated: check the
-concern against the current file.
-
-Reply, then resolve:
-
-```bash
-glab api -X POST "$P/merge_requests/<iid>/discussions/<discussion-id>/notes" \
-  -f body='Fixed in abc1234: health ports now come from the slot.'
-glab api -X PUT "$P/merge_requests/<iid>/discussions/<discussion-id>?resolved=true"
-```
-
-A `suggestion` block is a proposed patch. Make the change in your own commit:
-the "Apply suggestion" button commits once per suggestion and skips the
-repo's gates.
-
-Top-level comments have no thread, and GitLab cannot hide them. Answer all
-the findings of one comment in one note, and say in the report that the
-original stays visible:
-
-```bash
-glab mr note <iid> -m '<one line per finding: what it said, fixed in <sha> / not changing because ...>'
-```
-
-With `thread resolution required to merge: true`, every open thread blocks
-the merge, human ones included. Human threads stay with their reviewer, so
-report them as the blocker.
-
-
-## Merging
-
-```bash
-SHA=<head sha from the facts output, captured before validating>
-
-# Merge now, pinned to the commit you validated
-glab mr merge <iid> --sha "$SHA" --auto-merge=false --yes
-
-# Auto-merge: GitLab lands it when the pipeline succeeds
-glab mr merge <iid> --sha "$SHA" --yes
-
-# An MR outside the checkout's project: add -R to either, and to mr rebase and mr note
-glab mr merge <iid> -R <project URL> --sha "$SHA" --yes
-```
-
-- **`glab mr merge` schedules by default.** With a pipeline running it sets
-  auto-merge and returns, so "merged" can mean "will merge later". Pass
-  `--auto-merge=false` for a merge now. Tell the user which of the two
-  happened. Undo a scheduled merge with
-  `glab api -X POST "$P/merge_requests/<iid>/cancel_merge_when_pipeline_succeeds"`.
-- **The merge method is the project's.** `ff` and `rebase_merge` need the
-  branch rebased first: `glab mr rebase <iid>` does it on the server when
-  there are no conflicts. The rebase makes a new head SHA, so wait for its
-  pipeline and take `$SHA` again. On these projects a stale branch is brought
-  up to date with a rebase, which keeps the linear history the method exists
-  for.
-- **Squash follows the project's `squash` setting.** `always` squashes
-  whatever you pass, `never` refuses `--squash`, and the `default_*` values
-  follow the MR's own flag. Add `--squash` only to match what the project
-  already does.
-- **Protect trailers.** A default squash lands the MR title alone. Pass the
-  whole message when a trailer has to survive:
-  `--squash-message "$(printf '<subject>\n\nSkip-Release: true')"`. For a
-  merge commit the flag is `--message`. With `ff` and no squash, the branch's
-  commits land unchanged and their trailers survive.
-- **Merge trains.** When the facts output shows `merge trains: true`, the
-  merge adds the MR to the train. It lands after the train's own pipeline.
-
-Confirm it landed:
-
-```bash
-glab api "$P/merge_requests/<iid>" | bun -e '
-const d = await Bun.stdin.json();
-console.log(d.state, "merge:", d.merge_commit_sha, "squash:", d.squash_commit_sha, "head:", d.sha, d.merged_at)'
-```
-
-`merge_commit_sha` is null after a fast-forward merge. The commit on the
-target is then `squash_commit_sha` when the MR was squashed, and the head
-`sha` otherwise. Report the one that is on the target branch.
+- `glab mr merge` schedules by default when a pipeline runs. Say which happened. Undo: `POST $P/merge_requests/<iid>/cancel_merge_when_pipeline_succeeds`.
+- `ff` and `rebase_merge` need a rebase first: `glab mr rebase <iid>`. Then wait for the new pipeline and take `$SHA` again.
+- Add `--squash` only to match the project's setting: `always` squashes anyway, `never` refuses.
+- A default squash lands the title alone. Keep trailers with `--squash-message`, or `--message` for a merge commit.
+- `merge trains: true`: it lands after the train's pipeline.
+- `merge_commit_sha` is null after a fast-forward: report `squash_commit_sha`, else `sha`.

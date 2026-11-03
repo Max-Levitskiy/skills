@@ -159,6 +159,29 @@ function printThreads(owner: string, name: string, num: string, resolution: stri
     console.log(`  [${kind}] @${who(c.author).login}  ${c.id}  ${c.url}`);
     console.log(`    ${gist(c.body)}`);
   }
+
+  // What was already said: a hold, a decision or a known problem often sits only here.
+  // Open agent threads and agent comments are listed above, and resolved threads of either kind here.
+  section("CONVERSATION");
+  const said: [string, Json][] = [
+    ...pr.comments.nodes.map((c: Json) => ["comment", c]),
+    ...pr.reviews.nodes.map((r: Json) => [`review ${r.state}`, r]),
+  ].filter(([kind, c]) => !who(c.author).bot && !c.isMinimized && ((c.body ?? "").trim() || kind === "review CHANGES_REQUESTED"));
+  const settled: Json[] = threads.nodes
+    .filter((t: Json) => t.isResolved)
+    .sort((a: Json, b: Json) => Number(who(a.head.nodes[0]?.author).bot) - Number(who(b.head.nodes[0]?.author).bot));
+  if (!said.length && !settled.length) console.log("  (none)");
+  for (const [kind, c] of said.slice(-15)) {
+    console.log(`  [${kind}] @${who(c.author).login}  ${c.id}  ${c.url ?? ""}`);
+    if ((c.body ?? "").trim()) console.log(`    ${gist(c.body)}`);
+  }
+  for (const t of settled.slice(0, 15)) {
+    const first = t.head.nodes[0] ?? {};
+    const { login, bot } = who(first.author);
+    console.log(`  [resolved thread, ${bot ? "agent" : "human"}] ${t.path}:${t.line ?? t.originalLine ?? "?"}  @${login}  ${t.head.totalCount} comments  thread ${t.id}`);
+    console.log(`    ${gist(first.body)}`);
+  }
+  if (settled.length > 15) console.log(`  … and ${settled.length - 15} more resolved threads`);
 }
 
 function printMergeConventions(repo: string) {

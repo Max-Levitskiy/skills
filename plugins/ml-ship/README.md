@@ -23,7 +23,7 @@ A pull request is a proposal. This turns it into a verdict backed by evidence, a
 
 ### How it works
 
-The procedure is a graph, [`skills/pr-gate/workflow.dot`](skills/pr-gate/workflow.dot), written in [SWL-DOT](https://runspore.com/docs#notation). The agent walks it node by node: read the facts, watch CI, verify the change, triage the agent reviews, classify a red check, fix, judge, merge if asked, report. Every push goes back to the facts, because a result on an old commit proves nothing about the new one. `SKILL.md` only says how to walk it, and each node's detail is in `references/<node>.md`.
+The procedure is a graph, [`skills/pr-gate/workflow.dot`](skills/pr-gate/workflow.dot), written in [SWL-DOT](https://runspore.com/docs#notation). The agent walks it node by node: read the facts, watch CI, verify the change, triage the reviews, classify a red check, fix, judge, merge if asked, report. Every push goes back to the facts, because a result on an old commit proves nothing about the new one. `SKILL.md` only says how to walk it, and each node's detail is in `references/<node>.md`.
 
 ### Replacing the graph
 

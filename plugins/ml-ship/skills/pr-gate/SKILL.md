@@ -1,6 +1,6 @@
 ---
 name: pr-gate
-description: Validate a GitHub pull request or GitLab merge request end to end and merge it when asked — what it changes and who it breaks, CI to a settled result, red pipelines diagnosed and fixed, agent review comments triaged, readiness judged. Use whenever the user points at a PR or MR (a number, a URL, "this PR", a Renovate/Dependabot bump) and asks "is this ready", "can you merge it", "fix the CI", "why is this check red", "address the review comments" or "does this break anything". To deploy and canary your own freshly shipped PR, use land-and-deploy; for a line-by-line critique with no merge decision, use code-review.
+description: Validate a GitHub pull request or GitLab merge request end to end and merge it when asked — what it changes and who it breaks, CI to a settled result, red pipelines diagnosed and fixed, review comments triaged, readiness judged. Use whenever the user points at a PR or MR (a number, a URL, "this PR", a Renovate/Dependabot bump) and asks "is this ready", "can you merge it", "fix the CI", "why is this check red", "address the review comments" or "does this break anything". To deploy and canary your own freshly shipped PR, use land-and-deploy; for a line-by-line critique with no merge decision, use code-review.
 ---
 
 # PR Gate
