@@ -31,5 +31,5 @@ A local failure after build-then-test may be your own mess, such as a runner col
 
 ## Done when
 
-- **Each changed package has its trace:** the command CI really ran on it, followed from the workflow through the root script and its filters to the package's own script. Name what no check ran, such as a type-check or tests. A PR comment saying what CI covers is a claim, whoever posted it, and an automated triage can post under a person's account.
+- **Each changed package has its trace:** the command CI really ran on it, followed from the workflow through the root script and its filters to the package's own script. Name what no check ran, such as a type-check or tests. A PR comment saying what CI covers is a claim, whoever posted it.
 - **A dependency bump has a run behind it:** the call sites' pattern went through the type-checker against the new version, in your repo gates or the scratch project. Reading `.d.ts` files gives you a hypothesis. If you cannot run it, the verdict says the types are unproven.

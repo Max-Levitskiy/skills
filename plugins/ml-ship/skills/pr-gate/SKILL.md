@@ -13,7 +13,8 @@ A PR is a proposal. Turn it into a verdict backed by evidence, and act on that v
 Find the graph to walk:
 
 ```bash
-AC=$(command -v agent-config || ls -d "$HOME"/.claude/plugins/cache/*/ml-agent-config/*/bin/agent-config 2>/dev/null | tail -1)
+AC=$(command -v agent-config || sh -c 'ls -d "$HOME"/.claude/plugins/cache/*/ml-agent-config/*/bin/agent-config \
+     "${CODEX_HOME:-$HOME/.codex}"/plugins/cache/*/ml-agent-config/*/bin/agent-config 2>/dev/null | tail -1')
 "$AC" start pr-gate --from <this-skill-dir>
 ```
 

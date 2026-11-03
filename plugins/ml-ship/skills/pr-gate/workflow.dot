@@ -5,8 +5,8 @@ digraph "pr-gate" {
   dialect = "runspore/0.2";
   start   = "facts";
 
-  facts          [label="Run the facts script on the PR the person named, else the current branch's. Read the conversation on the PR, by people and agents, and the repo's convention docs."];
-  choose_pr      [kind="await-signal", label="No PR named and none on this branch: list the open PRs and ask which one."];
+  facts          [label="Run the facts script on the PR the person named, else the current branch's, else the only open one. Read the conversation on the PR, by people and agents, and the repo's convention docs."];
+  choose_pr      [kind="await-signal", label="No PR named, none on this branch and several open: list the open PRs, and only those, and ask which one."];
   no_pr          [kind="fail", label="The repo has no open PRs. Say so."];
 
   conflict       [label="The PR cannot merge as it stands. Measure how far behind it is, and read every base commit that touched its files."];

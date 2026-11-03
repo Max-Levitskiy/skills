@@ -137,21 +137,28 @@ export function gitlab(target: string, wait: boolean): number {
     } else {
       const open = listOpen(30);
       const source = branch ? `'${branch}'` : "the current branch";
-      console.log("═══ NO MR SPECIFIED ═══");
-      if (!open.length) {
-        console.log(`No open MR has ${source} as its source, and this project`);
-        console.log("has no open MRs at all — there is nothing to gate.");
-        return 3;
+      if (!mr && open.length === 1) {
+        // One open MR is no question. A branch the person named is, if it has no MR.
+        iid = String(open[0].iid);
+        console.log(`No MR given and ${source} has none — using !${iid}, the only open MR in this project.`);
+        console.log("(Say so if you meant a different one.)\n");
+      } else {
+        console.log("═══ NO MR SPECIFIED ═══");
+        if (!open.length) {
+          console.log(`No open MR has ${source} as its source, and this project`);
+          console.log("has no open MRs at all — there is nothing to gate.");
+          return 3;
+        }
+        console.log(`No open MR has ${source} as its source.`);
+        console.log("ASK THE USER which of these open MRs to process, then re-run with that number.\n");
+        for (const m of open) {
+          console.log(`  !${m.iid}  ${m.author.username}  ${m.detailed_merge_status ?? m.merge_status ?? "?"}${m.draft ? "  [DRAFT]" : ""}`);
+          console.log(`      ${m.title}`);
+          console.log(`      branch: ${m.source_branch}   updated: ${m.updated_at}`);
+        }
+        console.log("\nOffer only these. Do not pick one yourself.");
+        return 2;
       }
-      console.log(`No open MR has ${source} as its source.`);
-      console.log("ASK THE USER which of these to process, then re-run with that number.\n");
-      for (const m of open) {
-        console.log(`  !${m.iid}  ${m.author.username}  ${m.detailed_merge_status ?? m.merge_status ?? "?"}${m.draft ? "  [DRAFT]" : ""}`);
-        console.log(`      ${m.title}`);
-        console.log(`      branch: ${m.source_branch}   updated: ${m.updated_at}`);
-      }
-      console.log("\nDo not pick one yourself.");
-      return 2;
     }
   }
 

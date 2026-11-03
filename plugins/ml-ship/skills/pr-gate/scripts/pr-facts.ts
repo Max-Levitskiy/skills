@@ -6,8 +6,8 @@
 //   pr-facts.ts gitlab [--wait] [MR]     number, URL or source branch
 //   pr-facts.ts [--wait] [PR]            forge taken from the URL, else from the origin remote
 //
-// With no PR it resolves the current branch's. Exit 2 means it could not, and printed the
-// open ones to ask the user about; exit 3 means the repo has none open.
+// With no PR it resolves the current branch's, else the repo's only open one. Exit 2 means
+// several are open, and it printed them to ask the user about; exit 3 means none are open.
 //
 // --wait polls until CI on the head commit settles, then prints the facts and exits 0
 // (green), 10 (failed or canceled), 11 (nothing ran, or CI is waiting on a person) or
