@@ -27,6 +27,7 @@ import {
   readJournal,
   readLayer,
   writeLayer,
+  isTrusted,
   ownValueAt,
   untrackedIn,
   type ConfigObject,
@@ -36,6 +37,7 @@ import {
 } from "./layers";
 import { declaredKeys, findDeclaration, isPersonalKey, listDeclarations, valueProblems, type FoundDeclaration } from "./declaration";
 import { effectiveConfig, unmetKeys, type Effective } from "./effective";
+import { layerOwner, resolveFileKey } from "./file-keys";
 import { buildPlan, guidePath } from "./actions";
 import { CredentialError, cacheVarValue, resolveCredential, type CredentialRef } from "./credentials";
 import { cacheKey } from "./secret-cache";
@@ -320,7 +322,7 @@ function resolve(name: string, parsed: ParsedArgs): Resolved {
     ...siblingProblems(name, found, loaded, located),
     ...untrustedProblems(loaded),
   ];
-  return { ...located, found, loaded, effective: effectiveConfig(found.declaration, loaded), layerProblems };
+  return { ...located, found, loaded, effective: effectiveConfig(found.declaration, loaded, found.dir), layerProblems };
 }
 
 /** One problem per untrusted file whose credential references the merge dropped. */
@@ -642,6 +644,16 @@ function write(parsed: ParsedArgs): number {
   const wrong = valueProblems(found.declaration, config, true);
   if (wrong.length > 0) {
     throw new ConfigError(`not written: ${wrong.flatMap((one) => one.problems).join("; ")}`);
+  }
+
+  // A file key is checked where it will be read, so a typo is refused here rather than at the next load.
+  const layerFile = layerPath(name, layer, repo);
+  for (const { path, entry } of declaredKeys(found.declaration)) {
+    const value = ownValueAt(config, path);
+    if (entry.file !== true || value === undefined || value === null || !layerFile) continue;
+    const trusted = isTrusted(layer, layerFile, existsSync(layerFile), repo.checkout);
+    const resolved = resolveFileKey(path, value, layerOwner({ path: layerFile, trusted }));
+    if ("problem" in resolved) throw new ConfigError(`not written: ${resolved.problem}`);
   }
 
   const result = writeLayer(

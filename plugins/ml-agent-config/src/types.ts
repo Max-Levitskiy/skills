@@ -93,6 +93,8 @@ export interface DescribedKey {
   credential: boolean;
   /** Declared `personal`: the person's own answer, which a context's team file refuses. */
   personal: boolean;
+  /** Declared `file`: its value is a path, and `value` holds it resolved to an absolute one. */
+  file: boolean;
   /** Declared `choices`: `agent-config choices` lists its values, searched here or by the script. */
   choices: { search: "local" | "server" } | null;
   /** The condition this key sits behind, and whether that condition currently holds. */

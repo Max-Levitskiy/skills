@@ -14,6 +14,8 @@ The Agent Config Standard (ACS v2) — layered settings, secret-free credential 
 
 ## What it gives you
 
+A key can also hold a whole file: declare it `"file": true` and a layer replaces the file the component ships by naming another (see *File keys* in the standard).
+
 Settings live in four fixed layers, plus two for each context that applies, deep-merged in order: `global → context (outermost first, nested inside) → repo → user-repo → local`, a context's team file before its `me` file. Objects merge key by key; arrays and scalars replace wholesale; an explicit `null` deletes an inherited key.
 
 | Layer | Path | Committed? | Holds |

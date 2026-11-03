@@ -1,0 +1,4 @@
+{
+  "//": "Example only. Copy workflow.dot beside this layer's config, change it, then write this with `agent-config write pr-gate --layer <layer>`.",
+  "workflow": "gate.dot"
+}

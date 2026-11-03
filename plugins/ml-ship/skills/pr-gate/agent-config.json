@@ -1,0 +1,17 @@
+{
+  "$schema": "../../../ml-agent-config/agent-config.schema.json",
+  "version": 2,
+  "name": "pr-gate",
+  "schema": {
+    "version": 1,
+    "keys": {
+      "workflow": {
+        "description": "The SWL-DOT graph this skill walks. Name a file beside this layer's config to replace the whole procedure",
+        "layer": "repo",
+        "default": "workflow.dot",
+        "type": "string",
+        "file": true
+      }
+    }
+  }
+}

@@ -324,6 +324,31 @@ export function gitlab(target: string, wait: boolean): number {
       console.log(`  @${n.author.username}  note ${lastSegment(n.id)}  ${n.url ?? ""}`);
       console.log(`    ${gist(n.body)}`);
     }
+
+    // What was already said: a hold, a decision or a known problem often sits only here.
+    // Open agent threads and agent comments are listed above, and resolved threads of either kind here.
+    section("CONVERSATION");
+    const said: Json[] = discussions.nodes
+      .filter((d: Json) => !d.resolvable)
+      .flatMap(userNotes)
+      .filter((n: Json) => !isAgent(n.author) && (n.body ?? "").trim());
+    const settled = threads
+      .filter((d) => d.resolved)
+      .sort((a, b) => Number(isAgent(userNotes(a)[0].author)) - Number(isAgent(userNotes(b)[0].author)));
+    if (!said.length && !settled.length) console.log("  (none)");
+    for (const n of said.slice(-15)) {
+      console.log(`  [comment] @${n.author?.username ?? "ghost"}  note ${lastSegment(n.id)}  ${n.url ?? ""}`);
+      console.log(`    ${gist(n.body)}`);
+    }
+    for (const d of settled.slice(0, 15)) {
+      const notes = userNotes(d);
+      const pos = notes[0].position;
+      const where = pos ? `${pos.filePath}:${pos.newLine ?? pos.oldLine ?? "?"}` : "(not on the diff)";
+      const kind = isAgent(notes[0].author) ? "agent" : "human";
+      console.log(`  [resolved thread, ${kind}] ${where}  @${notes[0].author?.username ?? "ghost"}  ${notes.length} notes  discussion ${lastSegment(d.id)}`);
+      console.log(`    ${gist(notes[0].body)}`);
+    }
+    if (settled.length > 15) console.log(`  … and ${settled.length - 15} more resolved threads`);
   }
 
   section("PROJECT MERGE CONVENTIONS");

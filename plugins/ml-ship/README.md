@@ -21,45 +21,33 @@ A pull request is a proposal. This turns it into a verdict backed by evidence, a
 - *"Address the review comments on this PR."*
 - *"Merge it if nothing is broken."*
 
-### What it does
+### How it works
 
-**Reads the facts first.** One read-only pass collects what changed, whether it is mergeable, which checks are *required* rather than merely present, what is failing, the repo's squash and trailer settings, and which convention docs exist. A wall of green checkmarks is not the gate: only the checks named in the branch rules block a merge.
+The procedure is a graph, [`skills/pr-gate/workflow.dot`](skills/pr-gate/workflow.dot), written in [SWL-DOT](https://runspore.com/docs#notation). The agent walks it node by node: read the facts, watch CI, verify the change, triage the reviews, classify a red check, fix, judge, merge if asked, report. Every push goes back to the facts, because a result on an old commit proves nothing about the new one. `SKILL.md` only says how to walk it, and each node's detail is in `references/<node>.md`.
 
-**Checks claims against artifacts.** A changelog line, a PR description and a bot's review comment are hypotheses written by someone with an interest in the change landing. The skill reads the published package, the migration SQL, the workflow file, and greps for the one API that changed at your call sites. When the artifact and the prose disagree, the artifact wins, and that disagreement is usually the most valuable thing in the report.
+### Replacing the graph
 
-**Triages the agent reviewers.** Codex, Copilot, CodeRabbit and friends leave findings. Each one gets checked against the code and then one outcome:
+Copy `workflow.dot` next to a config layer, change it, and point the `workflow` key at it:
 
-| Outcome | When | Action |
-| --- | --- | --- |
-| Fix | True and inside this PR's scope | Fix it, reply `Fixed in <sha>`, resolve the thread |
-| Decline | False, already handled, or against the repo's conventions | Reply with the reason and the evidence, resolve the thread |
-| Escalate | True, but outside this PR or needing a product decision | Leave it open, report it to you |
+```bash
+cp <skill>/workflow.dot .agents/config/pr-gate/gate.dot
+echo '{ "workflow": "gate.dot" }' | agent-config write pr-gate --layer repo
+```
 
-Fixes go in one push, so CI runs once. Human review threads are reported, never resolved for the reviewer.
-
-**Treats CI as a gate.** A verdict needs a settled result on the commit that was validated. A running pipeline is watched until it settles by a background subagent on a mid-tier model, which also pulls the failing logs so the main agent only has to judge them, a head commit with no CI run is reported as that and never as green, and every push starts the watch again. The gate holds on repos that enforce nothing: a failing check blocks the verdict until it is fixed or shown to fail on the base branch too.
-
-**Separates the three kinds of red.** A regression from this PR, a pre-existing or environmental failure, and a mess your own validation made are three different answers. The discriminating move is cheap: reproduce on the base branch. A failure that cannot be explained is reported as unexplained, even when a re-run went green.
-
-**Validates in a throwaway worktree**, so a changed dependency tree never lands in your checkout, and runs the repo's own gates rather than invented ones.
-
-**Merges only when asked.** "Validate this" and "is this safe?" are requests for a verdict. "Merge it" is authorization. The merge pins to the commit that was validated (`--match-head-commit`), uses the repo's merge method, and passes the trailers a release tool depends on, which the forge's squash message would otherwise eat.
+A node you keep reuses its `references/<node>.md`. A node you add is described by its `label`. A PR that changes the graph it would be judged by is walked with the default one instead.
 
 ### Requirements
 
-`git`, `bun`, and the CLI of your forge, authenticated: `gh` for GitHub, `glab` for GitLab.
+`git`, `bun`, `ml-agent-config`, and the CLI of your forge, authenticated: `gh` for GitHub, `glab` for GitLab.
 
 ### Files
 
 | Path | What is in it |
 | --- | --- |
-| `skills/pr-gate/scripts/pr-facts.ts` | The read-only fact pass, with a `github` and a `gitlab` subcommand: PR, mergeability, required vs advisory checks, failures, review threads with their IDs, merge conventions. `--wait` watches CI to a settled result first |
-| `skills/pr-gate/scripts/lib/` | The two forge implementations and what they share |
-| `skills/pr-gate/references/verifying-changes.md` | Blast-radius technique per change class: dependency bumps, migrations, CI/infra, app code |
-| `skills/pr-gate/references/diagnosing-ci.md` | Real logs out of a failed run, classifying failures, reproducing locally, fixing forward on a PR branch |
-| `skills/pr-gate/references/review-comments.md` | Reading, replying to, resolving and hiding review comments by ID |
-| `skills/pr-gate/references/merge-mechanics.md` | Required vs advisory checks, squash and trailer behaviour, race safety, auto-merge, stale branches |
-| `skills/pr-gate/references/gitlab.md` | The GitLab side: term mapping, what misleads in the facts, and the `glab` commands for CI, review threads and merging |
+| `skills/pr-gate/workflow.dot` | The default graph |
+| `skills/pr-gate/references/<node>.md` | What a node needs beyond its label |
+| `skills/pr-gate/references/gitlab.md` | The GitLab side: term mapping, what misleads in the facts, and the `glab` commands |
+| `skills/pr-gate/scripts/pr-facts.ts` | The read-only fact pass, with `--wait` to watch CI to a settled result |
 
 ## License
 
