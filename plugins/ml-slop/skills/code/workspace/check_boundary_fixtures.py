@@ -17,7 +17,11 @@ args = parser.parse_args()
 fixtures = args.plugin_root / "skills/code/workspace/fixtures"
 skill = (args.plugin_root / "skills/code/SKILL.md").read_text(encoding="utf-8")
 names = ["dense_but_wrong"] if args.existing_only else [
-    "dense_but_wrong", "stale_docstring", "useful_docstring"
+    "dense_but_wrong",
+    "stale_docstring",
+    "useful_docstring",
+    "import_streak",
+    "necessary_imports",
 ]
 
 
@@ -82,6 +86,41 @@ class BoundaryFixtures(unittest.TestCase):
         negative = expectation("useful_docstring")["density_expectation"]
         self.assertEqual(negative["expected_findings"], [])
         self.assertIn(ast.get_docstring(useful), negative["preserve_spans"])
+
+    @unittest.skipIf(args.existing_only, "New paired controls are not present at the baseline")
+    def test_paired_import_controls(self):
+        streak_tree = ast.parse((fixtures / "import_streak.py").read_text(encoding="utf-8"))
+        streak_imports = [
+            node for node in streak_tree.body if isinstance(node, (ast.Import, ast.ImportFrom))
+        ]
+        self.assertEqual(len(streak_imports), 4)
+        self.assertEqual(len({ast.dump(node, include_attributes=False) for node in streak_imports}), 1)
+
+        positive = expectation("import_streak")["density_expectation"]["expected_findings"]
+        self.assertEqual(
+            [(f["method"], f["pattern"], f["severity"]) for f in positive],
+            [("boilerplate-template", "import-streak", "medium")],
+        )
+        self.assertEqual(positive[0]["anchor"], "from pathlib import PurePath")
+
+        necessary_tree = ast.parse((fixtures / "necessary_imports.py").read_text(encoding="utf-8"))
+        necessary_imports = [
+            node for node in necessary_tree.body if isinstance(node, (ast.Import, ast.ImportFrom))
+        ]
+        self.assertEqual(len(necessary_imports), 3)
+        imported_names = {
+            alias.asname or alias.name for node in necessary_imports for alias in node.names
+        }
+        used_names = {node.id for node in ast.walk(necessary_tree) if isinstance(node, ast.Name)}
+        self.assertEqual(imported_names, {"json", "Counter", "PurePath"})
+        self.assertTrue(imported_names <= used_names)
+
+        negative = expectation("necessary_imports")["density_expectation"]
+        self.assertEqual(negative["expected_findings"], [])
+        self.assertEqual(
+            set(negative["preserve_spans"]),
+            {"import json", "from collections import Counter", "from pathlib import PurePath"},
+        )
 
 
 if __name__ == "__main__":

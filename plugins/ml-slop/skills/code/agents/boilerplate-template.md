@@ -13,6 +13,9 @@ template openings/closings in AI prose.
   domain is known (`data`, `result`, `item`, `helper`, `process_data`) used
   pervasively, not incidentally
 - `ceremony-imports` (low): imported-but-unused modules from a template
+- `import-streak` (medium): a consecutive run of the same valid import that adds
+  no new binding and crowds out the intended body; do not flag a group of
+  distinct imports that are each used
 - `empty-sections` (low): commented-out section headers or region markers with
   nothing meaningful inside
 
