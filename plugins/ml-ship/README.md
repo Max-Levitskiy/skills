@@ -25,6 +25,10 @@ A pull request is a proposal. This turns it into a verdict backed by evidence, a
 
 The procedure is a graph, [`skills/pr-gate/workflow.dot`](skills/pr-gate/workflow.dot), written in [SWL-DOT](https://runspore.com/docs#notation). The agent walks it node by node: read the facts, watch CI, verify the change, triage the reviews, classify a red check, fix, judge, merge if asked, report. Every push goes back to the facts, because a result on an old commit proves nothing about the new one. `SKILL.md` only says how to walk it, and each node's detail is in `references/<node>.md`.
 
+### How it relates to Spore
+
+`pr-gate` borrows Spore's notation, not its execution model. The agent is the runtime, so Spore never runs this graph, and `spore validate` needs a stub `settings.json` to check it. Two rules exist only in `SKILL.md`: a node's `label` is its instruction, where Spore treats labels as presentation, and a node's detail lives in `references/<node>.md`, where Spore would need declared assets and a binding. An agent reads prose, so this keeps the procedure in one short file. Running the graph under Spore would need real actions and bindings first.
+
 ### Replacing the graph
 
 Copy `workflow.dot` next to a config layer, change it, and point the `workflow` key at it:
@@ -34,7 +38,9 @@ cp <skill>/workflow.dot .agents/config/pr-gate/gate.dot
 echo '{ "workflow": "gate.dot" }' | agent-config write pr-gate --layer repo
 ```
 
-A node you keep reuses its `references/<node>.md`. A node you add is described by its `label`. A PR that changes the graph it would be judged by is walked with the default one instead.
+A node you keep reuses the skill's `references/<node>.md`, unless a `references/<node>.md` beside your graph replaces it. A node you add is described by its `label`, or by a file there. A PR that changes the graph it would be judged by, or those files, is walked with the defaults instead.
+
+The `context` layer applies this to every repo of one organisation, from `~/.agents/contexts/<context>/pr-gate/`.
 
 ### Requirements
 

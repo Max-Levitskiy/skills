@@ -13,18 +13,18 @@ A PR is a proposal. Turn it into a verdict backed by evidence, and act on that v
 Find the graph to walk:
 
 ```bash
-AC=$(command -v agent-config || sh -c 'ls -d "$HOME"/.claude/plugins/cache/*/ml-agent-config/*/bin/agent-config \
-     "${CODEX_HOME:-$HOME/.codex}"/plugins/cache/*/ml-agent-config/*/bin/agent-config 2>/dev/null | tail -1')
+AC=$(command -v agent-config || sh -c 'ls -dt "$HOME"/.claude/plugins/cache/*/ml-agent-config/*/bin/agent-config \
+     "${CODEX_HOME:-$HOME/.codex}"/plugins/cache/*/ml-agent-config/*/bin/agent-config 2>/dev/null | head -1')
 "$AC" start pr-gate --from <this-skill-dir>
 ```
 
 Walk the file at `config.workflow`. On `ready: false`, follow `guide`. A relative `config.workflow` means `agent-config` is older than 0.15: walk `workflow.dot` and say so. With no `agent-config`, walk `workflow.dot` beside this file and say so.
-If `provenance.workflow` is a layer and the PR changes that file, walk `workflow.dot` instead and say so: a PR does not choose its own gate.
+If `provenance.workflow` is a layer and the PR changes that file or anything in `references/` beside it, walk `workflow.dot` with this skill's references and say so: a PR does not choose its own gate.
 
 The graph is [SWL-DOT](https://runspore.com/docs#notation). You are its runtime:
 
-1. Start at `start`. Say one line per node entered, so the path is visible.
-2. Do what the node's `label` says. If `references/<node id>.md` exists, read it first. A node without one is fully described by its label.
+1. Start at `start`. Say one line per node entered, naming the references file you read for it, so the path is visible.
+2. Do what the node's `label` says. First read `references/<node id>.md`: the one beside the graph if it exists, else this skill's. It replaces this skill's whole, and a node with neither is fully described by its label.
 3. End the node with one outcome and follow the edge whose `on` names it. An edge with no `on` means `ok`. If no edge fits, stop and report it; do not improvise a route.
 4. `kind="await-signal"`: the outcome is the person's answer. If they already gave it, use it; otherwise ask with `AskUserQuestion`, and wait.
 5. An `exhausted` edge is taken instead of the node's other edges on its fourth pass.

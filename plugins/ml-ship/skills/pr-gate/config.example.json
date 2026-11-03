@@ -1,4 +1,4 @@
 {
-  "//": "Example only. Copy workflow.dot beside this layer's config, change it, then write this with `agent-config write pr-gate --layer <layer>`.",
+  "//": "Example only. Copy workflow.dot beside this layer's config, change it, then write this with `agent-config write pr-gate --layer <layer>`. To change one node's instructions, put references/<node id>.md beside the copy.",
   "workflow": "gate.dot"
 }

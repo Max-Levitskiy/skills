@@ -6,7 +6,7 @@
     "version": 1,
     "keys": {
       "workflow": {
-        "description": "The SWL-DOT graph this skill walks. Name a file beside this layer's config to replace the whole procedure",
+        "description": "The SWL-DOT graph this skill walks. Name a file beside this layer's config to replace the whole procedure. A references/<node id>.md beside that file replaces that node's instructions",
         "layer": "repo",
         "default": "workflow.dot",
         "type": "string",
