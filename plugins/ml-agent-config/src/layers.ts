@@ -241,7 +241,7 @@ export function untrackedIn(path: string, checkout: string): boolean {
  * come from other people. `config.local.json` is the user's own only while git does not track it:
  * a tracked one arrived with the checkout, like the repo layer.
  */
-function isTrusted(layer: Layer, path: string | null, exists: boolean, checkout: string | null): boolean {
+export function isTrusted(layer: Layer, path: string | null, exists: boolean, checkout: string | null): boolean {
   const context = contextOf(layer);
   if (context) return context.me;
   if (layer === "repo") return false;

@@ -1,6 +1,6 @@
 # Agent Config Standard (ACS v2)
 
-Since 2.1: the [Contexts](#contexts) section and the [trust rule](#trust) for credential references. Component identifiers come in a later revision.
+Since 2.2: [file keys](#file-keys). Since 2.1: the [Contexts](#contexts) section and the [trust rule](#trust) for credential references. Component identifiers come in a later revision.
 
 How a skill or subagent stores per-user and per-project settings, and how it gets hold of secrets without ever committing one.
 
@@ -299,6 +299,30 @@ Relative paths resolve from the repo root; `~` expands to home. Supporting both 
 **Defaults** — a `defaults` object for tunables like page size or lookback window, so the user can change behaviour without passing flags every time.
 
 **Say what a key holds.** A key holding more than text — a number, a fixed set of values, an object, a map of named entries — declares it as JSON Schema in its key entry (`type`, `enum`, `properties`, `additionalProperties`, `items`; shared shapes in `schema.$defs`). `write` then refuses a value no consumer could read, and the `/agent-config` pane draws a field for each part instead of a line of JSON. The keywords are listed in `plugins/ml-agent-config/docs/working-actions.md`, under "What a key holds".
+
+### File keys
+
+Some settings are a whole file, not a value: a workflow graph, a prompt, a template. Config does not inline it. A key declared `"file": true` holds a path, and the component ships its default beside the declaration:
+
+```json
+"workflow": {
+  "description": "The graph this skill walks",
+  "layer": "repo",
+  "default": "workflow.dot",
+  "type": "string",
+  "file": true
+}
+```
+
+A layer replaces it by naming another file, kept beside that layer's config, so `.agents/config/pr-gate/config.json` holding `{ "workflow": "gate.dot" }` means `.agents/config/pr-gate/gate.dot`.
+
+- **A relative path resolves against the file that set it**: the layer's folder, or the declaration's folder for a default. Any other base would change meaning between layers, and the global layer has no repo root. `~/` and absolute paths work too.
+- **A layer someone else wrote stays in its own folder.** The repo layer, a context's team file and a tracked `config.local.json` may only name a file inside their folder, after following symlinks. Otherwise a committed config could point a component at `~/.ssh/id_rsa`.
+- **`start`, `load` and `describe` answer the absolute path.** The file replaces whole; its contents are never merged, and the CLI never reads them. The component reads the file.
+- **A path that does not resolve means not configured**, so `load` exits 2 and `start` plans `onboard`, never a silent fallback to the default. A component with a file key ships `actions/onboard.md` saying what to do. `write` refuses such a path, so put the file there first.
+- **The contents are as trusted as their layer.** A file from the repo layer came from whoever can commit there. A component that follows the file as instructions treats it like the repo's `AGENTS.md`.
+
+`null` in a layer removes an inherited path, as with any key, and the default applies again.
 
 ## Declaring and reading config
 

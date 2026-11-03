@@ -1,17 +1,6 @@
 # GitLab
 
-The rest of this skill shows `gh`. This file is the GitLab side of the same
-gate: the `glab` command for each step, and the places where GitLab's model
-differs enough to change a verdict.
-
-- [How the terms map](#how-the-terms-map)
-- [What misleads in the facts output](#what-misleads-in-the-facts-output)
-- [CI: watch, read, classify](#ci-watch-read-classify)
-- [Fixing forward, and forks](#fixing-forward-and-forks)
-- [Review threads](#review-threads)
-- [Merging](#merging)
-
-Every command below takes the project from the checkout:
+The `glab` side of each node, and where GitLab's model changes a verdict. Commands take the project from the checkout:
 
 ```bash
 P="projects/:fullpath"          # glab fills :fullpath from the checkout's remote
@@ -20,7 +9,6 @@ P="projects/:fullpath"          # glab fills :fullpath from the checkout's remot
 #   add  -R <project URL>  to each glab mr call: without it glab looks the IID up in the checkout's project
 ```
 
----
 
 ## How the terms map
 
@@ -36,7 +24,6 @@ P="projects/:fullpath"          # glab fills :fullpath from the checkout's remot
 | Branch rules | Project merge settings, plus approval rules on paid tiers |
 | `--match-head-commit` | `--sha` |
 
----
 
 ## What misleads in the facts output
 
@@ -65,7 +52,6 @@ P="projects/:fullpath"          # glab fills :fullpath from the checkout's remot
   runs on an ordinary user account shows as `human`. Name such accounts:
   `AGENT_USERS=review-bot,ci-reviewer bun pr-facts.ts <MR>`.
 
----
 
 ## CI: watch, read, classify
 
@@ -118,14 +104,13 @@ glab api "$P/pipelines/<pipeline-id>/jobs?per_page=100"
 job with no run on the target has its base rate in other MRs' pipelines:
 `glab api "$P/pipelines?source=merge_request_event&per_page=20"`.
 
-**Re-run** a known-flaky job, under the same honesty rule as on GitHub:
+**Re-run** a known-flaky job:
 
 ```bash
 glab api -X POST "$P/jobs/<job-id>/retry"
 glab api -X POST "$P/pipelines/<pipeline-id>/retry"       # every failed job
 ```
 
----
 
 ## Fixing forward, and forks
 
@@ -144,7 +129,6 @@ Fork pipelines run in the fork, without the parent project's CI variables or
 protected runners. A job that fails there for a missing variable is working as
 designed.
 
----
 
 ## Review threads
 
@@ -182,11 +166,8 @@ With `thread resolution required to merge: true`, every open thread blocks
 the merge, human ones included. Human threads stay with their reviewer, so
 report them as the blocker.
 
----
 
 ## Merging
-
-The authorization rule is the same as on GitHub. The commands:
 
 ```bash
 SHA=<head sha from the facts output, captured before validating>

@@ -47,6 +47,11 @@ as JSON Schema in each key's entry, the shape its value takes. `write` refuses a
 it, and the settings pane draws a field for each part of it.
 _Avoid_: Validation, config spec
 
+**File key**:
+A declared key whose value is a path to a file, so config can replace a whole file the component
+ships. A relative path resolves against the file that set it.
+_Avoid_: Include, file reference
+
 ### Repositories
 
 **Repo root**:

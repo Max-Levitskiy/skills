@@ -47,6 +47,8 @@ export type Setting = {
   credential: boolean
   /** Declared `personal`: the person's own answer, which a context's team level refuses. */
   personal: boolean
+  /** Declared `file`: its value is a path, and `value` holds it resolved to an absolute one. */
+  file: boolean
   required: boolean
   /** What the key holds, as JSON Schema: a key holding an object is edited a field at a time. */
   schema: ValueSchema | null

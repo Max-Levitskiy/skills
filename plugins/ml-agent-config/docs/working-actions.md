@@ -272,6 +272,8 @@ git checkout as well as from an install, so the script runs the same in both.
 
 ## What a key holds
 
+A key declared `"file": true` holds a path to a file, which `start` and `load` answer absolute. The rules are in the standard, under *File keys*.
+
 A key entry in the declaration is a JSON Schema: `description` and `default` already are schema
 words, and a key may add `type`, `enum`, `const`, `properties`, `additionalProperties`, `items`,
 `required`, `minimum`/`maximum`, `minLength`/`maxLength`, `pattern`, `minItems`/`maxItems` and
