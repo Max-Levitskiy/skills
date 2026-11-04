@@ -58,16 +58,9 @@ function ciState(pr: string): Ci {
 }
 
 /** The open PRs as printable lines, or null when they could not be listed. */
-function listOpen(repo: string): string[] | null {
-  const open: Json[] | null =
-    gh("pr", "list", "--repo", repo, "--state", "open", "--limit", "30", "--json",
-      "number,title,author,isDraft,updatedAt,headRefName,additions,deletions,changedFiles");
-  if (!open) return null;
-  return open.flatMap((p) => [
-    `  #${p.number}  ${p.author.login}${p.author.is_bot ? " (bot)" : ""}  +${p.additions}/-${p.deletions} ${p.changedFiles}f${p.isDraft ? "  [DRAFT]" : ""}`,
-    `      ${p.title}`,
-    `      branch: ${p.headRefName}   updated: ${p.updatedAt}`,
-  ]);
+function listOpen(repo: string): Json[] | null {
+  return gh("pr", "list", "--repo", repo, "--state", "open", "--limit", "30", "--json",
+    "number,title,author,isDraft,updatedAt,headRefName,additions,deletions,changedFiles");
 }
 
 function printChecks(pr: string) {
@@ -217,8 +210,8 @@ export function github(target: string, wait: boolean): number {
   }
 
   // Resolve which PR to work on. Everything downstream is wasted effort if it runs
-  // against the wrong one, so an unresolved PR is a question for the user — never
-  // a guess, and never "the first open one".
+  // against the wrong one, so several open PRs are a question for the user. One open
+  // PR is no question, and a merged or closed one is never offered.
   let pr = target;
   if (!pr) {
     // `gh pr view` also answers with the branch's merged or closed PR.
@@ -233,17 +226,27 @@ export function github(target: string, wait: boolean): number {
         console.error(`Could not list the open PRs of ${cwdRepo}. Pass a PR number or URL.`);
         return 1;
       }
-      console.log("═══ NO PR SPECIFIED ═══");
-      if (!open.length) {
-        console.log("Nothing was passed, the current branch has no open PR, and this repo");
-        console.log("has no open PRs at all — there is nothing to gate.");
-        return 3;
+      if (open.length === 1) {
+        pr = String(open[0].number);
+        console.log(`No PR given and the current branch has none — using #${pr}, the only open PR in this repo.`);
+        console.log("(Say so if you meant a different one.)\n");
+      } else {
+        console.log("═══ NO PR SPECIFIED ═══");
+        if (!open.length) {
+          console.log("Nothing was passed, the current branch has no open PR, and this repo");
+          console.log("has no open PRs at all — there is nothing to gate.");
+          return 3;
+        }
+        console.log("Nothing was passed and the current branch has no open PR.");
+        console.log("ASK THE USER which of these open PRs to process, then re-run with that number.\n");
+        for (const p of open) {
+          console.log(`  #${p.number}  ${p.author.login}${p.author.is_bot ? " (bot)" : ""}  +${p.additions}/-${p.deletions} ${p.changedFiles}f${p.isDraft ? "  [DRAFT]" : ""}`);
+          console.log(`      ${p.title}`);
+          console.log(`      branch: ${p.headRefName}   updated: ${p.updatedAt}`);
+        }
+        console.log("\nOffer only these. Do not pick one yourself.");
+        return 2;
       }
-      console.log("Nothing was passed and the current branch has no open PR.");
-      console.log("ASK THE USER which of these to process, then re-run with that number.\n");
-      console.log(open.join("\n"));
-      console.log("\nDo not pick one yourself.");
-      return 2;
     }
   }
 

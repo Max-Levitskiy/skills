@@ -12,6 +12,6 @@ On a PR already merged or closed, readiness is moot: answer the question asked a
 - Every review finding has an outcome, and no open thread blocks the merge (`thread resolution required to merge`).
 - Nothing in the change is a real regression.
 
-**`merge`** needs ready *and* a request: "merge it", "land it", "merge if it's clean". "Validate this", "is this safe?" and "why is CI red?" ask for a verdict. Permission does not carry to another PR. A condition that failed ("merge if nothing breaks", and something does) is `verdict`.
+**`merge`** needs ready *and* a request: "merge it", "land it", "merge if it's clean". "Validate this", "is this safe?" and "why is CI red?" ask for a verdict. Permission does not carry to another PR, and a PR the script chose because none was named needs the person to confirm it before a merge. A condition that failed ("merge if nothing breaks", and something does) is `verdict`.
 
 If merging is asked and only CI is left, take `merge`: auto-merge is the watch. Everything else is `verdict`.

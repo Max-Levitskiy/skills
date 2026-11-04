@@ -119,7 +119,7 @@
       "name": "ml-ship",
       "source": "./plugins/ml-ship",
       "description": "Get a change landed. pr-gate validates a GitHub pull request or GitLab merge request end to end: what it actually changes and who it breaks, whether CI has settled and why it is red, what the agent reviewers found and whether each finding is real, whether it is genuinely ready, and the merge itself when you ask for it.",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "license": "MIT",
       "author": {
         "name": "Max Levitskiy"
