@@ -21,7 +21,7 @@ If a `<claude-spore-doctor>` block is above this skill, its JSON is the check's 
 
 Otherwise, take each problem in order:
 
-- `plugin.reload`: reply with its `message` and stop.
+- A problem whose `fix` is null (`plugin.reload`, or a `spore.format` newer than the plugin reads): reply with its `message` and stop.
 - Any other: show its `message`, ask "Run `<fix>` now?", and end the turn. Run the fix only on a yes, show what it printed, then run `claude-spore doctor --json` again and go on only when `ok` is true. A no, or a fix that fails, stops the skill. It installs nothing on its own.
 
 If `claude-spore` itself does not run:
