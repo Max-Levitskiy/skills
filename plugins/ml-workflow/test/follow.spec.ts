@@ -333,7 +333,7 @@ describe.skipIf(!follows())(`following a run under a real spore ${version ?? ""}
     const rows = spore("list", "--unfinished", "--json").json;
     expect(rows.db).toBe(db);
     expect(rows.runs.map((row: { runId: string }) => row.runId)).toEqual([second, first]);
-    expect(rows.runs[0]).toMatchObject({ workflow: "decide", nodeId: null, needs: "working", startKey: "decide-00000010", since: expect.any(String) });
+    expect(rows.runs[0]).toMatchObject({ workflow: "decide", nodeId: null, needs: "working", startKey: "decide-00000010", updatedAtMs: expect.any(String) });
 
     const several = spore("continue", "--json");
     expect(several.exitCode).toBe(2);
@@ -431,7 +431,7 @@ describe.skipIf(!follows())(`following a run under a real spore ${version ?? ""}
     expect(held.json).toMatchObject({
       needs: "held",
       position: { nodeId: "implement" },
-      step: { kind: "command", state: "held", waiting: "person", message: "implement waits for you in its pane", holder: { herdrAgent: expect.stringMatching(/^sp-implement-/) } },
+      step: { kind: "command", state: "held", waits: "implement waits for you in its pane", holder: { herdrAgent: expect.stringMatching(/^sp-implement-/) } },
     });
     const { pid } = held.json.step.holder;
     const [pane] = Object.keys(herdr.state().panes);
@@ -447,7 +447,7 @@ describe.skipIf(!follows())(`following a run under a real spore ${version ?? ""}
     herdr.everyStatus("blocked");
     const { runId } = start("watched", "watched-00000013", {}).json;
     const held = follow(runId);
-    expect(held.json).toMatchObject({ needs: "held", step: { waiting: "person" } });
+    expect(held.json).toMatchObject({ needs: "held", step: { waits: "implement waits for you in its pane" } });
     const { herdrAgent } = held.json.step.holder;
 
     // What the skill runs next, in the background.

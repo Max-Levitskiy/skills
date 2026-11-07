@@ -5,7 +5,7 @@ import { homedir } from "node:os";
 import { dirname, join, relative, sep } from "node:path";
 
 import { VERSION } from "./cli.ts";
-import { SPORE_CONTRACTS, SPORE_MINIMUM, inRange, isOlder } from "./version.ts";
+import { SPORE_CONTRACTS, SPORE_FORMAT, SPORE_MINIMUM, formatMisfit, inRange, isOlder } from "./version.ts";
 
 export type Problem = { code: string; message: string; fix: string | null };
 export type Spore = { path: string; version: string };
@@ -54,13 +54,17 @@ export function checkSpore(): { spore: Spore | null; problems: Problem[] } {
   const path = where.found;
   const found = misfit(path);
   if (!found.problem) return { spore: found.spore, problems: [] };
+  // A newer format is the plugin's to catch up with, not spore's: no spore command fixes it.
+  if (found.problem.plugin) {
+    return { spore: found.spore, problems: [{ code: found.problem.code, message: `${found.problem.text}.`, fix: null }] };
+  }
   const how = where.writable ? "Update it with" : `${where.target} is not writable here; update it with`;
   const message = `ml-workflow needs spore ${SPORE_MINIMUM} or later; ${found.problem.text}. ${how}: ${where.fix}`;
   return { spore: found.spore, problems: [{ code: found.problem.code, message, fix: where.fix }] };
 }
 
 // What in `spore capabilities --json` does not fit, if anything.
-function misfit(path: string): { spore: Spore | null; problem?: { code: string; text: string } } {
+function misfit(path: string): { spore: Spore | null; problem?: { code: string; text: string; plugin?: boolean } } {
   let answer: unknown;
   try {
     const child = Bun.spawnSync([path, "capabilities", "--json"], { timeout: 5000, stdin: "ignore" });
@@ -76,6 +80,12 @@ function misfit(path: string): { spore: Spore | null; problem?: { code: string; 
   }
   const spore = { path, version };
   if (isOlder(version, SPORE_MINIMUM)) return { spore, problem: { code: "spore.version", text: `${path} is ${version}` } };
+  const format = formatMisfit(answer.format);
+  if (format?.update === "ml-workflow") return { spore, problem: { code: "spore.format", text: `${path} (${version}): ${format.text}`, plugin: true } };
+  if (format) {
+    const named = typeof answer.format === "string" ? answer.format : "no format";
+    return { spore, problem: { code: "spore.format", text: `${path} (${version}) answers in ${named} where ${SPORE_FORMAT} is needed` } };
+  }
 
   const contracts = isObject(answer.contracts) ? answer.contracts : {};
   const wrong = Object.entries(SPORE_CONTRACTS).flatMap(([name, need]) => {

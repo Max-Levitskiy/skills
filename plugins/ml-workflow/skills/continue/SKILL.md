@@ -21,7 +21,7 @@ Run `claude-spore doctor --json`. It prints `{"ok", "spore", "problems", "launch
 
 Otherwise, take each problem in order:
 
-- `plugin.reload`: reply with its `message` and stop.
+- A problem whose `fix` is null (`plugin.reload`, or a `spore.format` newer than the plugin reads): reply with its `message` and stop.
 - Any other: show its `message`, ask "Run `<fix>` now?", and end the turn. Run the fix only on a yes, show what it printed, then run `claude-spore doctor --json` again and go on only when `ok` is true. A no, or a fix that fails, stops the skill. It installs nothing on its own.
 
 If `claude-spore` itself does not run:
@@ -34,7 +34,7 @@ If `claude-spore` itself does not run:
 
 With a run ID given, run `spore status <runId> --json` for its database, `db`. A `run.not-found` error means the run is not in this database: say so, naming the database spore read (`$RUNSPORE_DB`, else the nearest `.spore/runspore.db` at or above the current folder, else `./runspore.db`), and stop.
 
-Otherwise run `spore list --unfinished --json`. It prints `{"db", "runs"}`, the unfinished runs newest first, each with `runId`, `workflow`, `nodeId`, `needs`, `since` (when it last changed, in milliseconds) and `startKey`. With no run, say there is no unfinished run in that database (`db`) and stop. With one, take it. With several, ask which, one option per run: its ID, workflow, node, what it needs and how long ago it changed; then end the turn.
+Otherwise run `spore list --unfinished --json`. It prints `{"db", "runs"}`, the unfinished runs newest first, each with `runId`, `workflow`, `nodeId`, `needs`, `updatedAtMs` (when it last changed, in milliseconds) and `startKey`. With no run, say there is no unfinished run in that database (`db`) and stop. With one, take it. With several, ask which, one option per run: its ID, workflow, node, what it needs and how long ago it changed; then end the turn.
 
 ## 4. Follow it
 
@@ -88,7 +88,7 @@ Run the one the person picks, then follow again.
 **An async step**, by `needs`:
 
 - `external-ready`: a step waits for its actor (`step.actor`) to claim it. Say which step (`position.nodeId`) and give the claim line, `spore step claim <runId> --actor <step.actor> --db <db>`. For the actor `person`, the work is the person's own: claiming prints its instructions and the commands that report it. Run nothing; say that `/ml-workflow:continue <runId>` follows the run again once the step is reported.
-- `held`, with `step.waiting` `person`: say `step.message`, for an interactive Claude step "implement waits for you in its pane", and name the pane's herdr agent, `step.holder.herdrAgent`, when the holder has one. Then follow again at once, without waiting for the person, and end the turn with that line: the watch goes on watching the pane and does not say this again for the same wait, so the follow comes back when the answer is in, or when the pane waits for the person again. `spore step abandon <runId> --db <db>` frees the step, and the step's effect decides what happens next; run it only when the person asks.
+- `held`, with `step.waits`: say `step.waits`, for an interactive Claude step "implement waits for you in its pane", and name the pane's herdr agent, `step.holder.herdrAgent`, when the holder has one. Then follow again at once, without waiting for the person, and end the turn with that line: the watch goes on watching the pane and does not say this again for the same wait, so the follow comes back when the answer is in, or when the pane waits for the person again. `spore step abandon <runId> --db <db>` frees the step, and the step's effect decides what happens next; run it only when the person asks.
 - `capability-missing`: say which step, and `step.missing`: what this `spore` lacks and what to restore. Run nothing.
 - `held` otherwise: say who holds the step (`step.actor`, `step.holder`) and until when (`step.deadlineMs`), and that `spore step abandon <runId>` frees it. Run nothing.
 

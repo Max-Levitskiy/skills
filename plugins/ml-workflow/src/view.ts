@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { dataDir } from "./doctor.ts";
 import { around, CELLS, display, dots, layout, picture, plainText, pngSize, tree, writeWhole, type Arrow, type Cells, type Fold, type Graph } from "./drawing.ts";
 import { duration } from "./unfinished.ts";
+import { formatMisfit } from "./version.ts";
 
 // Each spore call is cut off here: the mod polls once a second.
 const LIMIT_MS = 4000;
@@ -409,6 +410,9 @@ async function readStatus(runId: string, db: string | undefined): Promise<Status
   try {
     answer = JSON.parse(ran.stdout);
   } catch {}
+  // Fields move between formats: one the plugin does not read is said, not guessed at.
+  const misfit = answer && formatMisfit(answer.format);
+  if (misfit) return { runId, db: null, error: { code: "spore.format", message: misfit.text } };
   if (ran.code === 0 && answer?.runId) return answer as Status;
   const error = answer?.error;
   if (error?.code) return { runId, db: null, error: { code: String(error.code), message: String(error.message ?? "") } };
@@ -425,8 +429,9 @@ async function decided(status: Status): Promise<boolean> {
   if (!status.waiting || !status.db) return false;
   const ran = await spore(["list", "--unfinished", "--json", "--db", status.db]);
   try {
-    const row = JSON.parse(ran.stdout).runs?.find((r: { runId?: string }) => r.runId === status.runId);
-    return ran.code === 0 && typeof row?.needs === "string" && row.needs !== "signal";
+    const listed = JSON.parse(ran.stdout);
+    const row = listed.runs?.find((r: { runId?: string }) => r.runId === status.runId);
+    return ran.code === 0 && !formatMisfit(listed.format) && typeof row?.needs === "string" && row.needs !== "signal";
   } catch {
     return false;
   }

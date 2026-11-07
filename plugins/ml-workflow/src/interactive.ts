@@ -429,7 +429,7 @@ export async function watch(): Promise<number> {
       // has not started on its message yet shows idle too, but not for long.
       const stalled = quiet && (seen === "busy" || undelivered || Date.now() - quietSince! >= idleWait());
       if (seen !== "told" && (agent.status === "blocked" || stalled)) {
-        console.log(JSON.stringify({ needs: "person", message: `${node} waits for you in its pane` }));
+        console.log(JSON.stringify({ waits: `${node} waits for you in its pane` }));
         see("told");
       } else if (agent.status === "working") {
         see("busy");

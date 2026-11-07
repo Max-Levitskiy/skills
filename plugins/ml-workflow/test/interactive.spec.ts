@@ -314,7 +314,7 @@ function watching(handle: string, options: InteractiveOptions = {}) {
 }
 
 describe("watch", () => {
-  const NEEDS = { needs: "person", message: "implement waits for you in its pane" };
+  const NEEDS = { waits: "implement waits for you in its pane" };
 
   test("prints the result once the pane is quiet and the file exists, not while Claude works", async () => {
     const { result, stdout } = start();

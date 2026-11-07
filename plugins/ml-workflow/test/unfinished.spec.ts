@@ -41,11 +41,11 @@ cat "$file"
 afterEach(() => remove(dir));
 
 function listed(runs: unknown[]) {
-  writeFileSync(join(dir, "list.json"), JSON.stringify({ format: "runspore.cli/0.2", db: DB, runs }));
+  writeFileSync(join(dir, "list.json"), JSON.stringify({ format: "runspore.cli/0.3", db: DB, runs }));
 }
 
 function status(runId: string, fields: Record<string, unknown>) {
-  writeFileSync(join(dir, `status-${runId}.json`), JSON.stringify({ format: "runspore.cli/0.2", runId, db: DB, ...fields }));
+  writeFileSync(join(dir, `status-${runId}.json`), JSON.stringify({ format: "runspore.cli/0.3", runId, db: DB, ...fields }));
 }
 
 function unfinished(args: string[] = ["--json"], env: Record<string, string> = {}) {
@@ -83,7 +83,7 @@ const running = (fields: Record<string, unknown>) => ({
 });
 
 test("a run whose follower closed with its session: where it is, the attempt, and what picks it up", () => {
-  listed([row("run_a", { startKey: "coding-loop-0238a2a3", nodeId: "implement", needs: "working", since: ago(14 * MIN) })]);
+  listed([row("run_a", { startKey: "coding-loop-0238a2a3", nodeId: "implement", needs: "working", updatedAtMs: ago(14 * MIN) })]);
   status("run_a", { running: running({ attempt: "2", maxAttempts: "3", state: "queued" }) });
   const { exitCode, report } = unfinished();
   expect(exitCode).toBe(0);
@@ -93,13 +93,13 @@ test("a run whose follower closed with its session: where it is, the attempt, an
 
 test("one line per run, those that need the person first, each in its own words, then one hint", () => {
   listed([
-    row("run_b", { startKey: "coding-loop-11111111", nodeId: "implement", needs: "working", since: ago(3 * MIN) }),
-    row("run_c", { startKey: "coding-loop-22222222", nodeId: "approve", needs: "signal", since: ago(2 * 60 * MIN) }),
-    row("run_d", { startKey: "coding-loop-33333333", nodeId: "test", needs: "stuck", since: ago(40_000) }),
-    row("run_e", { startKey: "coding-loop-44444444", nodeId: "implement", needs: "held", since: ago(5 * MIN) }),
-    row("run_f", { startKey: "review-55555555", nodeId: "review", needs: "external-ready", actor: "person", since: ago(3 * 24 * 60 * MIN) }),
-    row("run_g", { startKey: "coding-loop-66666666", nodeId: "test", needs: "quarantined", since: ago(MIN) }),
-    row("run_h", { nodeId: null, needs: "working", since: ago(MIN) }),
+    row("run_b", { startKey: "coding-loop-11111111", nodeId: "implement", needs: "working", updatedAtMs: ago(3 * MIN) }),
+    row("run_c", { startKey: "coding-loop-22222222", nodeId: "approve", needs: "signal", updatedAtMs: ago(2 * 60 * MIN) }),
+    row("run_d", { startKey: "coding-loop-33333333", nodeId: "test", needs: "stuck", updatedAtMs: ago(40_000) }),
+    row("run_e", { startKey: "coding-loop-44444444", nodeId: "implement", needs: "held", updatedAtMs: ago(5 * MIN) }),
+    row("run_f", { startKey: "review-55555555", nodeId: "review", needs: "external-ready", actor: "person", updatedAtMs: ago(3 * 24 * 60 * MIN) }),
+    row("run_g", { startKey: "coding-loop-66666666", nodeId: "test", needs: "quarantined", updatedAtMs: ago(MIN) }),
+    row("run_h", { nodeId: null, needs: "working", updatedAtMs: ago(MIN) }),
   ]);
   status("run_b", { running: running({ attempt: "1", maxAttempts: "3", state: "started", claimed: true }) });
   status("run_d", { intervention: { nodeId: "test", reason: "stuck", attempt: "3", maxAttempts: "3" } });
@@ -118,9 +118,9 @@ test("one line per run, those that need the person first, each in its own words,
 
 test("a stuck step and a quarantine say why, in the kept error's code and its first words", () => {
   listed([
-    row("run_s", { startKey: "coding-loop-12121212", nodeId: "test", needs: "stuck", since: ago(40_000) }),
-    row("run_t", { startKey: "coding-loop-34343434", nodeId: "fetch", needs: "stuck", since: ago(MIN) }),
-    row("run_q", { startKey: "coding-loop-56565656", nodeId: "fix", needs: "quarantined", since: ago(69 * MIN) }),
+    row("run_s", { startKey: "coding-loop-12121212", nodeId: "test", needs: "stuck", updatedAtMs: ago(40_000) }),
+    row("run_t", { startKey: "coding-loop-34343434", nodeId: "fetch", needs: "stuck", updatedAtMs: ago(MIN) }),
+    row("run_q", { startKey: "coding-loop-56565656", nodeId: "fix", needs: "quarantined", updatedAtMs: ago(69 * MIN) }),
   ]);
   status("run_s", { intervention: { nodeId: "test", reason: "stuck", attempt: 3, maxAttempts: 3, error: { code: "command.exit", message: "exit code 1" } } });
   status("run_t", {
@@ -142,7 +142,7 @@ test("a stuck step and a quarantine say why, in the kept error's code and its fi
 });
 
 test("a try spore found cut off says so, that nothing runs it, and what picks it up", () => {
-  listed([row("run_x", { startKey: "coding-loop-dffdb9f2", nodeId: "implement", needs: "driver", since: ago(32_000) })]);
+  listed([row("run_x", { startKey: "coding-loop-dffdb9f2", nodeId: "implement", needs: "driver", updatedAtMs: ago(32_000) })]);
   status("run_x", {
     running: running({
       attempt: "1",
@@ -157,9 +157,9 @@ test("a try spore found cut off says so, that nothing runs it, and what picks it
 
 test("a run waiting on the runs it started, and a need this plugin does not know, each get their words", () => {
   listed([
-    row("run_p", { startKey: "build-0-2", nodeId: "tickets", needs: "child", since: ago(5 * MIN) }),
-    row("run_u", { startKey: "coding-loop-13131313", nodeId: "implement", needs: "elsewhere", since: ago(MIN) }),
-    row("run_v", { startKey: "coding-loop-24242424", nodeId: "implement", needs: "driver", since: ago(2 * MIN) }),
+    row("run_p", { startKey: "build-0-2", nodeId: "tickets", needs: "child", updatedAtMs: ago(5 * MIN) }),
+    row("run_u", { startKey: "coding-loop-13131313", nodeId: "implement", needs: "elsewhere", updatedAtMs: ago(MIN) }),
+    row("run_v", { startKey: "coding-loop-24242424", nodeId: "implement", needs: "driver", updatedAtMs: ago(2 * MIN) }),
   ]);
   expect(unfinished().report.lines).toEqual([
     "build-0-2 at tickets, waiting for the runs it started for 5 min",
@@ -170,18 +170,18 @@ test("a run waiting on the runs it started, and a need this plugin does not know
 });
 
 test("runs that are all running by themselves get no hint", () => {
-  listed([row("run_r", { startKey: "coding-loop-78787878", nodeId: "implement", needs: "working", since: ago(3 * MIN) })]);
+  listed([row("run_r", { startKey: "coding-loop-78787878", nodeId: "implement", needs: "working", updatedAtMs: ago(3 * MIN) })]);
   status("run_r", { running: running({ attempt: "1", maxAttempts: "3", state: "started", claimed: true }) });
   expect(unfinished().report.lines).toEqual(["coding-loop-78787878 at implement, attempt 1 of 3, running for 3 min"]);
 });
 
 test("a status spore does not give still leaves the run its line", () => {
-  listed([row("run_i", { startKey: "coding-loop-77777777", nodeId: "implement", needs: "working", since: ago(14 * MIN) })]);
+  listed([row("run_i", { startKey: "coding-loop-77777777", nodeId: "implement", needs: "working", updatedAtMs: ago(14 * MIN) })]);
   expect(unfinished().report.lines).toEqual(["coding-loop-77777777 at implement, paused 14 min ago", ONE]);
 });
 
 test("without --json each line is printed as it is", () => {
-  listed([row("run_j", { startKey: "coding-loop-88888888", nodeId: "approve", needs: "signal", since: ago(2 * 60 * MIN) })]);
+  listed([row("run_j", { startKey: "coding-loop-88888888", nodeId: "approve", needs: "signal", updatedAtMs: ago(2 * 60 * MIN) })]);
   expect(unfinished([])).toEqual({
     exitCode: 0,
     stdout: `coding-loop-88888888 at approve, waiting for your decision for 2 h\n${ONE}\n`,
@@ -208,7 +208,7 @@ test("no spore on PATH prints no line and exits 1", () => {
 });
 
 test("a Claude that spore started for a step lists nothing, and asks spore nothing", () => {
-  listed([row("run_k", { startKey: "coding-loop-99999999", nodeId: "implement", needs: "held", since: ago(MIN) })]);
+  listed([row("run_k", { startKey: "coding-loop-99999999", nodeId: "implement", needs: "held", updatedAtMs: ago(MIN) })]);
   expect(unfinished(["--json"], { RUNSPORE_WORK_DIR: "/repo/.spore/runspore.db.files/run_k/work" }).report).toEqual({ db: null, lines: [] });
   expect(calls()).toEqual([]);
 });
