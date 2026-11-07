@@ -2,6 +2,10 @@
 
 What each ml-workflow version changed. Every change to the plugin raises the version and adds its section here with `bun scripts/plugin-version.ts bump` (AGENTS.md, Releasing a plugin). Versions up to 0.9.0 are in the git history of `.claude-plugin/plugin.json`.
 
+## 0.15.1
+
+- The runner module's spec runs the committed runspore:runner@0.2.0 module on a released spore and waits for the fake Claude's start record instead of racing it.
+
 ## 0.15.0
 
 - Reads spore's JSON format runspore.cli/0.3 (Web-tree/runspore#308, skills#167): an unfinished run's age comes from a list row's updatedAtMs, and a watched Claude step's watch says its pane waits with {"waits": "<node> waits for you in its pane"}, the line spore 0.10.0 and later take.

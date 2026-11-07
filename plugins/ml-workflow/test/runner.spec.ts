@@ -5,8 +5,8 @@
 //
 // The module must be built for a world the spore runs (`spore capabilities`,
 // `componentWorlds`): the committed runner/claude-runner.wasm is runspore:runner@0.2.0, which
-// needs Web-tree/runspore#290 and #278; CLAUDE_RUNNER_WASM names another build, such as the
-// 0.1.0 one CI makes for a released spore 0.7 (`cargo run -p claude-runner-build -- --world 0.1`).
+// spore 0.10.0 and later run; CLAUDE_RUNNER_WASM names another build, such as a 0.1.0 one for an
+// older spore (`cargo run -p claude-runner-build -- --world 0.1`).
 import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -28,9 +28,11 @@ function pickModule(): string | null {
   } catch {}
   const chosen = process.env.CLAUDE_RUNNER_WASM ?? (worlds.includes(WORLD_02) ? COMMITTED : null);
   if (chosen) return chosen;
-  // Not a failure under REQUIRE_SPORE: a released spore before runspore#278 cannot load the
-  // committed module, and the job that builds a 0.1.0 one sets CLAUDE_RUNNER_WASM.
-  console.warn(`skipping runner.spec.ts: the spore at ${SPORE} runs ${JSON.stringify(worlds)}, not ${WORLD_02}; set CLAUDE_RUNNER_WASM to a module it runs`);
+  // Every spore ml-workflow supports (0.10.0 and later) runs the committed module, so under
+  // REQUIRE_SPORE (CI) one that does not is a failure, not a skip.
+  const reason = `the spore at ${SPORE} runs ${JSON.stringify(worlds)}, not ${WORLD_02}; set CLAUDE_RUNNER_WASM to a module it runs`;
+  if (process.env.REQUIRE_SPORE === "1") throw new Error(reason);
+  console.warn(`skipping runner.spec.ts: ${reason}`);
   return null;
 }
 
@@ -39,9 +41,10 @@ const module = pickModule();
 const writes = module === COMMITTED;
 
 const FAKE_CLAUDE = `#!/bin/sh
-# Records its arguments and environment, then stays at work until it is killed.
-printf '%s\\n' "$@" > "$FAKE_CLAUDE_DIR/args.$$"
-env > "$FAKE_CLAUDE_DIR/env.$$"
+# Records its environment, then its arguments, each whole by a rename, then stays at work until
+# it is killed. An args record means both are complete.
+env > "$FAKE_CLAUDE_DIR/.env.$$" && mv "$FAKE_CLAUDE_DIR/.env.$$" "$FAKE_CLAUDE_DIR/env.$$"
+printf '%s\\n' "$@" > "$FAKE_CLAUDE_DIR/.args.$$" && mv "$FAKE_CLAUDE_DIR/.args.$$" "$FAKE_CLAUDE_DIR/args.$$"
 exec sleep 600
 `;
 
@@ -100,6 +103,12 @@ describe.skipIf(!module)("the runner module under a real spore", () => {
     copyFileSync(module!, join(folder, "claude-runner.wasm"));
   };
   const started = () => readdirSync(calls).filter((f) => f.startsWith("args."));
+  // spore returns once it has spawned Claude; the fake writes its record a moment later.
+  const startedAtLeast = (count: number) => {
+    const deadline = Date.now() + 5000;
+    while (started().length < count && Date.now() < deadline) Bun.sleepSync(50);
+    return started();
+  };
 
   beforeAll(() => {
     project = scratch();
@@ -145,7 +154,7 @@ describe.skipIf(!module)("the runner module under a real spore", () => {
     const parked = JSON.parse(run.stdout);
     expect(parked.step).toMatchObject({ kind: "component", state: "held", holder: { mode: "background" } });
     const runId = parked.runId;
-    const [first] = started();
+    const [first] = startedAtLeast(1);
     const pgid = Number(first!.slice(5));
     const args = readFileSync(join(calls, first!), "utf8").trim().split("\n");
     expect(args.slice(0, 2)).toEqual(["-p", "--session-id"]);
@@ -170,7 +179,7 @@ describe.skipIf(!module)("the runner module under a real spore", () => {
     expect(spore("--json", "worker", "--run", runId, "--until-parked").exitCode).toBe(6);
     const status = JSON.parse(spore("--json", "status", runId).stdout);
     expect(status.step).toMatchObject({ state: "held", attempt: 2 });
-    expect(started().length).toBe(2);
+    expect(startedAtLeast(2).length).toBe(2);
     const [result] = JSON.parse(spore("--json", "events", runId).stdout).events.filter((e: { kind: string }) => e.kind === "activity.result");
     expect(result.payload).toMatchObject({ attempt: 1, status: "expired", retryable: true });
   });
