@@ -26,8 +26,9 @@ jobs:
       fail-fast: false
       matrix:
         # The oldest supported spore, SPORE_MINIMUM in src/version.ts, and the newest release
-        # (docs/spec.md, Testing).
-        spore: ["0.7.0", latest]
+        # (docs/spec.md, Testing). The minimum is 0.10.0, but v0.10.0 published no archives to
+        # install (Web-tree/runspore#314), so the oldest installable 0.10 release stands in for it.
+        spore: ["0.10.1", latest]
     steps:
       - uses: actions/checkout@v4
       # runspore publishes a release before its archives, minutes apart: the newest is the newest

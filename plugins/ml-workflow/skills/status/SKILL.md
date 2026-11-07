@@ -34,7 +34,7 @@ If `claude-spore` itself does not run:
 
 This step only reads. It sends no signal, resolution or run.
 
-**No run ID given.** Run `spore list --unfinished --json`. It prints `{"db", "runs"}`: `db` is the database it read, and `runs` the unfinished runs newest first, each with `runId`, `workflow`, `nodeId`, `needs`, `since` (when it last changed, in milliseconds), `startKey` and `actor`. Name the database, then one line per run with what it needs in words, e.g. `run_edcfc217…  coding-loop at approve: waits for a decision, changed 2 h ago (key coding-loop-3f9a1c2e)`. By `needs`:
+**No run ID given.** Run `spore list --unfinished --json`. It prints `{"db", "runs"}`: `db` is the database it read, and `runs` the unfinished runs newest first, each with `runId`, `workflow`, `nodeId`, `needs`, `updatedAtMs` (when it last changed, in milliseconds), `startKey` and `actor`. Name the database, then one line per run with what it needs in words, e.g. `run_edcfc217…  coding-loop at approve: waits for a decision, changed 2 h ago (key coding-loop-3f9a1c2e)`. By `needs`:
 
 - `signal`: waits for a decision;
 - `stuck`: its step is stuck;

@@ -3,6 +3,8 @@
 // hint naming the menu, so a new session shows a run its last one left without being asked, as
 // `git status` shows an unfinished rebase. The menu (src/menu.ts) labels its rows with the same words.
 
+import { formatMisfit } from "./version.ts";
+
 const USAGE = "usage: claude-spore unfinished [--json]";
 
 // Each spore call is cut off here, and the statuses run side by side, so the whole answer fits the
@@ -12,7 +14,7 @@ const LIMIT_MS = 4000;
 // The kept error's words in a line stop here.
 const GIST = 60;
 
-export type Row = { runId: string; startKey?: string | null; nodeId?: string | null; needs?: string | null; since?: string | null; actor?: string | null };
+export type Row = { runId: string; startKey?: string | null; nodeId?: string | null; needs?: string | null; updatedAtMs?: string | null; actor?: string | null };
 type Attempt = { attempt?: string | number; maxAttempts?: string | number; state?: string };
 type Kept = { code?: string | null; message?: string | null };
 export type Status = {
@@ -69,8 +71,8 @@ export async function unfinished(argv: string[]): Promise<number> {
 /** `coding-loop-0238a2a3 at implement, attempt 2 of 3, paused 14 min ago` */
 export function describe(row: Row, status: Status | null, now: number): string {
   const name = row.startKey || row.runId;
-  const since = Number(row.since);
-  const age = Number.isFinite(since) ? duration(now - since) : null;
+  const updated = Number(row.updatedAtMs);
+  const age = Number.isFinite(updated) ? duration(now - updated) : null;
   const where = row.nodeId ? `${name} at ${row.nodeId}` : `${name}, not started yet`;
   const what = row.nodeId ? state(row, status, age) : age && `created ${age} ago`;
   return what ? `${where}, ${what}` : where;
@@ -143,14 +145,16 @@ export function duration(ms: number): string {
   return `${Math.floor(s / 86400)} d`;
 }
 
-// One `spore … --json` call: its JSON on exit 0, else null.
+// One `spore … --json` call: its JSON on exit 0 in the format the plugin reads, else null. The menu
+// then offers Check spore, and `claude-spore doctor` names the format.
 async function spore(args: string[]): Promise<any> {
   const path = Bun.which("spore");
   if (!path) return null;
   try {
     const child = Bun.spawn([path, ...args], { stdin: "ignore", stdout: "pipe", stderr: "ignore", timeout: LIMIT_MS });
     const [stdout, code] = await Promise.all([new Response(child.stdout).text(), child.exited]);
-    return code === 0 ? JSON.parse(stdout) : null;
+    const answer = code === 0 ? JSON.parse(stdout) : null;
+    return answer && !formatMisfit(answer.format) ? answer : null;
   } catch {
     return null;
   }

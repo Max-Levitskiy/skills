@@ -32,7 +32,7 @@ If `claude-spore` itself does not run:
 
 ## 3. Pick the run
 
-With a run ID given, take it. Otherwise run `spore list --unfinished --json`. It prints `{"db", "runs"}`, the unfinished runs newest first, each with `runId`, `workflow`, `nodeId`, `needs`, `since` (when it last changed, in milliseconds) and `startKey`. With no run, say there is no unfinished run in that database (`db`) and stop. With one, take it. With several, ask which, one option per run: its ID, workflow, node, what it needs and how long ago it changed; then end the turn.
+With a run ID given, take it. Otherwise run `spore list --unfinished --json`. It prints `{"db", "runs"}`, the unfinished runs newest first, each with `runId`, `workflow`, `nodeId`, `needs`, `updatedAtMs` (when it last changed, in milliseconds) and `startKey`. With no run, say there is no unfinished run in that database (`db`) and stop. With one, take it. With several, ask which, one option per run: its ID, workflow, node, what it needs and how long ago it changed; then end the turn.
 
 ## 4. Confirm
 

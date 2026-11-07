@@ -2,6 +2,12 @@
 
 What each ml-workflow version changed. Every change to the plugin raises the version and adds its section here with `bun scripts/plugin-version.ts bump` (AGENTS.md, Releasing a plugin). Versions up to 0.9.0 are in the git history of `.claude-plugin/plugin.json`.
 
+## 0.15.0
+
+- Reads spore's JSON format runspore.cli/0.3 (Web-tree/runspore#308, skills#167): an unfinished run's age comes from a list row's updatedAtMs, and a watched Claude step's watch says its pane waits with {"waits": "<node> waits for you in its pane"}, the line spore 0.10.0 and later take.
+- The oldest supported spore is 0.10.0, the first that writes runspore.cli/0.3. An answer in any other format is refused with one line naming it: claude-spore doctor says spore.format, and the run line and live view fail with that code, instead of reading fields that moved.
+- CI runs the specs against spore 0.10.1, the first 0.10 release with archives to install, and the newest release.
+
 ## 0.14.0
 
 - The Claude step runner module, runner/claude-runner.wasm: a Rust WebAssembly component of world runspore:runner/runner@0.2.0 that starts, probes and stops Claude Code for a step, in a herdr pane over herdr's socket or as a windowless claude -p, handing the attempt's token to the hooks through a 0600 file in the work folder (skills#152). The shipped workflows do not use it yet (skills#154).

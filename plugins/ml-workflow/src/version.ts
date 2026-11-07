@@ -6,19 +6,39 @@ export const CLAUDE_CODE_MINIMUM = "2.1.290";
 
 // The plugin's version for the mod, which cannot import `.claude-plugin/plugin.json`: a hooks
 // module loads only script files. test/claude-spore.spec.ts holds it equal to the manifest's.
-export const PLUGIN_VERSION = "0.14.0";
+export const PLUGIN_VERSION = "0.15.0";
 
 // The oldest supported spore, and the contracts of `spore capabilities` the plugin drives
-// (docs/spec.md, p.3). Below 1.0 a contract's range is its one minor version. 0.7.0 is the first
-// release that hosts step runner modules (`component` actions, Web-tree/runspore#233), which the
-// Claude step runner (runner/) is; 0.6.0 marks a try cut off by a kill (`needs: "driver"`, #224),
-// which the start line and the menu's Continue rely on; 0.4.0 brought `continue --wait`, `cancel`
-// and the checkpoint E and F fixes.
-// TODO(skills#154): the runner module is built for runspore:runner@0.2.0, which needs the spore
-// release that ships Web-tree/runspore#290 and #278 (unreleased as of 0.7.x); raise this to that
-// release when the shipped workflows switch to the module.
-export const SPORE_MINIMUM = "0.7.0";
+// (docs/spec.md, p.3). Below 1.0 a contract's range is its one minor version. 0.10.0 is the first
+// release that writes JSON format runspore.cli/0.3 (SPORE_FORMAT) and takes an async command's
+// `{"waits": …}` watch line, which the watched Claude step prints (Web-tree/runspore#308). Before it,
+// 0.7.0 brought step runner modules (`component` actions, Web-tree/runspore#233), which the Claude
+// step runner (runner/) is; 0.6.0 marks a try cut off by a kill (`needs: "driver"`, #224), which the
+// start line and the menu's Continue rely on; 0.4.0 brought `continue --wait`, `cancel` and the
+// checkpoint E and F fixes.
+export const SPORE_MINIMUM = "0.10.0";
 export const SPORE_CONTRACTS: Record<string, string> = { cli: "0.2", host: "0.2", kernel: "0.2", store: "0.2" };
+
+// The one JSON format of spore's `--json` answers the plugin reads (Web-tree/runspore spec/cli.md,
+// JSON output). spore writes it on every object, errors included, and a reader that does not know
+// a format stops rather than guess at its fields.
+export const SPORE_FORMAT = "runspore.cli/0.3";
+
+/**
+ * Why the plugin does not read a spore answer of `format`, or null when it does: one line naming
+ * the format, and which of the two to update. An older format, or none, comes from a spore below
+ * the minimum; a newer one from a spore newer than this plugin.
+ */
+export function formatMisfit(format: unknown): { text: string; update: "spore" | "ml-workflow" } | null {
+  if (format === SPORE_FORMAT) return null;
+  const minor = (value: unknown) => (typeof value === "string" ? /^runspore\.cli\/0\.(\d+)$/.exec(value)?.[1] : undefined);
+  const have = minor(format);
+  const named = typeof format === "string" ? format : "no format";
+  if (have !== undefined && Number(have) > Number(minor(SPORE_FORMAT))) {
+    return { text: `spore answered in ${named}, newer than the ${SPORE_FORMAT} ml-workflow ${PLUGIN_VERSION} reads; update ml-workflow`, update: "ml-workflow" };
+  }
+  return { text: `spore answered in ${named}, and ml-workflow ${PLUGIN_VERSION} reads ${SPORE_FORMAT}, which spore ${SPORE_MINIMUM} and later write; update spore`, update: "spore" };
+}
 
 /** Whether a contract version `have` (`major.minor`) is in the range of the supported `need`. */
 export function inRange(have: string, need: string): boolean {

@@ -10,8 +10,8 @@ import { scratch } from "./helpers.ts";
 const PLUGIN = join(import.meta.dir, "..");
 
 export const CAPABILITIES = {
-  format: "runspore.cli/0.2",
-  version: "0.7.0",
+  format: "runspore.cli/0.3",
+  version: "0.10.0",
   contracts: { artifact: "0.1", cli: "0.2", dot: "0.2", host: "0.2", kernel: "0.2", schema: "0.2", store: "0.2" },
   actionKinds: ["command", "external", "native"],
   asyncKinds: ["command", "external"],

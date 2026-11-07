@@ -43,11 +43,11 @@ cat "$file"
 afterEach(() => remove(dir));
 
 function listed(runs: unknown[]) {
-  writeFileSync(join(dir, "list.json"), JSON.stringify({ format: "runspore.cli/0.2", db, runs }));
+  writeFileSync(join(dir, "list.json"), JSON.stringify({ format: "runspore.cli/0.3", db, runs }));
 }
 
 function status(runId: string, fields: Record<string, unknown>) {
-  writeFileSync(join(dir, `status-${runId}.json`), JSON.stringify({ format: "runspore.cli/0.2", runId, db, ...fields }));
+  writeFileSync(join(dir, `status-${runId}.json`), JSON.stringify({ format: "runspore.cli/0.3", runId, db, ...fields }));
 }
 
 function workflow(folder: string, dot: string) {
@@ -85,9 +85,9 @@ const NO_WORKFLOWS = [
 
 test("each run is a row of what it needs, those that need the person first, then starting and writing a workflow", () => {
   listed([
-    row("run_c", { startKey: "coding-loop-33333333", nodeId: "implement", needs: "working", since: ago(14 * MIN) }),
-    row("run_a", { startKey: "coding-loop-11111111", nodeId: "approve", needs: "signal", since: ago(2 * 60 * MIN) }),
-    row("run_b", { startKey: "coding-loop-22222222", nodeId: "test", needs: "stuck", since: ago(40_000) }),
+    row("run_c", { startKey: "coding-loop-33333333", nodeId: "implement", needs: "working", updatedAtMs: ago(14 * MIN) }),
+    row("run_a", { startKey: "coding-loop-11111111", nodeId: "approve", needs: "signal", updatedAtMs: ago(2 * 60 * MIN) }),
+    row("run_b", { startKey: "coding-loop-22222222", nodeId: "test", needs: "stuck", updatedAtMs: ago(40_000) }),
   ]);
   status("run_b", { intervention: { nodeId: "test", reason: "stuck", attempt: "3", maxAttempts: "3", error: { code: "command.exit", message: "exit code 1" } } });
   status("run_c", { running: { attempt: "2", maxAttempts: "3", state: "queued" } });
@@ -113,9 +113,9 @@ test("each run is a row of what it needs, those that need the person first, then
 
 test("a step held by the plugin's pane opens the pane; another holder shows its lease", () => {
   listed([
-    row("run_d", { startKey: "coding-loop-44444444", nodeId: "implement", needs: "held", since: ago(5 * MIN) }),
-    row("run_e", { startKey: "deploy-55555555", nodeId: "deploy", needs: "held", actor: "ci", since: ago(MIN) }),
-    row("run_f", { startKey: "deploy-66666666", nodeId: "deploy", needs: "held", actor: "ci", since: ago(30 * MIN) }),
+    row("run_d", { startKey: "coding-loop-44444444", nodeId: "implement", needs: "held", updatedAtMs: ago(5 * MIN) }),
+    row("run_e", { startKey: "deploy-55555555", nodeId: "deploy", needs: "held", actor: "ci", updatedAtMs: ago(MIN) }),
+    row("run_f", { startKey: "deploy-66666666", nodeId: "deploy", needs: "held", actor: "ci", updatedAtMs: ago(30 * MIN) }),
   ]);
   status("run_d", { step: { kind: "command", actor: null, state: "held", holder: { herdrAgent: "sp-implement-0a1b2c3d4e" }, deadlineMs: String(NOW + 60 * MIN) } });
   status("run_e", { step: { kind: "external", actor: "ci", state: "held", holder: { worker: "w1" }, deadlineMs: String(NOW + 3 * MIN + 30_000) } });
@@ -134,10 +134,10 @@ test("a step held by the plugin's pane opens the pane; another holder shows its 
 
 test("a step for its actor to claim shows the step; a quarantine names its code and offers the release", () => {
   listed([
-    row("run_g", { startKey: "review-77777777", nodeId: "review", needs: "external-ready", actor: "person", since: ago(3 * 24 * 60 * MIN) }),
-    row("run_h", { startKey: "coding-loop-88888888", nodeId: "test", needs: "quarantined", since: ago(MIN) }),
-    row("run_i", { startKey: "coding-loop-99999999", nodeId: "test", needs: "capability-missing", since: ago(MIN) }),
-    row("run_j", { nodeId: null, needs: "working", since: ago(MIN) }),
+    row("run_g", { startKey: "review-77777777", nodeId: "review", needs: "external-ready", actor: "person", updatedAtMs: ago(3 * 24 * 60 * MIN) }),
+    row("run_h", { startKey: "coding-loop-88888888", nodeId: "test", needs: "quarantined", updatedAtMs: ago(MIN) }),
+    row("run_i", { startKey: "coding-loop-99999999", nodeId: "test", needs: "capability-missing", updatedAtMs: ago(MIN) }),
+    row("run_j", { nodeId: null, needs: "working", updatedAtMs: ago(MIN) }),
   ]);
   status("run_h", { quarantine: { code: "lease.lost-twice", details: {} } });
   expect(menu().report.rows.slice(0, 4)).toEqual([
@@ -150,9 +150,9 @@ test("a step for its actor to claim shows the step; a quarantine names its code 
 
 test("a cut-off try, a run waiting on the runs it started, and a need this plugin does not know continue", () => {
   listed([
-    row("run_m", { startKey: "coding-loop-dffdb9f2", nodeId: "implement", needs: "driver", since: ago(2 * MIN) }),
-    row("run_n", { startKey: "build-0-2", nodeId: "tickets", needs: "child", since: ago(5 * MIN) }),
-    row("run_o", { startKey: "coding-loop-13131313", nodeId: "implement", needs: "elsewhere", since: ago(MIN) }),
+    row("run_m", { startKey: "coding-loop-dffdb9f2", nodeId: "implement", needs: "driver", updatedAtMs: ago(2 * MIN) }),
+    row("run_n", { startKey: "build-0-2", nodeId: "tickets", needs: "child", updatedAtMs: ago(5 * MIN) }),
+    row("run_o", { startKey: "coding-loop-13131313", nodeId: "implement", needs: "elsewhere", updatedAtMs: ago(MIN) }),
   ]);
   status("run_m", { running: { attempt: "1", maxAttempts: "3", state: "cut-off", cutOff: { reason: "worker-gone", message: "worker w1 is gone", commands: ["spore continue run_m"] } } });
   expect(menu().report.rows.slice(0, 3)).toEqual([
@@ -195,13 +195,13 @@ test("a spore that cannot list gives a row to check it, and the rest still shows
 });
 
 test("a Claude that spore started for a step asks spore nothing", () => {
-  listed([row("run_k", { nodeId: "implement", needs: "held", since: ago(MIN) })]);
+  listed([row("run_k", { nodeId: "implement", needs: "held", updatedAtMs: ago(MIN) })]);
   expect(menu(["--json"], { env: { RUNSPORE_RUN_ID: "run_k" } }).report).toEqual({ db: null, rows: NO_WORKFLOWS });
   expect(calls()).toEqual([]);
 });
 
 test("without --json each row and its options are printed with their commands", () => {
-  listed([row("run_l", { startKey: "coding-loop-12121212", nodeId: "approve", needs: "signal", since: ago(2 * 60 * MIN) })]);
+  listed([row("run_l", { startKey: "coding-loop-12121212", nodeId: "approve", needs: "signal", updatedAtMs: ago(2 * 60 * MIN) })]);
   expect(menu([])).toMatchObject({
     exitCode: 0,
     stderr: "",
@@ -221,7 +221,7 @@ test("without --json each row and its options are printed with their commands", 
 
 test("every command a row hands to is a sub-skill, and every act action one act takes", () => {
   const needs = ["signal", "stuck", "held", "external-ready", "working", "driver", "child", "quarantined", "capability-missing"];
-  listed(needs.map((need, i) => row(`run_${i}`, { nodeId: "n", needs: need, since: ago(MIN) })));
+  listed(needs.map((need, i) => row(`run_${i}`, { nodeId: "n", needs: need, updatedAtMs: ago(MIN) })));
   status(`run_${needs.indexOf("held")}`, { step: { holder: { herdrAgent: "sp-n-0a1b2c3d4e" } } });
   workflow("coding-loop", 'digraph "coding-loop" {}\n');
   const options = menu().report.rows.flatMap((r: { options: { command: string; args: string }[] }) => r.options);

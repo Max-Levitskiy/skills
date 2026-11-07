@@ -55,7 +55,7 @@ esac
 afterEach(() => remove(dir));
 
 function status(runId: string, fields: Record<string, unknown>) {
-  const base = { format: "runspore.cli/0.2", runId, db: DB, startKey: "coding-loop-0238a2a3", status: "running", artifactDigest: DIGEST, streaks: {} };
+  const base = { format: "runspore.cli/0.3", runId, db: DB, startKey: "coding-loop-0238a2a3", status: "running", artifactDigest: DIGEST, streaks: {} };
   writeFileSync(join(dir, `status-${runId}.json`), JSON.stringify({ ...base, ...fields }));
 }
 
@@ -146,11 +146,11 @@ test("a run waiting for a decision needs you, and says so first", () => {
 
 test("a decision sent and not yet acted on no longer needs you, though spore's status still shows the wait", () => {
   status("run_b", { status: "waiting", position: at("approve", 1, ["test", "ok"]), waiting: { nodeId: "approve", signal: "approval", sinceMs: "0", forMs: "40000" } });
-  writeFileSync(join(dir, "list.json"), JSON.stringify({ db: DB, runs: [{ runId: "run_b", nodeId: "approve", needs: "working" }] }));
+  writeFileSync(join(dir, "list.json"), JSON.stringify({ format: "runspore.cli/0.3", db: DB, runs: [{ runId: "run_b", nodeId: "approve", needs: "working" }] }));
   expect(helper(["line", "run_b", "--json", "--db", DB]).report).toMatchObject({ text: "coding-loop-0238a2a3 at approve for 40 s, from test on ok", needsYou: false });
   expect(helper(["view", "run_b", "--json", "--db", DB]).report).toMatchObject({ facts: "waiting, at approve, visit 1", line: { needsYou: false } });
 
-  writeFileSync(join(dir, "list.json"), JSON.stringify({ db: DB, runs: [{ runId: "run_b", nodeId: "approve", needs: "signal" }] }));
+  writeFileSync(join(dir, "list.json"), JSON.stringify({ format: "runspore.cli/0.3", db: DB, runs: [{ runId: "run_b", nodeId: "approve", needs: "signal" }] }));
   expect(helper(["line", "run_b", "--json", "--db", DB]).report.needsYou).toBe(true);
 });
 
@@ -195,9 +195,17 @@ test("an ended run says how it ended, and is ended", () => {
 });
 
 test("a run spore does not know is spore's error, and exit 1", () => {
-  writeFileSync(join(dir, "error-run_x.json"), JSON.stringify({ format: "runspore.cli/0.2", error: { code: "run.not-found", message: "no run run_x" } }));
+  writeFileSync(join(dir, "error-run_x.json"), JSON.stringify({ format: "runspore.cli/0.3", error: { code: "run.not-found", message: "no run run_x" } }));
   expect(helper(["line", "run_x", "--json"])).toMatchObject({ exitCode: 1, report: { runId: "run_x", db: null, error: { code: "run.not-found", message: "no run run_x" } } });
   expect(helper(["view", "run_x", "--json"]).report.error.code).toBe("run.not-found");
+});
+
+test("a status in a format the plugin does not read is spore.format, and exit 1", () => {
+  status("run_a", { format: "runspore.cli/0.2", position: at("implement", 1, null) });
+  const ran = helper(["line", "run_a", "--json"]);
+  expect(ran).toMatchObject({ exitCode: 1, report: { runId: "run_a", db: null, error: { code: "spore.format" } } });
+  expect(ran.report.error.message).toContain("spore answered in runspore.cli/0.2");
+  expect(helper(["view", "run_a", "--json"]).report.error.code).toBe("spore.format");
 });
 
 test("no spore on PATH is spore.unavailable", () => {
