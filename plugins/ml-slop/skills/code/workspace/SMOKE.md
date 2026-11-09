@@ -160,3 +160,76 @@ remain unverified by a model harness.
 No model-driven comparison has been run for this repair. These are synthetic
 inputs and test-integrity checks, not a calibrated benchmark or evidence of
 better model accuracy.
+
+## Import-streak regression: 2026-11-02
+
+Kitsios et al., *No More Import Errors: Constrained Decoding for Guaranteed
+Valid Imports in LLM-Generated Tests* (submitted 2026-10-30,
+<https://arxiv.org/abs/2610.41878>) documents an output-density failure not
+covered by the previous method prompts. Greedy constrained decoding can emit a
+run of repetitive, individually valid imports and exhaust the generation budget
+before reaching the intended test body. The paper's motivating example repeats
+the same valid Python import four times.
+
+The existing `ceremony-imports` pattern covers imported-but-unused modules, and
+`code-duplication` targets repeated functions or multi-line blocks. Neither
+clearly covers a repeated valid import whose final binding is used. Version
+0.3.2 therefore adds `boilerplate-template:import-streak` without changing any
+weight, line-ratio penalty, label band, or aggregation rule.
+
+| Analyze one file at a time | Expected slop behavior | Independent functional oracle |
+| --- | --- | --- |
+| `fixtures/import_streak.py` | One `boilerplate-template:import-streak`, medium severity | Passes suffix extraction despite four identical valid imports |
+| `fixtures/necessary_imports.py` | No seeded slop; preserve all three distinct, used imports | Passes stable suffix-count serialization |
+
+Both fixtures are original synthetic examples, not copied benchmark samples.
+The positive fixture is constructed from the paper's reported failure mode; the
+negative fixture guards against broadening the rule to ordinary import groups.
+
+Run the deterministic construction and functional-oracle checks from the
+repository root:
+
+```bash
+python plugins/ml-slop/skills/code/workspace/check_boundary_fixtures.py
+```
+
+The checker confirms the repeated-versus-distinct import construction, that all
+negative-control imports are used, the external expectations, and the functional
+oracles. It does not invoke an LLM or prove that the method prompt improves
+model behavior.
+
+### Compare 0.3.2 against the previous default-branch baseline
+
+Baseline: `953021381b4baeff1ce046b8f89a3bcd3d8ecda2` (default branch on
+2026-11-02, before this change).
+
+1. Check out the baseline and candidate in separate worktrees.
+2. Run `/ml-slop:code` in standalone mode on exactly one fixture at a time,
+   using identical model/version, effort, harness settings, and input bytes.
+   Do not include expectation JSON, sibling fixtures, or this protocol in the
+   model input.
+3. For `import_streak.py`, compare whether the candidate returns exactly one
+   supported `boilerplate-template:import-streak` finding anchored to the
+   repeated import run. For `necessary_imports.py`, require no import-streak or
+   ceremony-import finding from either revision.
+4. Save raw method envelopes and final reports. Treat numeric score differences
+   as descriptive only: this change has no calibrated score acceptance target.
+
+Suggested setup:
+
+```bash
+git worktree add --detach ../ml-slop-import-streak-base 953021381b4baeff1ce046b8f89a3bcd3d8ecda2
+python plugins/ml-slop/skills/code/workspace/check_boundary_fixtures.py
+```
+
+Recorded deterministic check on 2026-11-02:
+
+| Fixture revision | Passed | Failed | Skipped |
+| --- | ---: | ---: | ---: |
+| Baseline with `--existing-only` | 4 | 0 | 2 |
+| Candidate, all controls | 6 | 0 | 0 |
+
+The count increase is fixture coverage, not evidence of better model output.
+No model-driven baseline/candidate comparison was available in this review
+environment. The expected finding and control are harness-ready, but an
+improvement is not claimed until the same pinned harness run passes both.

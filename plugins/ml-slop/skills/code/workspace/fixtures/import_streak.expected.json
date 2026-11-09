@@ -1,0 +1,36 @@
+{
+  "fixture": "import_streak.py",
+  "purpose": "Positive control: repeated valid imports add no binding or behavior and should be reported as an import streak.",
+  "provenance": {
+    "kind": "original synthetic example",
+    "informed_by": {
+      "title": "No More Import Errors: Constrained Decoding for Guaranteed Valid Imports in LLM-Generated Tests",
+      "submitted": "2026-10-30",
+      "url": "https://arxiv.org/abs/2610.41878"
+    }
+  },
+  "density_expectation": {
+    "expected_findings": [
+      {
+        "method": "boilerplate-template",
+        "pattern": "import-streak",
+        "severity": "medium",
+        "anchor": "from pathlib import PurePath"
+      }
+    ],
+    "rule": "Report the repeated import run even though every import statement is valid and the final binding is used."
+  },
+  "functional_oracle": {
+    "contract": "Return the final suffix from a path.",
+    "entrypoint": "file_suffix",
+    "cases": [
+      {"args": ["reports/weekly.json"], "expected": ".json", "observed": ".json"},
+      {"args": ["README"], "expected": "", "observed": ""}
+    ],
+    "passes": true
+  },
+  "report_expectation": {
+    "match": "literal_substring",
+    "required_scope_statement": "Slop density only — not functional correctness, security, or authorship"
+  }
+}
