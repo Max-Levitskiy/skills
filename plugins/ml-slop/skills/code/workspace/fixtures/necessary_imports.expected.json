@@ -1,0 +1,33 @@
+{
+  "fixture": "necessary_imports.py",
+  "purpose": "Negative control: preserve distinct imports that are each required by the implementation.",
+  "provenance": {
+    "kind": "original synthetic counterexample to import_streak.py",
+    "created": "2026-11-02"
+  },
+  "density_expectation": {
+    "expected_findings": [],
+    "preserve_spans": [
+      "import json",
+      "from collections import Counter",
+      "from pathlib import PurePath"
+    ],
+    "rule": "Do not treat a compact group of distinct, used imports as an import streak or ceremony imports."
+  },
+  "functional_oracle": {
+    "contract": "Return stable JSON counts of path suffixes.",
+    "entrypoint": "suffix_counts",
+    "cases": [
+      {
+        "args": [["a.py", "b.py", "README"]],
+        "expected": "{\"\": 1, \".py\": 2}",
+        "observed": "{\"\": 1, \".py\": 2}"
+      }
+    ],
+    "passes": true
+  },
+  "report_expectation": {
+    "match": "literal_substring",
+    "required_scope_statement": "Slop density only — not functional correctness, security, or authorship"
+  }
+}
