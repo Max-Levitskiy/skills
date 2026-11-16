@@ -83,5 +83,51 @@
       "removable_spans": [],
       "no_new_claims": true
     }
+  },
+  {
+    "id": "emotion_intensity_negative_control",
+    "mode": "fix",
+    "genre": "personal_announcement",
+    "source": "Needless to say, announcements can be emotional. We are incredibly excited about the Kraków pilot. It starts on 12 November with 18 makers. This announcement marks an exciting milestone in our journey.",
+    "expected": {
+      "exact_spans": [
+        "incredibly excited",
+        "Kraków",
+        "12 November",
+        "18 makers"
+      ],
+      "semantic_invariants": [
+        "The authors describe their excitement as intense; the rewrite must not flatten it to ordinary excitement or remove the feeling.",
+        "The Kraków pilot starts on 12 November with 18 makers."
+      ],
+      "removable_spans": [
+        "Needless to say, announcements can be emotional.",
+        "This announcement marks an exciting milestone in our journey."
+      ],
+      "no_new_claims": true
+    }
+  },
+  {
+    "id": "hollow_intensifier_positive_control",
+    "mode": "fix",
+    "genre": "release_note",
+    "source": "The parser is incredibly powerful and incredibly robust. In a 20-file sample, it cut median processing time from 14 to 9 seconds. This incredible capability is a testament to our commitment to innovation.",
+    "expected": {
+      "exact_spans": [
+        "20-file sample",
+        "median",
+        "14",
+        "9 seconds"
+      ],
+      "semantic_invariants": [
+        "The only supported performance result is a median reduction from 14 to 9 seconds in a 20-file sample.",
+        "The rewrite must not turn the sample result into a universal performance claim."
+      ],
+      "removable_spans": [
+        "The parser is incredibly powerful and incredibly robust.",
+        "This incredible capability is a testament to our commitment to innovation."
+      ],
+      "no_new_claims": true
+    }
   }
 ]
