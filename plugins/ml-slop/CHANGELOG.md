@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.3
+
+- Add paired text rewrite controls that distinguish authored emotional
+  intensity from hollow promotional intensifiers.
+- Document the source provenance and matched base-versus-candidate harness
+  protocol. Methods, prompts, weights, thresholds, and score bands are
+  unchanged.
+
 ## 0.3.2
 
 - Detect repetitive valid-import streaks that add no bindings and can crowd out
