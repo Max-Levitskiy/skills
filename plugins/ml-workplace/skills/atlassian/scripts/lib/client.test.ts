@@ -194,6 +194,23 @@ describe("jira writes", () => {
     expect(captured[1].body).toEqual({ transition: { id: "31" } });
   });
 
+  test("a link type matches its name or either phrase, in any case", async () => {
+    const types = { issueLinkTypes: [{ name: "Blocks", inward: "is blocked by", outward: "blocks" }] };
+    respond = (req) => (req.method === "GET" ? { body: types } : { body: {} });
+
+    await jira("cloud").linkByName("A-1", "blocks", "A-2");
+    expect(captured[1].body).toEqual({ type: { name: "Blocks" }, inwardIssue: { key: "A-1" }, outwardIssue: { key: "A-2" } });
+
+    // The inward phrase reads the other way round, so the keys swap.
+    await jira("cloud").linkByName("A-1", "Is Blocked By", "A-2");
+    expect(captured[1].body).toEqual({ type: { name: "Blocks" }, inwardIssue: { key: "A-2" }, outwardIssue: { key: "A-1" } });
+  });
+
+  test("an unknown link type lists the real ones", async () => {
+    respond = () => ({ body: { issueLinkTypes: [{ name: "Relates", inward: "relates to", outward: "relates to" }] } });
+    await expect(jira("cloud").linkByName("A-1", "duplicates", "A-2")).rejects.toThrow(/Relates/);
+  });
+
   test("an unreachable status lists what is actually available", async () => {
     respond = () => ({ body: { transitions: [{ id: "11", name: "Start", to: { name: "In Progress" } }] } });
     await expect(jira("cloud").transitionByName("A-1", "Released")).rejects.toThrow(/Start.*In Progress/s);

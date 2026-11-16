@@ -679,8 +679,8 @@ async function cmdJira(args: Args) {
       if (!inward || !type || !outward) {
         fail(`Usage: jira link <FROM-KEY> "<link type>" <TO-KEY>   (list types with 'jira link-types')`);
       }
-      await client.linkIssues(inward, outward, type);
-      return out(`Linked ${inward} → ${outward} as "${type}".`);
+      const name = await client.linkByName(inward, type, outward);
+      return out(`Linked ${inward} ${type} ${outward} (type "${name}").`);
     }
 
     case "link-types": {
