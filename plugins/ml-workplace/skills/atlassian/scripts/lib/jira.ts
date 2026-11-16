@@ -269,6 +269,18 @@ export class JiraClient {
     });
   }
 
+  /** Link by a type's name or either of its phrases, in any case; an inward phrase swaps the keys. */
+  async linkByName(fromKey: string, query: string, toKey: string): Promise<string> {
+    const types: any[] = (await this.linkTypes())?.issueLinkTypes ?? [];
+    const q = query.trim().toLowerCase();
+    const forward = types.find((t) => t.name.toLowerCase() === q || t.outward.toLowerCase() === q);
+    const backward = forward ? undefined : types.find((t) => t.inward.toLowerCase() === q);
+    const type = forward ?? backward;
+    if (!type) throw new Error(`No link type "${query}". Available: ${types.map((t) => t.name).join(", ")}`);
+    await (backward ? this.linkIssues(toKey, fromKey, type.name) : this.linkIssues(fromKey, toKey, type.name));
+    return type.name;
+  }
+
   async attach(key: string, fileName: string, bytes: Uint8Array) {
     const form = new FormData();
     form.append("file", new Blob([bytes as BlobPart]), fileName);

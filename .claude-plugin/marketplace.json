@@ -40,7 +40,7 @@
       "name": "ml-workplace",
       "source": "./plugins/ml-workplace",
       "description": "The tools a team works in, driven from Claude Code through bundled zero-dependency bun CLIs, no MCP server. atlassian: Jira and Confluence over REST — JQL search, create, comment, and transition issues, sprints and boards, read and write Confluence pages, Cloud and Data Center. fellow: read-only Fellow meeting notes, transcripts, AI summaries, and action items, with recaps filed into a repo.",
-      "version": "0.6.0",
+      "version": "0.6.1",
       "license": "MIT",
       "author": {
         "name": "Max Levitskiy"
@@ -119,7 +119,7 @@
       "name": "ml-ship",
       "source": "./plugins/ml-ship",
       "description": "Get a change landed. pr-gate validates a GitHub pull request or GitLab merge request end to end: what it actually changes and who it breaks, whether CI has settled and why it is red, what the agent reviewers found and whether each finding is real, whether it is genuinely ready, and the merge itself when you ask for it.",
-      "version": "0.4.0",
+      "version": "0.4.1",
       "license": "MIT",
       "author": {
         "name": "Max Levitskiy"

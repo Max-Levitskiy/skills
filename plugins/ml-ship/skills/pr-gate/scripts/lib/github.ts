@@ -211,7 +211,8 @@ export function github(target: string, wait: boolean): number {
 
   // Resolve which PR to work on. Everything downstream is wasted effort if it runs
   // against the wrong one, so several open PRs are a question for the user. One open
-  // PR is no question, and a merged or closed one is never offered.
+  // PR is no question. The current branch's merged PR is the answer; any other
+  // merged or closed one is never offered.
   let pr = target;
   if (!pr) {
     // `gh pr view` also answers with the branch's merged or closed PR.
@@ -220,6 +221,11 @@ export function github(target: string, wait: boolean): number {
       pr = String(current.number);
       console.log(`No PR given — using #${pr}, the open PR for the current branch.`);
       console.log("(Say so if you meant a different one.)\n");
+    } else if (current?.state === "MERGED") {
+      // The branch's own work already landed: report that, rather than offer unrelated PRs.
+      pr = String(current.number);
+      console.log(`No PR given — #${pr}, the current branch's PR, is already merged; reporting on it.`);
+      console.log("(Name a PR to gate a different one.)\n");
     } else {
       const open = listOpen(cwdRepo);
       if (!open) {
