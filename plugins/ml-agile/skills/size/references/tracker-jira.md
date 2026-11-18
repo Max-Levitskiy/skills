@@ -1,7 +1,8 @@
 # Tracker: Jira
 
-Everything goes through the `ml-workplace:atlassian` CLI: `atlassian …` on the PATH when that
-plugin is installed. Its scopes apply, so a configured `defaultScope` narrows searches the way
+Everything goes through the `ml-workplace:atlassian` CLI. If `atlassian` is absent from PATH,
+replace it in each example with `bun "<atlassian-skill-dir>/scripts/atlassian.ts"`.
+Its scopes apply, so a configured `defaultScope` narrows searches the way
 it narrows any other Jira command, and the output names the scope it used. Read the Atlassian
 skill's own instructions only if a command fails.
 

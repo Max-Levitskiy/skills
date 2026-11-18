@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.0
+
+- Package all three skills for Codex, including the explicit-only code comment guidelines.
+
 ## 0.3.2
 
 - Detect repetitive valid-import streaks that add no bindings and can crowd out

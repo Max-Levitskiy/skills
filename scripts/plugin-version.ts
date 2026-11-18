@@ -9,8 +9,8 @@
 //   bun scripts/plugin-version.ts check <plugin> <base-ref> [<head-ref>]
 //
 // The version lives in plugins/<plugin>/.claude-plugin/plugin.json, the plugin's entry in
-// .claude-plugin/marketplace.json, and `PLUGIN_VERSION` in plugins/<plugin>/src/version.ts when
-// that file has one. Each version has a `## <version>` section in plugins/<plugin>/CHANGELOG.md.
+// .claude-plugin/marketplace.json, any portable or Codex manifest, and `PLUGIN_VERSION` in
+// plugins/<plugin>/src/version.ts when present. Each version has a changelog section.
 
 import { existsSync } from "node:fs";
 import { join } from "node:path";
@@ -50,6 +50,10 @@ function next(version: string, level: Level): string {
 }
 
 const manifestPath = (plugin: string) => `plugins/${plugin}/.claude-plugin/plugin.json`;
+const otherManifestPaths = (plugin: string) => [
+  `plugins/${plugin}/plugin.json`,
+  `plugins/${plugin}/.codex-plugin/plugin.json`,
+];
 const versionTsPath = (plugin: string) => `plugins/${plugin}/src/version.ts`;
 const changelogPath = (plugin: string) => `plugins/${plugin}/CHANGELOG.md`;
 
@@ -64,6 +68,10 @@ function versions(root: string, plugin: string, ref: string): Record<string, str
   const found: Record<string, string | null> = {};
   const manifest = read(manifestPath(plugin));
   found[manifestPath(plugin)] = manifest === null ? null : (JSON.parse(manifest).version ?? null);
+  for (const path of otherManifestPaths(plugin)) {
+    const other = read(path);
+    if (other !== null) found[path] = JSON.parse(other).version ?? null;
+  }
   const market = read(MARKETPLACE);
   if (market !== null) {
     const entry = JSON.parse(market).plugins?.find((p: { name: string }) => p.name === plugin);
@@ -90,6 +98,14 @@ async function bump(root: string, plugin: string, level: string, notes: string[]
   manifest.version = to;
   await Bun.write(manifestFile, JSON.stringify(manifest, null, 2) + "\n");
 
+  for (const path of otherManifestPaths(plugin)) {
+    const file = Bun.file(join(root, path));
+    if (!await file.exists()) continue;
+    const other = await file.json();
+    other.version = to;
+    await Bun.write(file, JSON.stringify(other, null, 2) + "\n");
+  }
+
   const marketFile = join(root, MARKETPLACE);
   const market = JSON.parse(await Bun.file(marketFile).text());
   const entry = market.plugins.find((p: { name: string }) => p.name === plugin);
@@ -107,7 +123,7 @@ async function bump(root: string, plugin: string, level: string, notes: string[]
   const section = `## ${to}\n\n${notes.map((n) => `- ${n}`).join("\n")}\n\n`;
   const old = existsSync(changelogFile) ? await Bun.file(changelogFile).text() : `# Changelog\n\nWhat each ${plugin} version changed.\n\n`;
   const at = old.search(/^## /m);
-  await Bun.write(changelogFile, at === -1 ? old + section : old.slice(0, at) + section + old.slice(at));
+  await Bun.write(changelogFile, at === -1 ? old + section.trimEnd() + "\n" : old.slice(0, at) + section + old.slice(at));
 
   console.log(`${plugin} ${from} → ${to}`);
 }

@@ -214,6 +214,16 @@ test("no spore on PATH is spore.unavailable", () => {
   expect(JSON.parse(ran.stdout).error.code).toBe("spore.unavailable");
 });
 
+test("the text view works without writable plugin data", () => {
+  status("run_uncached", { position: at("implement", 1) });
+  writeFileSync(data, "unavailable as a directory");
+  const result = helper(["view", "run_uncached", "--no-cache"]);
+  expect(result.exitCode).toBe(0);
+  expect(result.stdout).toContain("workflow.dot");
+  expect(result.stdout).toContain("steps/implement.md");
+  expect(readFileSync(data, "utf8")).toBe("unavailable as a directory");
+});
+
 test("the view marks the current node and the arrow just taken in the files, and gives the instructions' head", () => {
   status("run_a", { position: at("implement", 3, ["test", "red"]), invocation: { attempt: 1, maxAttempts: 3 }, streaks: { test: { outcome: "red", count: 2, limit: 3 } } });
   const { exitCode, report } = helper(["view", "run_a", "--json"], { CLAUDE_SPORE_FONTS: FONT ?? "" });

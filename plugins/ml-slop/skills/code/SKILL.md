@@ -53,7 +53,8 @@ methods that require it must return `applicable: false`.
 
 ## Step 2: Dispatch analysis subagents in parallel
 
-Launch ALL methods in a single message so they run concurrently. Each subagent
+Launch the methods concurrently up to the host's subagent limit. As workers finish,
+collect and close them before launching any remaining methods. Each subagent
 prompt = the method file below + `agents/_conventions.md` + the assembled input
 + this line: "Return ONLY the JSON output described in your instructions. No
 commentary."

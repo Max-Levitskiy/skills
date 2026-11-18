@@ -1,6 +1,6 @@
 {
   "name": "max-skills",
-  "description": "Max Levitskiy's Claude Code plugins: AI-slop scoring, PR shipping gates, subagent orchestration, workplace tools, Agile story sizing, layered agent config with secret-free credentials, and Runspore workflows (ml-workflow needs Claude Code 2.1.290+ and Bun 1.2.0+).",
+  "description": "Max Levitskiy's plugins for Codex and Claude Code. Includes code and prose analysis, PR gates, subagent orchestration, workplace tools, story sizing, agent settings, design interviews, upstream maintenance, read-aloud and Runspore workflows.",
   "owner": {
     "name": "Max Levitskiy",
     "email": "max.dstu@gmail.com"
@@ -10,7 +10,7 @@
       "name": "ml-slop",
       "source": "./plugins/ml-slop",
       "description": "Find and score AI-generation slop. text measures information density and semantic repetition in prose, and can rewrite to remove it; code scores a git diff or standalone files for duplication, dead code, redundant comments, verbosity, over-abstraction, error masking, convention violations, hallucinated dependencies, and performance waste. comments is the writing-side rule: a comment only for a non-obvious why, constraint, invariant, or workaround, and explicit invocation only.",
-      "version": "0.3.2",
+      "version": "0.4.0",
       "license": "MIT",
       "author": {
         "name": "Max Levitskiy"
@@ -39,8 +39,8 @@
     {
       "name": "ml-workplace",
       "source": "./plugins/ml-workplace",
-      "description": "The tools a team works in, driven from Claude Code through bundled zero-dependency bun CLIs, no MCP server. atlassian: Jira and Confluence over REST — JQL search, create, comment, and transition issues, sprints and boards, read and write Confluence pages, Cloud and Data Center. fellow: read-only Fellow meeting notes, transcripts, AI summaries, and action items, with recaps filed into a repo.",
-      "version": "0.6.0",
+      "description": "The tools a team works in, through bundled Bun CLIs. atlassian: Jira and Confluence over REST — JQL search, create, comment, and transition issues, sprints and boards, read and write Confluence pages, Cloud and Data Center. fellow: read-only Fellow meeting notes, transcripts, AI summaries, and action items, with recaps filed into a repo.",
+      "version": "0.7.0",
       "license": "MIT",
       "author": {
         "name": "Max Levitskiy"
@@ -69,7 +69,7 @@
       "name": "ml-subagents",
       "source": "./plugins/ml-subagents",
       "description": "Run and coordinate AI subagents. orchestrate runs a multi-part task as small, tracked, parallel work packages with an async question protocol, so waiting on human decisions never blocks progress. herdr starts, messages, reads, and stops subagents in herdr panes from named presets, and drives the herdr terminal workspace manager: workspaces, worktrees, tabs, and panes.",
-      "version": "0.4.1",
+      "version": "0.5.0",
       "license": "MIT",
       "author": {
         "name": "Max Levitskiy"
@@ -98,7 +98,7 @@
       "name": "ml-agent-config",
       "source": "./plugins/ml-agent-config",
       "description": "The Agent Config Standard (ACS v2) as a reusable skill: layered global/repo/local settings, contexts (settings for a group of repositories matched by git remote or path, shared with a team or kept to yourself), credential references that keep secrets out of git, and a re-runnable onboarding flow. Other skills and subagents invoke it instead of restating the rules, and vendor its zero-dependency loader instead of copying their own. On Claude Code, /agent-config opens a settings pane, and 1Password is approved once per session.",
-      "version": "0.15.0",
+      "version": "0.16.0",
       "license": "MIT",
       "author": {
         "name": "Max Levitskiy"
@@ -119,7 +119,7 @@
       "name": "ml-ship",
       "source": "./plugins/ml-ship",
       "description": "Get a change landed. pr-gate validates a GitHub pull request or GitLab merge request end to end: what it actually changes and who it breaks, whether CI has settled and why it is red, what the agent reviewers found and whether each finding is real, whether it is genuinely ready, and the merge itself when you ask for it.",
-      "version": "0.4.0",
+      "version": "0.5.0",
       "license": "MIT",
       "author": {
         "name": "Max Levitskiy"
@@ -147,7 +147,7 @@
       "name": "ml-repo",
       "source": "./plugins/ml-repo",
       "description": "Whole-repository maintenance. cleanup audits a repo for dead, duplicated, generated, stale and over-engineered code and docs, then removes and simplifies it without changing behaviour: evidence for every claim of dead, refactors only where a test covers the code, live-state-safe changes for infrastructure code, dry-run blind spots covered, and the result shipped as a deletions-only PR plus reviewable PRs per area.",
-      "version": "0.1.1",
+      "version": "0.2.0",
       "license": "MIT",
       "author": {
         "name": "Max Levitskiy"
@@ -172,7 +172,7 @@
       "name": "ml-grilling",
       "source": "./plugins/ml-grilling",
       "description": "Design interviews that respect the person's attention. questions decides which questions to ask at all (only ones whose answer changes the outcome; standard practice, look-up facts and routine choices are settled and shown in one line) and how to word them: plain words, two-line bodies, one-line options, a short honest recommendation. grill-with-ui runs the interview on a browser page instead of the terminal — every question laid out with its recommendation, answerable in any order, with a discussion thread and one Send button — vendored from jasonku09/grill-with-ui (MIT) with one addition: on a remote machine it serves on the Tailscale address and opens the page in your Mac's browser, set once per machine in agent-config (remote.enabled, remote.host, remote.open). A hook adds the questions rules to the context whenever /grilling, /grill-me, /grill-with-docs, /grill-with-ui or /wayfinder starts, typed or called by Claude (needs bun).",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "license": "MIT",
       "author": {
         "name": "Max Levitskiy"
@@ -196,7 +196,7 @@
       "name": "ml-upstream",
       "source": "./plugins/ml-upstream",
       "description": "Keep a modified copy of someone else's repo current. fork vendors an upstream repo, or a directory of it, into a target with your changes recorded as prompts in .upstream/, reports what upstream changed since the base commit, applies the changes that touch nothing of yours, and re-applies your modifications where they overlap, stopping only there.",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "license": "MIT",
       "author": {
         "name": "Max Levitskiy"
@@ -217,7 +217,7 @@
       "name": "ml-workflow",
       "source": "./plugins/ml-workflow",
       "description": "Run Runspore workflows from inside Claude Code: start, follow, decide and resume durable runs that survive a closed session, with Claude steps that keep one conversation per run. Needs terminal Claude Code 2.1.290 or later and Bun 1.2.0 or later. This release starts, follows, continues and cancels runs with spore's continue --wait and cancel, names each unfinished run when a session starts, offers what each run needs in a menu pane, shows a line above the prompt for each run it follows and a live view of a run drawn from its workflow, runs background and watched (herdr pane) Claude steps, writes or changes workflows by interview, and installs or updates spore from a signed release when you say yes.",
-      "version": "0.15.0",
+      "version": "0.16.0",
       "license": "MIT",
       "author": {
         "name": "Max Levitskiy"
@@ -236,7 +236,7 @@
       "name": "ml-agile",
       "source": "./plugins/ml-agile",
       "description": "Agile practice for AI agents. size gives stories story points the way a Scrum team does: it calibrates reference stories from recently closed work, sizes one story or sweeps the backlog by agent planning poker (developer, tester and risk estimators voting blind), flags stories that need refinement, proposes splits for oversized ones, and writes sizes to Jira (through the Atlassian skill) or GitHub issues only after you confirm. The scale is Fibonacci by default, or custom numbers or T-shirt sizes, set in agent-config and shared by the team.",
-      "version": "0.1.1",
+      "version": "0.2.0",
       "license": "MIT",
       "author": {
         "name": "Max Levitskiy"
@@ -259,8 +259,8 @@
     {
       "name": "ml-voice",
       "source": "./plugins/ml-voice",
-      "description": "Listen to Claude's replies. /ml-voice:read opens a pane that reads the latest reply aloud, rewritten by Haiku as talk (code, tables and diagrams explained, not recited; or a compact cut that keeps only decisions, results and actions), highlights the part being read and jumps to any part you click; earlier replies are a pick away, and a band above the prompt keeps pause and stop in reach. Voices: Fish Audio (drama-3), OpenRouter, a local Kokoro server, your own OpenAI-shaped server, or macOS say, chosen through ml-agent-config; the pane's voice list, searched as you type, plays each voice before you keep it. Audio and rewrites are cached on disk under an age and size policy; paid requests are logged with their cost. On a remote box reached over SSH (herdr, a dev server), /ml-voice:remote-audio sets up your laptop to hear it through a RemoteForward, with no SSH back to the laptop; the pane shows where the sound goes and switches with one key. Claude Code only.",
-      "version": "0.3.0",
+      "description": "Listen to Claude's replies. /ml-voice:read opens a pane that reads the latest reply aloud, rewritten by Haiku as talk (code, tables and diagrams explained, not recited; or a compact cut that keeps only decisions, results and actions), highlights the part being read and jumps to any part you click; earlier replies are a pick away, and a band above the prompt keeps pause and stop in reach. Voices: Fish Audio (drama-3), OpenRouter, a local Kokoro server, your own OpenAI-shaped server, or macOS say, chosen through ml-agent-config; the pane's voice list, searched as you type, plays each voice before you keep it. Audio and rewrites are cached on disk under an age and size policy; paid requests are logged with their cost. On a remote box reached over SSH (herdr, a dev server), /ml-voice:remote-audio sets up your laptop to hear it through a RemoteForward, with no SSH back to the laptop; the pane shows where the sound goes and switches with one key. In Codex, use on-demand local speech synthesis or laptop playback over SSH.",
+      "version": "0.4.0",
       "license": "MIT",
       "author": {
         "name": "Max Levitskiy"

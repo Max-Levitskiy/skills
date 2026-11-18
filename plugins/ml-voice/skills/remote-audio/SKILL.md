@@ -1,15 +1,16 @@
 ---
 name: remote-audio
-description: Set up a laptop to hear /ml-voice:read when Claude Code runs on a remote box reached over SSH (herdr, a plain ssh session, a dev server, WSL on another PC). Use when the voice pane says no speaker is reachable, when the person asks to hear the reader on their laptop or remotely, or when sound plays on the wrong machine.
+description: Set up laptop playback for ml-voice when Claude Code or Codex runs on a remote box reached over SSH. Use when there is no speaker on the remote machine or the person wants to hear replies on their laptop.
 ---
 
 # /ml-voice:remote-audio
 
-Claude Code plays sound only on the machine it runs on. When that is a box the person reaches over
+Local playback happens on the machine the agent runs on. When that is a box the person reaches over
 SSH, the laptop in front of them hears nothing. The fix needs no SSH from the box back to the
 laptop. The laptop's own SSH connection carries a `RemoteForward 4714 localhost:4714`, and a small
 listener on the laptop (`remote/listen.pl`, Perl, only on 127.0.0.1) plays each clip the box sends.
-The voice pane then offers "♪ laptop (SSH) ⇄" and plays there.
+The Claude Code pane then offers laptop playback. In Codex, run the `read` skill with `--laptop`
+to play there. The remote Codex host still needs `say` on macOS or `espeak-ng` on Linux to synthesize speech.
 
 You run on the remote box; the laptop is out of your reach. The person runs one line there.
 
@@ -68,5 +69,5 @@ with plain ssh, log in again. Then run step 1's check again. If it fails:
 - **"remote port forwarding failed" when connecting:** another connection already holds 4714 on
   the box. The person closes the old connection.
 
-When it works, `/ml-voice:read` plays on the laptop. Pressing `o` in the voice pane, or clicking
-the output name, switches between the laptop and this machine when both can play.
+When it works, select laptop output in the Claude Code pane with `o` or ask Codex to read the
+reply aloud on the laptop.

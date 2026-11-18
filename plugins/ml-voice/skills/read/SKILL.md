@@ -1,6 +1,6 @@
 ---
 name: read
-description: Read Claude's latest reply aloud in a pane, rewritten as talk; pick earlier replies from the pane. Typed by the person, never invoked by the model.
+description: Read the latest assistant reply aloud, rewritten as speech. Invoke explicitly to hear a reply.
 disable-model-invocation: true
 ---
 
@@ -9,7 +9,13 @@ disable-model-invocation: true
 On Claude Code the ml-voice mod answers this command itself, before this text is rendered: it opens
 the read-aloud pane and starts reading, with no turn for the model.
 
-You are reading this, so the mod did not answer. Tell the user, in one or two lines, that
-`/ml-voice:read` needs the ml-voice plugin's hooks module loaded in Claude Code (its pane, voice
-and playback live there), that it does not run under other harnesses, and that `/reload-plugins`
-or a new session loads it after an install. Do nothing else.
+In Claude Code, if this text was expanded, tell the user to run `/reload-plugins` or start a new
+session to load the reader pane.
+
+In Codex, use the reply the user picked, or the last completed assistant reply before this turn.
+If it is unavailable, ask which text to read. Rewrite it as natural speech. Explain code and tables
+in words and keep the decisions, results and actions. Pass the narration on stdin to
+`bash <skill-dir>/../../scripts/speak.sh`. If using a quoted heredoc, choose a delimiter that does
+not occur on any line of the narration. Use `--laptop` if the user chose laptop playback over SSH.
+Keep the turn active until playback returns. The script uses `say` on macOS and `espeak-ng` on Linux.
+If playback fails, report the error and use the `remote-audio` skill when the user wants laptop playback.

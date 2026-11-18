@@ -7,6 +7,12 @@ allowed-tools: Bash(claude --version) Bash(spore *) Bash(claude-spore *)
 
 # /ml-workflow:start
 
+In Codex, skip the Claude Code version check and use the packaged helper. Prepend the
+plugin's `bin/` directory (two levels up from this skill, then `bin`) to `PATH` in **each**
+shell call that invokes `claude-spore` or `spore`. Keep the shell's working directory in the
+user's project so Runspore finds the right database. When suggesting another plugin skill,
+name it so the user can select it in the Codex skill picker.
+
 ## 1. Check Claude Code's version
 
 This Claude Code reports: !`claude --version`
@@ -26,8 +32,8 @@ Otherwise, take each problem in order:
 
 If `claude-spore` itself does not run:
 
-- The shell cannot find `claude-spore`: reply "ml-workflow's helper is not on this session's PATH. Run `/reload-plugins`, then try again." and stop.
-- It fails because `bun` is not found (exit 127): say "ml-workflow needs Bun 1.2.0 or later, and none is on PATH." and ask "Run `curl -fsSL https://bun.sh/install | bash` now?". On a yes, run it, then tell the person to restart Claude Code so its PATH has Bun, and stop.
+- The shell cannot find `claude-spore`: report the missing helper. In Claude Code, suggest `/reload-plugins`. In Codex, check the installed skill path and its plugin's `bin/` directory.
+- It fails because `bun` is not found (exit 127): say "ml-workflow needs Bun 1.2.0 or later, and none is on PATH." and ask "Run `curl -fsSL https://bun.sh/install | bash` now?". On a yes, run it, then tell the person to restart the agent session so its PATH has Bun, and stop.
 - It exits 2 saying it needs a newer Bun: show that line and ask "Run `bun upgrade` now?". On a yes, run it, then run the check again.
 
 Keep `launcher` for step 4.
@@ -54,6 +60,9 @@ On a no, say nothing was copied or started, and stop. On a yes:
 
 ### Check it
 
+In Codex, workflows with Claude worker actions still need the Claude CLI. Check `claude --version`
+only for those workflows and report the missing dependency before starting if it is unavailable.
+
 Run both checks, and show each one's report as it printed it:
 
 1. `spore validate <workflow>`: the workflow and its actions.
@@ -65,7 +74,7 @@ If either exits non-zero, say nothing was started, and stop.
 
 Read `inputSchema` from the folder's `settings.json`. Ask for every property in one message, then end the turn. For each: its `description` as the question, and a value drafted from this conversation as the answer to confirm, marking which properties are required. Leave a property with no grounded draft blank for the person to fill. Without an `inputSchema`, the input is `{}`: ask the person to confirm starting the workflow with no input, and end the turn.
 
-When step 2's `launcher` was `offer`, add one question to the same message: "Install the `claude-spore` launcher in `~/.local/bin`, so a worker you start in a plain terminal can run Claude steps? This is asked once." Run `claude-spore launcher install` on a yes and `claude-spore launcher decline` otherwise, before the start.
+In Claude Code, when step 2's `launcher` was `offer`, add one question to the same message: "Install the `claude-spore` launcher in `~/.local/bin`, so a worker you start in a plain terminal can run Claude steps? This is asked once." Run `claude-spore launcher install` on a yes and `claude-spore launcher decline` otherwise, before the start.
 
 When the person answers, build the input object from the confirmed values. It must fit the whole schema: types, `required`, `enum`, `const`, lengths, patterns, bounds, nested objects and arrays, and no undeclared property when `additionalProperties` is `false`. Ask again about any value that does not fit.
 
@@ -89,13 +98,16 @@ The answer holds no database path, so run `spore status <runId> --json` for the 
 
 ## Following a run
 
-Run this with the Bash tool in the background (`run_in_background`), `<db>` being the absolute path the last `--json` answer about this run gave as `db`:
+Use the absolute database path reported by the last `--json` answer about this run.
+In Claude Code, use the Bash tool with `run_in_background`. In Codex, start the shell call
+with a short yield timeout, then poll its process until the result arrives. Keep the turn
+active while polling and give the same initial one-line update as commentary.
 
 ```
 spore continue <runId> --wait --json --db <db>
 ```
 
-Keep `--db` after the other arguments, so the line starts `spore continue <runId> --wait`. Then end the turn with one line: the workflow, the key, the run, the database, and that you will say when the run needs the person or ends.
+Keep `--db` after the other arguments, so the line starts `spore continue <runId> --wait`. In Claude Code, end the turn with one line: the workflow, the key, the run, the database, and that you will say when the run needs the person or ends.
 
 When the command returns, its stdout is one JSON object: the run's status (`runId`, `status`, `position`, `waiting`, `intervention`, `quarantine`, `step`, `result`, `end`, `cancel`, `db`) with `needs` and `commands`, `needs` being null once the run has ended. Its stderr holds progress lines. React by that object's `status` and `needs`, not by the exit code: spore exits 0 whenever it printed the status, whatever the run needs, as `gh run watch` exits 0 and `gh run view --json status,conclusion` says how the run went. The run's own exit codes come only with `--exit-status`, which is for scripts and which this line does not pass. Take the first row that fits, and say it in one line, offering what the row says right there. Every outcome, resolution or command you offer comes from this object, never typed or guessed: when the person names another outcome, say the node does not route it and offer the listed ones as the only choices.
 
@@ -135,8 +147,8 @@ Run the one the person picks, then follow again.
 **An async step**, by `needs`:
 
 - `external-ready`: a step waits for its actor (`step.actor`) to claim it. Say which step (`position.nodeId`) and give the claim line, `spore step claim <runId> --actor <step.actor> --db <db>`. For the actor `person`, the work is the person's own: claiming prints its instructions and the commands that report it. Run nothing; say that `/ml-workflow:continue <runId>` follows the run again once the step is reported.
-- `held`, with `step.waits`: say `step.waits`, for an interactive Claude step "implement waits for you in its pane", and name the pane's herdr agent, `step.holder.herdrAgent`, when the holder has one. Then follow again at once, without waiting for the person, and end the turn with that line: the watch goes on watching the pane and does not say this again for the same wait, so the follow comes back when the answer is in, or when the pane waits for the person again. `spore step abandon <runId> --db <db>` frees the step, and the step's effect decides what happens next; run it only when the person asks.
+- `held`, with `step.waits`: say `step.waits`, for an interactive Claude step "implement waits for you in its pane", and name the pane's herdr agent, `step.holder.herdrAgent`, when the holder has one. Then follow again at once, without waiting for the person, and share that line (end the turn in Claude Code, use commentary in Codex): the watch goes on watching the pane and does not say this again for the same wait, so the follow comes back when the answer is in, or when the pane waits for the person again. `spore step abandon <runId> --db <db>` frees the step, and the step's effect decides what happens next; run it only when the person asks.
 - `capability-missing`: say which step, and `step.missing`: what this `spore` lacks and what to restore. Run nothing.
 - `held` otherwise: say who holds the step (`step.actor`, `step.holder`) and until when (`step.deadlineMs`), and that `spore step abandon <runId>` frees it. Run nothing.
 
-The run does not need this session. Closing Claude stops the follow; the run stays where it was, and `/ml-workflow:continue` picks it up.
+The run does not need this session. Closing the session stops the follow; the run stays where it was, and `/ml-workflow:continue` picks it up.

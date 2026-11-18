@@ -8,6 +8,12 @@ disable-model-invocation: true
 
 # /ml-workflow:author
 
+In Codex, skip the Claude Code version check and use the packaged helper. Prepend the
+plugin's `bin/` directory (two levels up from this skill, then `bin`) to `PATH` in **each**
+shell call that invokes `claude-spore` or `spore`. Keep the shell's working directory in the
+user's project so Runspore finds the right database. When suggesting another plugin skill,
+name it so the user can select it in the Codex skill picker.
+
 ## 1. Check Claude Code's version
 
 This Claude Code reports: !`claude --version`
@@ -27,8 +33,8 @@ Otherwise, take each problem in order:
 
 If `claude-spore` itself does not run:
 
-- The shell cannot find `claude-spore`: reply "ml-workflow's helper is not on this session's PATH. Run `/reload-plugins`, then try again." and stop.
-- It fails because `bun` is not found (exit 127): say "ml-workflow needs Bun 1.2.0 or later, and none is on PATH." and ask "Run `curl -fsSL https://bun.sh/install | bash` now?". On a yes, run it, then tell the person to restart Claude Code so its PATH has Bun, and stop.
+- The shell cannot find `claude-spore`: report the missing helper. In Claude Code, suggest `/reload-plugins`. In Codex, check the installed skill path and its plugin's `bin/` directory.
+- It fails because `bun` is not found (exit 127): say "ml-workflow needs Bun 1.2.0 or later, and none is on PATH." and ask "Run `curl -fsSL https://bun.sh/install | bash` now?". On a yes, run it, then tell the person to restart the agent session so its PATH has Bun, and stop.
 - It exits 2 saying it needs a newer Bun: show that line and ask "Run `bun upgrade` now?". On a yes, run it, then run the check again.
 
 ## 3. Run the interview

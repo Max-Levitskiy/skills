@@ -7,6 +7,12 @@ disable-model-invocation: true
 
 # /ml-workflow:menu
 
+In Codex, skip the Claude Code version check and use the packaged helper. Prepend the
+plugin's `bin/` directory (two levels up from this skill, then `bin`) to `PATH` in **each**
+shell call that invokes `claude-spore` or `spore`. Keep the shell's working directory in the
+user's project so Runspore finds the right database. When suggesting another plugin skill,
+name it so the user can select it in the Codex skill picker.
+
 ## 1. Check Claude Code's version
 
 This Claude Code reports: !`claude --version`
@@ -16,6 +22,10 @@ ml-workflow needs Claude Code 2.1.290 or later. Compare the version above with 2
 > ml-workflow needs Claude Code 2.1.290 or later; this is <the version above, or "unknown">. Run `claude update`, then try again.
 
 ## 2. Open the menu
+
+In Codex, run `claude-spore menu --json`. Show the database, each row's label, and its
+available actions and arguments. Ask the person to pick, then follow the matching skill
+with those arguments. Stop here for the Codex path.
 
 The menu is a pane that ml-workflow's mod draws. When the person types `/ml-workflow:menu`, the mod normally opens it and this skill does not run. Reading this text means the mod could not open it from there, so open it with the mod's tool:
 

@@ -4,7 +4,7 @@ type: prompt
 parallel: false
 ---
 
-The Atlassian skill is missing the keys in `keys`. Ask the user for them, with `AskUserQuestion`
+The Atlassian skill is missing the keys in `keys`. Ask the user for them, with the available question tool (or chat)
 where they can pick rather than type, then write the answers with
 `agent-config write atlassian --layer <layer>`. Describe the keys first with
 `agent-config describe atlassian`: it has each key's description and recommended layer, and the

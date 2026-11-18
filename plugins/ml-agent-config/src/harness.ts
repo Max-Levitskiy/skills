@@ -169,6 +169,10 @@ export function findDependency(
 
   const looseRoots = [harness === "claude" ? claudeHome() : codexHome()];
   if (checkout) looseRoots.push(join(checkout, harness === "claude" ? ".claude" : ".codex"));
+  if (harness === "codex" && kind === "skill") {
+    looseRoots.unshift(join(homedir(), ".agents"));
+    if (checkout) looseRoots.unshift(join(checkout, ".agents"));
+  }
   for (const root of looseRoots) {
     const foundAt = candidatePaths(harness, root, kind, name).find(existsSync);
     if (foundAt) return { foundAt, ambiguousWith: [] };

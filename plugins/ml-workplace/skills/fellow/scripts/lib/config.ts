@@ -79,7 +79,9 @@ function binary(): string {
     join(process.env.CLAUDE_CONFIG_DIR || join(homedir(), ".claude"), "plugins", "cache"),
     join(process.env.CODEX_HOME || join(homedir(), ".codex"), "plugins", "cache"),
   ];
+  if (process.env.CLAUDECODE !== "1") caches.reverse();
   for (const cache of caches) {
+    if (!existsSync(cache)) continue;
     const found = [...new Bun.Glob("*/ml-agent-config/*/bin/agent-config").scanSync({ cwd: cache, onlyFiles: false })]
       .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
       .pop();

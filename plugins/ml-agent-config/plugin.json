@@ -1,0 +1,6 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "ml-agent-config",
+  "version": "0.16.0",
+  "description": "Set up layered agent settings and credential references with the agent-config CLI."
+}

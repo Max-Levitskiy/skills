@@ -8,6 +8,10 @@ description: Run a grilling interview on a local browser page instead of the ter
 `$SKILL` below means this skill's base directory (the folder holding this file). Everything is
 plain Node with no install step: `node $SKILL/server.mjs <command>`.
 
+Before drafting questions, read `../questions/SKILL.md` relative to this skill if those rules
+are absent from the conversation. In Codex this keeps the browser interview usable when the
+plugin hook is unavailable or awaiting trust.
+
 Two files carry a grill. `state.json` is **yours alone**: questions, recommendations, thread
 replies, statuses, agent status. `events.jsonl` is **the page's alone**: one line per Send.
 Nobody writes the other's file. The page polls `state.json`; how you receive events depends
@@ -265,8 +269,8 @@ goes on**: the send that requested it is handled the moment the brief is out, so
 keeps answering and sending while the subagent draws.
 
 1. Stat `<session>/visual.html` (do not read it) and note its modification time; a first
-   draw has none. Then launch ONE subagent with the Agent tool (it runs in the background
-   and you get a completion notice later), general-purpose type, prompt filled in from this
+   draw has none. Then launch one general-purpose subagent with the host's available subagent
+   tool, using the prompt from this
    template (use the absolute path of `$SKILL`):
 
    > Draw the visual for a grill-with-ui design interview. Read `$SKILL/visual-brief.md`

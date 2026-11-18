@@ -2,6 +2,10 @@
 
 What each ml-voice version changed. Every change to the plugin raises the version and adds its section here with `bun scripts/plugin-version.ts bump` (AGENTS.md, Releasing a plugin).
 
+## 0.4.0
+
+- Read Codex replies aloud with local speech synthesis and optional SSH laptop playback.
+
 ## 0.3.0
 
 - `/ml-voice:read` plays on a laptop when Claude Code runs on a remote box reached over SSH: the laptop's own connection carries a `RemoteForward 4714`, and a small listener there plays each clip; pause stops it there too. `/ml-voice:remote-audio` sets it up with one line run on the laptop (macOS launchd or a Linux systemd user service).

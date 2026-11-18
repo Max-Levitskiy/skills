@@ -4,7 +4,7 @@ type: prompt
 parallel: false
 ---
 
-Fellow is missing the keys in `keys`. Ask the user for them, with `AskUserQuestion` where they can
+Fellow is missing the keys in `keys`. Ask the user for them, with the available question tool (or chat) where they can
 pick rather than type, then write the answers with `agent-config write fellow --layer <layer>`.
 Describe the keys first with `agent-config describe fellow`: it has each key's description and
 recommended layer, and the answers already set.
