@@ -50,7 +50,7 @@ the README, and any memory you hold about the repo. Then take an inventory:
 
 ```bash
 bash <this-skill-dir>/scripts/inventory.sh [repo-root]
-# installed as a plugin: $CLAUDE_PLUGIN_ROOT/skills/cleanup/scripts/inventory.sh
+# for a plugin install, use the absolute path to this skill's scripts/inventory.sh
 ```
 
 It prints, per top-level directory, file and line counts, the last commit and
@@ -104,7 +104,7 @@ In **audit** mode, stop here and report (see [Report](#report)).
 
 ## 3. Decisions
 
-Batch the decisions that belong to the owner into one `AskUserQuestion` call,
+Batch the decisions that belong to the owner into one the available question tool (or chat) call,
 with the recommended option first. These typically include:
 
 - generated scaffolding that people use interactively, such as slash commands

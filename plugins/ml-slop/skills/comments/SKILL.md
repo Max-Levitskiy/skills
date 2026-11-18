@@ -1,6 +1,6 @@
 ---
 name: comments
-description: Defines when Claude should and should NOT write code comments. Apply only when explicitly invoked by the user.
+description: Apply code comment guidelines when explicitly invoked by the user.
 disable-model-invocation: true
 metadata:
   mcpmarket-version: 1.0.0
@@ -35,7 +35,3 @@ Keep it to **one line** wherever possible. Two lines max. Never a paragraph, nev
 1. Before writing a comment, ask: *would removing this comment confuse a future reader who doesn't know about the current task?* If no, don't write it.
 2. When editing existing code, treat redundant comments around your change as fair game to remove (don't go on a comment-stripping crusade in unrelated files).
 3. If the user explicitly asks for verbose comments, follow the user — they override this rule.
-
-## One-liner the hook prepends
-
-The companion hook injects `Remember the code commenting rule.` into every prompt. That string is intentionally short — its job is just to make sure Claude looks at *this* skill before writing code, not to re-state the rule inline.

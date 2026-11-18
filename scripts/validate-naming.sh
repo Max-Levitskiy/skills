@@ -33,6 +33,15 @@ for ((i = 0; i < count; i++)); do
   fi
   pj=$(jq -r '.name' "$manifest")
   [[ "$pj" == "$name" ]] || { bad "plugins/$name: plugin.json name '$pj' must be '$name'"; entry_ok=0; }
+  codex_manifest="$ROOT/plugins/$name/plugin.json"
+  [[ -f "$codex_manifest" ]] || codex_manifest="$ROOT/plugins/$name/.codex-plugin/plugin.json"
+  version=$(jq -r '.version' "$manifest")
+  market_version=$(jq -r ".plugins[$i].version" "$MARKETPLACE")
+  [[ "$market_version" == "$version" ]] || { bad "entry '$name': version '$market_version' must match '$version'"; entry_ok=0; }
+  if ! jq -e --arg name "$name" --arg version "$version" '.name == $name and .version == $version' "$codex_manifest" >/dev/null 2>&1; then
+    bad "plugins/$name must have a Codex manifest matching the Claude Code plugin name and version"
+    entry_ok=0
+  fi
 
   skill_count=0
   for skill_md in "$ROOT/plugins/$name"/skills/*/SKILL.md; do

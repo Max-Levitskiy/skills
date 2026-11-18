@@ -41,7 +41,8 @@ section independently. Track section boundaries for the final report.
 
 ## Step 2: Dispatch analysis subagents in parallel
 
-Launch all subagents in a **single message** so they run concurrently. Each
+Launch subagents concurrently up to the host's limit. Collect and close finished workers
+before starting any remaining methods. Each
 subagent receives the full text (or section) and returns structured JSON.
 
 **Core methods (always run — 7):**

@@ -1,6 +1,35 @@
-# Skills — Claude Code Plugin Marketplace: Skills, Subagents, Hooks & MCP Servers
+# Skills for Codex and Claude Code
 
-> A **Claude Code plugin marketplace**: install curated plugins — slash commands, skills, subagents, hooks, and MCP servers — into [Claude Code](https://code.claude.com) with a single command.
+The `max-skills` marketplace ships 11 plugins for Codex and [Claude Code](https://code.claude.com).
+
+## Install in Codex
+
+```bash
+codex plugin marketplace add Max-Levitskiy/skills
+codex plugin list --marketplace max-skills --available --json
+codex plugin add ml-<domain>@max-skills
+```
+
+In a Codex session, type `$` or open `/skills` to select a skill. In the desktop app, use the
+Plugins Directory to browse the marketplace. Refresh its Git source with
+`codex plugin marketplace upgrade max-skills`. See the
+[Codex plugin documentation](https://developers.openai.com/plugins/build/plugins).
+
+| Plugin | Codex support |
+| ------ | ------------- |
+| `ml-agent-config` | Setup skill and Bun CLI. Use the CLI for settings and credential references. The settings pane and per-session 1Password cache are Claude Code features. |
+| `ml-agile` | GitHub or Jira story sizing and calibration. Planning poker uses subagents when available. |
+| `ml-grilling` | Browser interview with a shell wait loop. Review and trust the optional prompt hook in `/hooks` to load the question rules on explicit interview invocations. |
+| `ml-repo` | Cleanup skill and bundled inventory script. |
+| `ml-ship` | PR and MR validation through the bundled instructions and tracker CLI. |
+| `ml-slop` | Prose and code analysis. Select the comments skill explicitly to apply the comment guidelines. |
+| `ml-subagents` | Work coordination with the host's subagent tools and the herdr CLI for terminal agents. |
+| `ml-upstream` | Vendor and update upstream code using Git. |
+| `ml-voice` | On-demand read-aloud via `say` on macOS or `espeak-ng` on Linux, with optional laptop playback over SSH. The interactive pane and cloud voices are Claude Code features. |
+| `ml-workflow` | Start, follow and manage Runspore runs with a text menu and graph snapshot. Workflows containing Claude worker steps still need Claude installed. |
+| `ml-workplace` | Jira, Confluence and Fellow through the bundled Bun CLIs and `ml-agent-config`. |
+
+## Install in Claude Code
 
 Add this marketplace to Claude Code:
 
@@ -17,9 +46,9 @@ Then browse and install plugins:
 
 ---
 
-## What is this?
+## Claude Code components
 
-This repo is a [Claude Code](https://code.claude.com) **plugin marketplace** — a Git repository that packages and distributes Claude Code plugins so anyone can install them in seconds. A plugin can bundle any combination of:
+A Claude Code plugin can bundle any combination of:
 
 - **Slash commands** — custom `/commands` for repeatable workflows
 - **Skills** — model-invoked capabilities that trigger automatically when relevant
@@ -27,7 +56,7 @@ This repo is a [Claude Code](https://code.claude.com) **plugin marketplace** —
 - **Hooks** — automation that runs on Claude Code lifecycle events
 - **MCP servers** — connections to external tools and data via the Model Context Protocol
 
-## Install
+## Browse and update in Claude Code
 
 **1. Add the marketplace** (one time):
 
@@ -49,7 +78,7 @@ This repo is a [Claude Code](https://code.claude.com) **plugin marketplace** —
 
 Prefer a UI? Run `/plugin` to open the interactive browser, pick a plugin, and install it there.
 
-Every skill is invoked as `/ml-<plugin>:<skill>`.
+In Claude Code, invoke a skill as `/ml-<plugin>:<skill>`.
 
 | Plugin | Skills | What it's for | Install |
 | ------ | ------ | ------------- | ------- |
@@ -61,7 +90,7 @@ Every skill is invoked as `/ml-<plugin>:<skill>`.
 | [`ml-grilling`](plugins/ml-grilling) | `/ml-grilling:questions` · `/ml-grilling:grill-with-ui` | Ask a person only what they alone can decide — `questions` settles standard practice, look-up facts and routine choices in one line and words what remains so it reads in seconds. `grill-with-ui` runs the interview on a browser page, every question with its recommendation, answerable in any order, one Send button; vendored from jasonku09/grill-with-ui with a remote-machine modification (serve on Tailscale, open the Mac's browser), kept current with `/ml-upstream:fork`. | `/plugin install ml-grilling@max-skills` |
 | [`ml-agile`](plugins/ml-agile) | `/ml-agile:size` | Story points the Scrum way, for agents. Calibrate reference stories from recently closed work, size one story or sweep the backlog by agent planning poker, flag stories that need refinement and propose splits, and write sizes to Jira or GitHub issues once you confirm. Fibonacci by default, or custom numbers or T-shirt sizes. | `/plugin install ml-agile@max-skills` |
 | [`ml-workflow`](plugins/ml-workflow) | `/ml-workflow:menu` · `start` · `status` · `continue` · `cancel` · `author` | Run Runspore workflows from inside Claude Code: durable runs that survive a closed session, decided and resumed from any new one. Needs terminal Claude Code **2.1.290+** and Bun **1.2.0+**. Needs `spore` **0.6.0+**, which it offers to install or update. | `/plugin install ml-workflow@max-skills` |
-| [`ml-voice`](plugins/ml-voice) | `/ml-voice:read` | Listen to Claude's replies. A pane reads the latest reply aloud, rewritten as talk (code and tables explained, or a compact cut of what matters), highlights the part being read and jumps to any part you click; pause and stop stay above the prompt. Fish Audio drama-3, OpenRouter, Kokoro, your own server or macOS `say`; audio is cached and paid requests are logged. Claude Code only. | `/plugin install ml-voice@max-skills` |
+| [`ml-voice`](plugins/ml-voice) | `/ml-voice:read` | Listen to Claude's replies. A pane reads the latest reply aloud, rewritten as talk (code and tables explained, or a compact cut of what matters), highlights the part being read and jumps to any part you click; pause and stop stay above the prompt. Fish Audio drama-3, OpenRouter, Kokoro, your own server or macOS `say`; audio is cached and paid requests are logged. | `/plugin install ml-voice@max-skills` |
 | [`ml-agent-config`](plugins/ml-agent-config) | `/ml-agent-config:setup` | Layered settings for any skill or subagent — global, repo, your own per-repo layer, and a gitignored local layer — plus credentials referenced from 1Password, the environment, a dotenv file, Keychain, or any command, so a secret never lands in a config file. On Claude Code, `/agent-config` opens a settings pane, and 1Password is approved once per session. | `/plugin install ml-agent-config@max-skills` |
 | [`ml-upstream`](plugins/ml-upstream) | `/ml-upstream:fork` | Keep a modified copy of someone else's repo current. Vendor an upstream repo or a directory of it with your changes recorded as prompts in `.upstream/`; check what upstream changed since; update by applying the clean changes and re-applying your modifications where they overlap, stopping only there. | `/plugin install ml-upstream@max-skills` |
 
@@ -101,7 +130,7 @@ Conventions shared by plugins in this marketplace.
 
 Contributions welcome. In short:
 
-1. Drop your plugin under `plugins/ml-<domain>/` with a `.claude-plugin/plugin.json` whose `name` is `ml-<domain>`. Name `<domain>` for what the plugin is for, so a second skill can join it later.
+1. Drop your plugin under `plugins/ml-<domain>/` with a Codex manifest and a `.claude-plugin/plugin.json` of the same name and version. Name `<domain>` for what the plugin is for, so a second skill can join it later.
 2. Register it in `.claude-plugin/marketplace.json` with the same `name` and a `./plugins/ml-<domain>` source, then run `bash scripts/validate-naming.sh`.
 3. Open a pull request.
 

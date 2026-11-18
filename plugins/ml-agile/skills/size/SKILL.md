@@ -13,8 +13,8 @@ confirms.
 ## Start here every time
 
 ```bash
-AC=$(command -v agent-config || ls -d "$HOME"/.claude/plugins/cache/*/ml-agent-config/*/bin/agent-config \
-     "${CODEX_HOME:-$HOME/.codex}"/plugins/cache/*/ml-agent-config/*/bin/agent-config 2>/dev/null | tail -1)
+AC=$(command -v agent-config || sh -c 'ls -dt "${CODEX_HOME:-$HOME/.codex}"/plugins/cache/*/ml-agent-config/*/bin/agent-config \
+     "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/*/ml-agent-config/*/bin/agent-config 2>/dev/null | head -1')
 "$AC" start agile --from <this-skill-dir>
 ```
 
@@ -24,6 +24,12 @@ means agent-config isn't installed: tell the user and offer
 https://github.com/Max-Levitskiy/skills/tree/main/plugins/ml-agent-config.
 
 ## Pick the tracker
+
+When `atlassian` is absent from PATH, use the installed Atlassian skill's
+`scripts/atlassian.ts` through Bun. Apply this to the tracker probe and the Jira job commands.
+Find the skill in Codex's available skills or get its location from the `declaration` field of
+`"$AC" describe atlassian`. If the plugin is missing and Jira was explicitly chosen, follow the
+Atlassian skill's installation and setup before sizing.
 
 `config.tracker` is `jira` or `github`, or `auto`. For `auto`, the first rule that applies wins:
 

@@ -13,7 +13,20 @@ To try it in one project without changing your own plugin set, install it there 
 claude plugin install ml-workflow@max-skills --scope project
 ```
 
-**This release starts, follows, continues and cancels runs, names each unfinished run when a session starts, offers what each run needs in a menu, shows where a followed run is in a line above the prompt and in a live view that draws the workflow's graph, folded around the current node, or a text tree, with a button that brings a watched step's herdr pane to the front, does background and watched Claude steps, writes workflows by interview, installs or updates `spore` when you say yes, and ships the [runner module](#the-runner-module) that will start, probe and stop Claude steps, which the shipped workflows do not use yet.** [docs/spec.md](docs/spec.md) is the whole design and says what is built.
+**This release adds Codex support for starting, following, continuing, inspecting and cancelling runs, and authoring workflows.** Claude Code provides the session-start notice, menu pane, run line, and live graph. Both hosts use Runspore and the same workflow definitions. [docs/spec.md](docs/spec.md) describes the Claude Code integration and the [runner module](#the-runner-module).
+
+## Codex
+
+```bash
+codex plugin marketplace add Max-Levitskiy/skills
+codex plugin add ml-workflow@max-skills
+```
+
+Use `$` or `/skills` to select the workflow skill. The Codex menu lists actions in chat and
+`view` prints a graph snapshot. `start` and `continue` keep the turn active while following a run.
+Codex uses Bun and `spore` at the versions below. Workflows with Claude steps also require the
+Claude CLI and, for watched steps, herdr. For a Runspore worker started in a separate shell, add
+the installed plugin's `bin/` to its PATH if its workflows call `claude-spore`.
 
 ## Requirements
 
@@ -22,8 +35,6 @@ claude plugin install ml-workflow@max-skills --scope project
 | Claude Code, in a terminal | **2.1.290** | every sub-skill, before anything else; the mod at session start. Older: `claude update` |
 | Bun | **1.2.0** | `claude-spore`, before anything else; it exits 2 naming the version. Older: `bun upgrade` |
 | [`spore`](https://github.com/Web-tree/runspore) | **0.10.0**, answering `spore capabilities` with the `cli`, `host`, `kernel` and `store` contracts at 0.2 and JSON format `runspore.cli/0.3`. Older releases lack `continue --wait` (0.2.0), the fixes following a run relies on (0.3.0), the mark on a try cut off by a kill, so the start line and the menu's Continue never see one (0.4.0, 0.5.0), or step runner modules (0.6.0), or write `runspore.cli/0.2` and miss a watched step's pane wait (0.7.0 to 0.9.2) | `claude-spore doctor`: the mod at session start, silent when it fits, and `start`, `status`, `continue` and `author` after the Claude Code check. Missing or older: one line naming the version needed, the one found and the install or update command, run only when you say yes |
-
-claude.ai and Cowork refuse a plugin with a top-level `bin/`, so this plugin is for terminal Claude Code only.
 
 ## Getting spore
 

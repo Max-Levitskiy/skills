@@ -10,8 +10,7 @@ Read-only access to Fellow meeting data through a bundled `bun` CLI. No MCP serv
 Throughout this document, `$F` means the bundled CLI:
 
 ```bash
-F="<this-skill-dir>/scripts/fellow.ts"     # installed as a plugin:
-                                           # $CLAUDE_PLUGIN_ROOT/skills/fellow/scripts/fellow.ts
+F="<this-skill-dir>/scripts/fellow.ts"
 bun "$F" help
 ```
 
@@ -20,9 +19,9 @@ bun "$F" help
 Run this first, before anything else:
 
 ```bash
-AC=$(command -v agent-config || ls -d "$HOME"/.claude/plugins/cache/*/ml-agent-config/*/bin/agent-config \
-     "${CODEX_HOME:-$HOME/.codex}"/plugins/cache/*/ml-agent-config/*/bin/agent-config 2>/dev/null | tail -1)
-"$AC" start fellow
+AC=$(command -v agent-config || sh -c 'ls -dt "${CODEX_HOME:-$HOME/.codex}"/plugins/cache/*/ml-agent-config/*/bin/agent-config \
+     "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/*/ml-agent-config/*/bin/agent-config 2>/dev/null | head -1')
+"$AC" start fellow --from <this-skill-dir>
 ```
 
 Prints JSON. `ready: true` → proceed. `ready: false` → read the file at `guide` and follow it to work the `actions` list, then re-run. An empty `$AC` or `command not found` means agent-config isn't installed; tell the user and offer to install it from https://github.com/Max-Levitskiy/skills/tree/main/plugins/ml-agent-config.

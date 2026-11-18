@@ -6,7 +6,7 @@ parallel: false
 
 orchestrate is missing the keys in `keys`: a tracker kind was chosen and what it needs is not set
 yet. The same steps serve when nothing is missing and the user wants Phase 1's discoveries saved,
-so the next orchestration skips them. Ask with `AskUserQuestion` where they can pick rather than
+so the next orchestration skips them. Ask with the available question tool (or chat) where they can pick rather than
 type, then write the answers with `agent-config write orchestrate --layer <layer>`. Describe the
 keys first with `agent-config describe orchestrate`: it has each key's description and recommended
 layer, and the answers already set.

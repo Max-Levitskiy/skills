@@ -12,24 +12,23 @@ markup on Data Center, storage XHTML on Confluence.
 Throughout this skill, `$A` means the bundled CLI:
 
 ```bash
-A="<this-skill-dir>/scripts/atlassian.ts"     # installed as a plugin:
-                                              # $CLAUDE_PLUGIN_ROOT/skills/atlassian/scripts/atlassian.ts
+A="<this-skill-dir>/scripts/atlassian.ts"
 bun "$A" help
 ```
 
-Installed as a plugin, the same CLI is also on the Bash tool's PATH as `atlassian`, so `atlassian
-jira get NEO-123` needs no path. For a workflow hook or a terminal outside Claude Code,
+In Claude Code, `atlassian` is on the shell tool's PATH. In Codex, use `bun "$A"` for the
+examples throughout this skill. For a workflow hook or a terminal outside Claude Code,
 `atlassian launcher install` puts a launcher of that name in `~/.local/bin`; it runs the installed
-plugin's CLI, whatever its version, so nothing pins a `~/.claude/plugins/cache/…/<version>/` path.
+Claude Code plugin's CLI. For a Codex installation, use the bundled CLI path.
 
 ## Start here every time
 
 Run this first, before anything else:
 
 ```bash
-AC=$(command -v agent-config || ls -d "$HOME"/.claude/plugins/cache/*/ml-agent-config/*/bin/agent-config \
-     "${CODEX_HOME:-$HOME/.codex}"/plugins/cache/*/ml-agent-config/*/bin/agent-config 2>/dev/null | tail -1)
-"$AC" start atlassian
+AC=$(command -v agent-config || sh -c 'ls -dt "${CODEX_HOME:-$HOME/.codex}"/plugins/cache/*/ml-agent-config/*/bin/agent-config \
+     "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/*/ml-agent-config/*/bin/agent-config 2>/dev/null | head -1')
+"$AC" start atlassian --from <this-skill-dir>
 ```
 
 Prints JSON. `ready: true` → proceed. `ready: false` → read the file at `guide` and follow it to work the `actions` list, then re-run. An empty `$AC` or `command not found` means agent-config isn't installed; tell the user and offer to install it from https://github.com/Max-Levitskiy/skills/tree/main/plugins/ml-agent-config.

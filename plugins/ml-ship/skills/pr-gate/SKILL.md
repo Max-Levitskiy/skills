@@ -26,7 +26,7 @@ The graph is [SWL-DOT](https://runspore.com/docs#notation). You are its runtime:
 1. Start at `start`. Say one line per node entered, naming the references file you read for it, so the path is visible.
 2. Do what the node's `label` says. First read `references/<node id>.md`: the one beside the graph if it exists, else this skill's. It replaces this skill's whole, and a node with neither is fully described by its label.
 3. End the node with one outcome and follow the edge whose `on` names it. An edge with no `on` means `ok`. If no edge fits, stop and report it; do not improvise a route.
-4. `kind="await-signal"`: the outcome is the person's answer. If they already gave it, use it; otherwise ask with `AskUserQuestion`, and wait.
+4. `kind="await-signal"`: the outcome is the person's answer. If they already gave it, use it; otherwise ask with the available question tool (or chat), and wait.
 5. An `exhausted` edge is taken instead of the node's other edges on its fourth pass.
 6. `kind="complete"` ends the walk. `kind="fail"` ends it with the label as the reason.
 

@@ -1,0 +1,9 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [{ "type": "command", "command": "bun \"${PLUGIN_ROOT}/hooks/inject-rules.ts\"" }]
+      }
+    ]
+  }
+}

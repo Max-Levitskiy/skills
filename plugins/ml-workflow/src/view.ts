@@ -15,7 +15,7 @@ const LIMIT_MS = 4000;
 
 const USAGE = {
   line: "usage: claude-spore line <runId> [--db <db>] [--json]",
-  view: "usage: claude-spore view <runId> [--db <db>] [--depth <n>] [--json]",
+  view: "usage: claude-spore view <runId> [--db <db>] [--depth <n>] [--json] [--no-cache]",
   draw: "usage: claude-spore draw --run <runId> [--db <db>] [--at <node>] [--from <node>:<outcome>] (--png <file> | --plain)",
 };
 
@@ -57,14 +57,15 @@ export async function line(argv: string[]): Promise<number> {
 }
 
 export async function view(argv: string[]): Promise<number> {
-  const args = parse(argv, ["--db", "--depth"], ["--json"]);
+  const args = parse(argv, ["--db", "--depth"], ["--json", "--no-cache"]);
   const depthFlag = args?.values["--depth"];
   const depth = depthFlag === undefined ? null : Number(depthFlag);
   if (!args || args.rest.length !== 1 || (depth !== null && !(Number.isInteger(depth) && depth >= 1))) return usage("view");
   const status = await readStatus(args.rest[0]!, args.values["--db"]);
   if ("error" in status) return failed(status, args.flags.has("--json"));
   const json = args.flags.has("--json");
-  const files = new Files(status);
+  const cache = !args.flags.has("--no-cache");
+  const files = new Files(status, cache);
   const shown = lineOf(status, await decided(status));
   const { here, taken } = moment(status);
   const source = await files.read("workflow.dot");
@@ -81,7 +82,7 @@ export async function view(argv: string[]): Promise<number> {
   const drawings: ReturnType<typeof dots>[] = [];
   for (const cells of CELLS) drawings.push(dots(await files.layout(source, cells, here, fold), graph, here, taken));
   const drawing = drawings[0]!;
-  const pictured = await files.picture(fold ? await display(source, here, taken, null, fold) : graph, here, taken, fold);
+  const pictured = cache ? await files.picture(fold ? await display(source, here, taken, null, fold) : graph, here, taken, fold) : null;
   const instructionsPath = here ? instructionsOf(settings, here) : null;
   const text = instructionsPath ? await files.read(instructionsPath) : null;
   const result = {
@@ -356,9 +357,9 @@ class Files {
   private readonly folder: string | null;
   private missing: string | null = null;
 
-  constructor(private readonly status: Status) {
+  constructor(private readonly status: Status, cache = true) {
     const digest = /^sha256:([0-9a-f]{64})$/.exec(status.artifactDigest ?? "")?.[1];
-    this.folder = digest ? join(dataDir(), "artifacts", digest) : null;
+    this.folder = cache && digest ? join(dataDir(), "artifacts", digest) : null;
   }
 
   async read(path: string): Promise<string | null> {

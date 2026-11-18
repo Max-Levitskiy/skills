@@ -60,8 +60,8 @@ runs on defaults; config only caches those decisions so you stop re-making them.
 Run this first, before decomposing anything:
 
 ```bash
-AC=$(command -v agent-config || ls -d "$HOME"/.claude/plugins/cache/*/ml-agent-config/*/bin/agent-config \
-     "${CODEX_HOME:-$HOME/.codex}"/plugins/cache/*/ml-agent-config/*/bin/agent-config 2>/dev/null | tail -1)
+AC=$(command -v agent-config || sh -c 'ls -dt "${CODEX_HOME:-$HOME/.codex}"/plugins/cache/*/ml-agent-config/*/bin/agent-config \
+     "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/*/ml-agent-config/*/bin/agent-config 2>/dev/null | head -1')
 "$AC" start orchestrate
 ```
 
@@ -123,7 +123,7 @@ it — if the work genuinely needs more, say so rather than silently exceeding i
 ## Phase 2 — Launch
 
 **Waves by dependency.** Everything with no unmet dependency launches in wave 1 — all
-in a single message so they run concurrently, up to `defaults.maxParallelAgents`. Later
+concurrently up to `defaults.maxParallelAgents` and the host's subagent limit. Later
 waves launch as their inputs land. Don't hold a ready package hostage to an unrelated one.
 
 **Tier models by judgment required.** Judgment-heavy drafting (client-facing prose,

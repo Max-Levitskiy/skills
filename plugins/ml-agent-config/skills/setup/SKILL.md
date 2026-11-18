@@ -13,7 +13,9 @@ description: >-
 
 # Agent Config (ACS v2)
 
-The rules live in [`standards/agent-config.md`](../../../../standards/agent-config.md) — precedence, merge semantics, every credential shape, the full checklist. The protocol for working a plan lives in [`docs/working-actions.md`](../../docs/working-actions.md). This skill makes them actionable and deliberately does not repeat them; read those when something here doesn't answer the question.
+The [Agent Config Standard](https://github.com/Max-Levitskiy/skills/blob/main/standards/agent-config.md)
+covers precedence, merging and credential references. The bundled [working-actions guide](../../docs/working-actions.md)
+explains how to run a plan and locate the CLI from the plugin cache.
 
 Two jobs arrive here: a user needs configuring → [Onboarding](#onboarding); a skill needs config wired into it → [Wiring config into a component](#wiring-config-into-a-component).
 
@@ -42,7 +44,7 @@ Missing config is the expected first-run state, not a failure — never report i
 
 1. **Detect before doing any work.** `agent-config start <name>`. `ready: true` means there is nothing to do. `ready: false` carries an action list — work it as `working-actions.md` says. A v1 file under `.agents/skill-config/<name>/` arrives as an `agent-config:adopt` action ahead of onboarding.
 
-2. **Ask only the questions that matter**, with `AskUserQuestion` so the user picks rather than types. `agent-config describe <name>` lists every declared key with its description, recommended layer, default and current answer; the component's `actions/onboard.md` says which questions it needs. Skip any that don't apply — a component with no credential asks none of the first one:
+2. **Ask only the questions that matter**, with the available question tool (or chat) so the user picks rather than types. `agent-config describe <name>` lists every declared key with its description, recommended layer, default and current answer; the component's `actions/onboard.md` says which questions it needs. Skip any that don't apply — a component with no credential asks none of the first one:
    - **Where does the credential live?** 1Password (`op`), an environment variable, a gitignored `.env` file, macOS Keychain, or any shell command that prints the secret (Bitwarden, pass, Doppler, `vault`). **Never accept the secret itself as text.** The exact JSON for each source is in the standard; `agent-config 1password items` lists 1Password items by name, never a value. Read a `command` source back to the user before saving — it runs on every call.
    - **Which account, workspace, or project?** Whatever identifies the target of the call.
    - **What gets written, and where?** Say plainly that anything not configured simply isn't written, and that bulky or sensitive output can stay out of the repo entirely via an absolute path.
@@ -56,7 +58,7 @@ Missing config is the expected first-run state, not a failure — never report i
 
    A credential reference counts only in a layer the user wrote here: global, user-repo, a context's me file, or a local file git does not track. `load` ignores one anywhere else and reports `untrusted-layer-key`, so never recommend the repo layer or a context's team file for a credential.
 
-   **When a key recommends `context`**, offer three choices with `AskUserQuestion`, and recommend the first one that fits:
+   **When a key recommends `context`**, offer three choices with the available question tool (or chat), and recommend the first one that fits:
    - **This context** — the onboarding action carries `context.layer`, so a context applies. Name it (the last entry of `start`'s `contexts`) and save there. Offer the outer contexts in `contexts` too, for an answer the whole organisation shares.
    - **A new context** — the plan holds `agent-config:context-add`, so none applies yet. Follow that action's body: propose `suggestedName` with its `remote` and `path`, and create it with `agent-config context add`. A narrower group inside a context that does apply can get one too: `agent-config context add <name> --parent <that context>` with its own `--remote` or `--path`, which then applies after it.
    - **Global** — the answer then applies in every repository, not only this organisation's. Always offer it: it is `context-add`'s `alternative`.

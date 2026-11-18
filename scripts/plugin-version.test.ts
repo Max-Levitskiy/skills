@@ -25,6 +25,8 @@ beforeEach(async () => {
   sh("git", "config", "user.name", "test");
   await write(".claude-plugin/marketplace.json", JSON.stringify({ plugins: [{ name: "ml-demo", version: "0.9.0" }, { name: "ml-other", version: "1.0.0" }] }, null, 2) + "\n");
   await write("plugins/ml-demo/.claude-plugin/plugin.json", JSON.stringify({ name: "ml-demo", version: "0.9.0" }, null, 2) + "\n");
+  await write("plugins/ml-demo/plugin.json", '{"name":"ml-demo","version":"0.9.0"}\n');
+  await write("plugins/ml-demo/.codex-plugin/plugin.json", '{"name":"ml-demo","version":"0.9.0"}\n');
   await write("plugins/ml-demo/src/version.ts", 'export const PLUGIN_VERSION = "0.9.0";\n');
   await write("plugins/ml-demo/src/code.ts", "export const a = 1;\n");
   await write("plugins/ml-demo/CHANGELOG.md", "# Changelog\n\nWhat each ml-demo version changed.\n\n## 0.9.0\n\n- First.\n");
@@ -50,6 +52,8 @@ test("bump raises every copy of the version and adds a changelog section, which 
   commit("change");
 
   expect(JSON.parse(await read("plugins/ml-demo/.claude-plugin/plugin.json")).version).toBe("0.10.0");
+  expect(JSON.parse(await read("plugins/ml-demo/plugin.json")).version).toBe("0.10.0");
+  expect(JSON.parse(await read("plugins/ml-demo/.codex-plugin/plugin.json")).version).toBe("0.10.0");
   const market = JSON.parse(await read(".claude-plugin/marketplace.json"));
   expect(market.plugins.map((p: { version: string }) => p.version)).toEqual(["0.10.0", "1.0.0"]);
   expect(await read("plugins/ml-demo/src/version.ts")).toBe('export const PLUGIN_VERSION = "0.10.0";\n');
@@ -73,6 +77,8 @@ test("a copy of the version left behind, or no changelog section, is refused", a
   const r = run("check", "ml-demo", "base");
   expect(r.code).toBe(1);
   expect(r.out).toContain(".claude-plugin/marketplace.json says 0.9.0, plugins/ml-demo/.claude-plugin/plugin.json says 0.9.1");
+  expect(r.out).toContain("plugins/ml-demo/plugin.json says 0.9.0");
+  expect(r.out).toContain("plugins/ml-demo/.codex-plugin/plugin.json says 0.9.0");
   expect(r.out).toContain("plugins/ml-demo/src/version.ts says 0.9.0");
   expect(r.out).toContain('plugins/ml-demo/CHANGELOG.md has no "## 0.9.1" section');
 });
