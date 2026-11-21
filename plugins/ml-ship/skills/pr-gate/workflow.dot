@@ -9,6 +9,10 @@ digraph "pr-gate" {
   choose_pr      [kind="await-signal", label="No PR named, none on this branch and several open: list the open PRs, and only those, and ask which one."];
   no_pr          [kind="fail", label="The repo has no open PRs. Say so."];
 
+  bot_bump       [label="A dependency bot opened this PR. Read the bot's own report on it: did it write every file the bump needs, and has the update group it belongs to arrived whole?"];
+  allow_regen    [kind="await-signal", label="Writing the files the bot could not is an authored change. Yes if the person asked to merge or fix it; otherwise ask."];
+  bot_artifacts  [label="Produce what the bot could not write, with the repo's pinned toolchain, keeping the diff to the bump. Run the repo's gates, push."];
+
   conflict       [label="The PR cannot merge as it stands. Measure how far behind it is, and read every base commit that touched its files."];
   allow_update   [kind="await-signal", label="Updating the branch is an authored change. Yes if the person already said to fix it; otherwise ask."];
   update_branch  [label="Merge the base into the PR branch keeping both sides' intent, run the repo's gates, push."];
@@ -32,7 +36,16 @@ digraph "pr-gate" {
   facts          -> conflict       [on="conflicting"];
   facts          -> choose_pr      [on="ambiguous"];
   facts          -> no_pr          [on="no-open-prs"];
+  facts          -> bot_bump       [on="dependency-bot"];
   choose_pr      -> facts          [on="chosen"];
+
+  bot_bump       -> watch_ci       [on="ok"];
+  bot_bump       -> allow_regen    [on="artifacts-failed"];
+  bot_bump       -> report         [on="incomplete-group"];
+  allow_regen    -> bot_artifacts  [on="approved"];
+  allow_regen    -> watch_ci       [on="declined"];
+  bot_artifacts  -> facts          [on="ok", label="the head moved, so everything is checked again"];
+  bot_artifacts  -> report         [on="exhausted"];
 
   conflict       -> allow_update;
   allow_update   -> update_branch  [on="approved"];
