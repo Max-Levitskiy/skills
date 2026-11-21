@@ -4,7 +4,7 @@
 bun <this-skill-dir>/scripts/pr-facts.ts [github|gitlab] [PR]   # number, URL, or omit for the current branch
 ```
 
-With no PR named, the script takes the current branch's open PR, else the repo's only open PR. Outcomes: exit 2 prints several open PRs (`ambiguous`), exit 3 means there are none (`no-open-prs`). `mergeable: CONFLICTING` is `conflicting`, whatever CI says.
+With no PR named, the script takes the current branch's open PR, else the repo's only open PR. Outcomes: exit 2 prints several open PRs (`ambiguous`), exit 3 means there are none (`no-open-prs`). `mergeable: CONFLICTING` is `conflicting`, whatever CI says. A PR that a dependency bot opened and that does not conflict is `dependency-bot`, merged ones included. The forge says who opened it: the author is exactly `app/renovate` or `app/dependabot` (REST: `renovate[bot]` / `dependabot[bot]` with `type: Bot`), and the head branch lives in the base repository (`gh pr view --json author,isCrossRepository`, `isCrossRepository: false`). Anyone can name a fork's branch `renovate/…`, so a branch name or a lookalike login leaves the PR an ordinary one.
 
 - A PR already merged or closed is `ok`: judge what was asked, safety rather than readiness, and say it landed.
 - `mergeable: UNKNOWN` is not a conflict. It is computed lazily: poll again.
