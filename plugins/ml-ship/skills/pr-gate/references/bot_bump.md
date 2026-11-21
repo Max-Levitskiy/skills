@@ -3,7 +3,7 @@
 The bot reports on its own PR, and that report is a claim like any other. Read it before CI, because a bot PR is often red for a reason that is no regression: the bot never wrote a file the bump needs.
 
 ```bash
-gh pr view <PR> --json comments --jq '.comments[] | select(.author.login|test("renovate|dependabot")) | .body'
+gh pr view <PR> --json comments --jq '.comments[] | select(.author.login == "renovate" or .author.login == "dependabot") | .body'
 gh pr checks <PR> | grep -iE 'renovate|dependabot'     # renovate/artifacts, renovate/stability-days
 ```
 
