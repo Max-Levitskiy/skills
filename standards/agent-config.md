@@ -324,6 +324,8 @@ A layer replaces it by naming another file, kept beside that layer's config, so 
 
 `null` in a layer removes an inherited path, as with any key, and the default applies again.
 
+A key declared `"folder": true` holds a path to a folder instead, under every rule above, and must name a folder. It lets a layer replace a component's files one at a time instead of all at once: the component ships its own folder as the default, and the component decides how a file it finds in the layer's folder combines with its own. pr-gate's `references` key is one, where `<node>.md` replaces a node's instructions and `<node>.extend.md` adds to them.
+
 ## Declaring and reading config
 
 There is no importable library. The `agent-config` CLI in [`plugins/ml-agent-config`](../plugins/ml-agent-config) is the only interface, which is what stops a credential resolver spreading by copy the way v1's vendored one did. A component:

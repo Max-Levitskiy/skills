@@ -70,3 +70,48 @@ describe("a file key", () => {
     expect(resolveFileKey("graph", root, { base: root, trusted: true })).toEqual({ problem: `graph: ${root} is not a file` });
   });
 });
+
+describe("a folder key", () => {
+  const folders: Declaration = {
+    version: 2,
+    name: "t",
+    schema: { keys: { notes: { description: "Notes", default: "notes", type: "string", folder: true } } },
+  };
+  const fromLayer = (value: string, trusted: boolean) =>
+    effectiveConfig(
+      folders,
+      {
+        config: { notes: value },
+        provenance: { notes: "repo" },
+        files: [{ layer: "repo", path: join(root, "layer", "config.json"), trusted }],
+      },
+      join(root, "component"),
+    );
+
+  beforeEach(() => {
+    mkdirSync(join(root, "component", "notes"));
+    mkdirSync(join(root, "layer", "notes"));
+    mkdirSync(join(root, "outside"));
+    symlinkSync(join(root, "outside"), join(root, "layer", "away"));
+  });
+
+  test("its default and a layer's relative path resolve as a file key's do", () => {
+    expect(effectiveConfig(folders, { config: {}, provenance: {}, files: [] }, join(root, "component")).config.notes).toBe(
+      join(root, "component", "notes"),
+    );
+    expect(fromLayer("notes", false).config.notes).toBe(join(root, "layer", "notes"));
+  });
+
+  test("a file is not a folder, and a missing folder leaves the key unmet", () => {
+    expect(unmetKeys(fromLayer("mine.dot", true))).toEqual(["notes"]);
+    expect(fromLayer("mine.dot", true).problems[0]?.message).toContain("is not a folder");
+    expect(unmetKeys(fromLayer("gone", true))).toEqual(["notes"]);
+  });
+
+  test("a layer someone else wrote cannot leave its folder, by path or by symlink", () => {
+    for (const value of ["../outside", "away", join(root, "outside")]) {
+      expect(unmetKeys(fromLayer(value, false))).toEqual(["notes"]);
+    }
+    expect(fromLayer("away", true).config.notes).toBe(join(root, "layer", "away"));
+  });
+});

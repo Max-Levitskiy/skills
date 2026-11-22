@@ -1,4 +1,5 @@
-// A key declared `file: true` holds a path to a file, so a whole file can be swapped by config.
+// A key declared `file: true` holds a path to a file, so a whole file can be swapped by config;
+// `folder: true` holds a path to a folder of them, so a component's files can be swapped one by one.
 //
 // A relative path resolves against the file that set it, the way an include does: the layer's own
 // folder, or the declaration's folder for a default. A consumer gets an absolute path and reads the
@@ -16,20 +17,31 @@ export interface FileOwner {
   trusted: boolean;
 }
 
+export type PathKind = "file" | "folder";
+
+/** The kind of path a key entry holds, or null when it holds a value. */
+export function pathKind(entry: { file?: boolean; folder?: boolean }): PathKind | null {
+  if (entry.file === true) return "file";
+  if (entry.folder === true) return "folder";
+  return null;
+}
+
 /** Where `value` points, or the problem with it. */
 export function resolveFileKey(
   key: string,
   value: unknown,
   owner: FileOwner,
   home: string = homedir(),
+  kind: PathKind = "file",
 ): { path: string } | { problem: string } {
-  if (typeof value !== "string" || value === "") return { problem: `${key}: must be a path to a file` };
+  if (typeof value !== "string" || value === "") return { problem: `${key}: must be a path to a ${kind}` };
   const expanded = value === "~" || value.startsWith("~/") ? join(home, value.slice(1)) : value;
   const path = isAbsolute(expanded) ? expanded : resolve(owner.base, expanded);
   let real: string;
   try {
     real = realpathSync(path);
-    if (!statSync(real).isFile()) return { problem: `${key}: ${path} is not a file` };
+    const stat = statSync(real);
+    if (kind === "file" ? !stat.isFile() : !stat.isDirectory()) return { problem: `${key}: ${path} is not a ${kind}` };
   } catch {
     return { problem: `${key}: ${path} does not exist` };
   }

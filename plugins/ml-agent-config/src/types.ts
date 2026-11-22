@@ -95,6 +95,8 @@ export interface DescribedKey {
   personal: boolean;
   /** Declared `file`: its value is a path, and `value` holds it resolved to an absolute one. */
   file: boolean;
+  /** Declared `folder`: its value is a path to a folder, resolved to an absolute one. */
+  folder: boolean;
   /** Declared `choices`: `agent-config choices` lists its values, searched here or by the script. */
   choices: { search: "local" | "server" } | null;
   /** The condition this key sits behind, and whether that condition currently holds. */

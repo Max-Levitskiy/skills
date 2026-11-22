@@ -37,7 +37,7 @@ import {
 } from "./layers";
 import { declaredKeys, findDeclaration, isPersonalKey, listDeclarations, valueProblems, type FoundDeclaration } from "./declaration";
 import { effectiveConfig, unmetKeys, type Effective } from "./effective";
-import { layerOwner, resolveFileKey } from "./file-keys";
+import { layerOwner, pathKind, resolveFileKey } from "./file-keys";
 import { buildPlan, guidePath } from "./actions";
 import { CredentialError, cacheVarValue, resolveCredential, type CredentialRef } from "./credentials";
 import { cacheKey } from "./secret-cache";
@@ -650,9 +650,10 @@ function write(parsed: ParsedArgs): number {
   const layerFile = layerPath(name, layer, repo);
   for (const { path, entry } of declaredKeys(found.declaration)) {
     const value = ownValueAt(config, path);
-    if (entry.file !== true || value === undefined || value === null || !layerFile) continue;
+    const kind = pathKind(entry);
+    if (!kind || value === undefined || value === null || !layerFile) continue;
     const trusted = isTrusted(layer, layerFile, existsSync(layerFile), repo.checkout);
-    const resolved = resolveFileKey(path, value, layerOwner({ path: layerFile, trusted }));
+    const resolved = resolveFileKey(path, value, layerOwner({ path: layerFile, trusted }), undefined, kind);
     if ("problem" in resolved) throw new ConfigError(`not written: ${resolved.problem}`);
   }
 

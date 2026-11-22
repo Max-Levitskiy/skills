@@ -1,4 +1,4 @@
 {
-  "//": "Example only. Copy workflow.dot beside this layer's config, change it, then write this with `agent-config write pr-gate --layer <layer>`. To change one node's instructions, put references/<node id>.md beside the copy.",
-  "workflow": "gate.dot"
+  "//": "Example only. Make a folder beside this layer's config, then write this with `agent-config write pr-gate --layer <layer>`. In it, verify.extend.md adds to this skill's references/verify.md, and verify.md replaces it. To change the graph itself, copy workflow.dot there and set `workflow` too.",
+  "references": "references"
 }
