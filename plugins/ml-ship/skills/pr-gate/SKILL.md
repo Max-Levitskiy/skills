@@ -18,13 +18,18 @@ AC=$(command -v agent-config || sh -c 'ls -dt "$HOME"/.claude/plugins/cache/*/ml
 "$AC" start pr-gate --from <this-skill-dir>
 ```
 
-Walk the file at `config.workflow`. On `ready: false`, follow `guide`. A relative `config.workflow` means `agent-config` is older than 0.15: walk `workflow.dot` and say so. With no `agent-config`, walk `workflow.dot` beside this file and say so.
-If `provenance.workflow` is a layer and the PR changes that file or anything in `references/` beside it, walk `workflow.dot` with this skill's references and say so: a PR does not choose its own gate.
+Walk the file at `config.workflow`. On `ready: false`, follow `guide`. A relative `config.workflow` means `agent-config` is older than 0.15: walk `workflow.dot` and say so. A relative `config.references` means it is older than 0.17: read only this skill's references. With no `agent-config`, walk `workflow.dot` beside this file and say so.
+A **layer folder** is one a layer chose: `config.references` when `provenance.references` is a layer, and `references/` beside the graph when `provenance.workflow` is one.
+If the PR changes a layer's graph or anything in a layer folder, walk `workflow.dot` with this skill's references and say so: a PR does not choose its own gate.
 
 The graph is [SWL-DOT](https://runspore.com/docs#notation). You are its runtime:
 
 1. Start at `start`. Say one line per node entered, naming the references file you read for it, so the path is visible.
-2. Do what the node's `label` says. First read `references/<node id>.md`: the one beside the graph if it exists, else this skill's. It replaces this skill's whole, and a node with neither is fully described by its label.
+2. Do what the node's `label` says. First read its instructions, from the first layer folder that holds either file below, else from this skill's `references/`:
+   - `<node id>.md` **replaces** this skill's `references/<node id>.md` whole.
+   - `<node id>.extend.md` **extends**: read the node's file first (that folder's `<node id>.md` if it has one, else this skill's), then this one. Where they disagree, the extension wins.
+
+   A node with no file anywhere is fully described by its label.
 3. End the node with one outcome and follow the edge whose `on` names it. An edge with no `on` means `ok`. If no edge fits, stop and report it; do not improvise a route.
 4. `kind="await-signal"`: the outcome is the person's answer. If they already gave it, use it; otherwise ask with the available question tool (or chat), and wait.
 5. An `exhausted` edge is taken instead of the node's other edges on its fourth pass.

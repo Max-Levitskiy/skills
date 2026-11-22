@@ -49,6 +49,8 @@ export type Setting = {
   personal: boolean
   /** Declared `file`: its value is a path, and `value` holds it resolved to an absolute one. */
   file: boolean
+  /** Declared `folder`: its value is a path to a folder, resolved to an absolute one. */
+  folder: boolean
   required: boolean
   /** What the key holds, as JSON Schema: a key holding an object is edited a field at a time. */
   schema: ValueSchema | null

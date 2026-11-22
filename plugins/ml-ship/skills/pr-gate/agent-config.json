@@ -6,11 +6,18 @@
     "version": 1,
     "keys": {
       "workflow": {
-        "description": "The SWL-DOT graph this skill walks. Name a file beside this layer's config to replace the whole procedure. A references/<node id>.md beside that file replaces that node's instructions",
+        "description": "The SWL-DOT graph this skill walks. Name a file beside this layer's config to replace the whole procedure. To change one node's instructions and keep the graph, use `references` instead",
         "layer": "repo",
         "default": "workflow.dot",
         "type": "string",
         "file": true
+      },
+      "references": {
+        "description": "A folder of node instructions that change this skill's without copying the graph. In it, <node id>.md replaces that node's references file, and <node id>.extend.md is read after it and wins where they disagree",
+        "layer": "repo",
+        "default": "references",
+        "type": "string",
+        "folder": true
       }
     }
   }

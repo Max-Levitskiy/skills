@@ -92,6 +92,10 @@
           "type": "boolean",
           "description": "The key holds a path to a file, so config can replace a whole file the component ships. A relative path resolves against the folder of the file that set it, the declaration's folder for a default. `start` and `load` answer it absolute and treat one that does not resolve as not configured."
         },
+        "folder": {
+          "type": "boolean",
+          "description": "The key holds a path to a folder, so config can replace the files a component ships one by one: the component looks in that folder first. It resolves, is confined and is answered exactly as a `file` key, and must name a folder."
+        },
         "choices": {
           "type": "object",
           "description": "A script that lists the values this key can take, for an editor to offer and search: `agent-config choices <name> <key>` runs it with bun from the declaration's folder, the key, the search and the effective config (references, never secrets) as JSON on stdin, and reads `{ \"choices\": [{ \"value\", \"label\", \"detail\" }], \"note\" }` from its stdout.",

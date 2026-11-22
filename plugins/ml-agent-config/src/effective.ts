@@ -23,7 +23,7 @@ import {
 import { setValueAt, valueAt, type ConfigObject, type ConfigValue, type Layer } from "./layers";
 import { referenceProblems } from "./credentials";
 import { keySchema } from "./key-schema";
-import { layerOwner, resolveFileKey, type FileOwner } from "./file-keys";
+import { layerOwner, pathKind, resolveFileKey, type FileOwner } from "./file-keys";
 import type { DescribedKey, Problem } from "./types";
 
 export type GroupStatus = "active" | "inactive" | "unevaluated";
@@ -97,9 +97,10 @@ export function effectiveConfig(
     const keyProblems = credential && value !== undefined ? referenceProblems(path.slice("credentials.".length), value) : [];
 
     // A file key reaches the consumer as an absolute path, or as a problem that keeps it from running.
-    if (entry.file === true && value !== undefined && status === "active") {
+    const kind = pathKind(entry);
+    if (kind && value !== undefined && status === "active") {
       const owner = fileOwner(provenance[path], loaded.files ?? [], declarationDir);
-      const resolved = owner ? resolveFileKey(path, value, owner) : { problem: `${path}: nothing says what it is relative to` };
+      const resolved = owner ? resolveFileKey(path, value, owner, undefined, kind) : { problem: `${path}: nothing says what it is relative to` };
       if ("path" in resolved) {
         value = resolved.path;
         setValueAt(config, path, value);
@@ -117,6 +118,7 @@ export function effectiveConfig(
       credential,
       personal: entry.personal === true,
       file: entry.file === true,
+      folder: entry.folder === true,
       choices: entry.choices ? { search: entry.choices.search ?? "local" } : null,
       group: group ? { when: group.when, action: group.action ?? DEFAULT_ONBOARD_ACTION, status } : null,
       required,
@@ -135,7 +137,7 @@ export function effectiveConfig(
     // broken" and "you have nothing configured" are different conversations (D4).
     if (!absent) {
       problems.push({
-        code: entry.file === true ? "invalid-value" : "credential-malformed",
+        code: kind ? "invalid-value" : "credential-malformed",
         message: keyProblems.join("; "),
         keys: [path],
       });

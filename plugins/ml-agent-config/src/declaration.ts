@@ -13,7 +13,7 @@ import { dirname, isAbsolute, join, normalize } from "path";
 import { existsSync, readFileSync, readdirSync } from "fs";
 import { ConfigError, ownValueAt, type ConfigObject, type ConfigValue, type Layer } from "./layers";
 import { pluginInstalls, type DependencyKind, type Harness } from "./harness";
-import { resolveFileKey } from "./file-keys";
+import { pathKind, resolveFileKey, type PathKind } from "./file-keys";
 import { check, keySchema, keySchemaProblems, type Defs, type ValueSchema } from "./key-schema";
 
 export const DECLARATION_FILE = "agent-config.json";
@@ -33,6 +33,8 @@ export interface KeyEntry extends ValueSchema {
   personal?: boolean;
   /** Holds a path to a file: `load` answers it absolute, and refuses one that does not resolve (file-keys.ts). */
   file?: boolean;
+  /** Holds a path to a folder, under the same rules as `file`. */
+  folder?: boolean;
   default?: ConfigValue;
   /** Where the values it can take are listed: a script the component ships (`agent-config choices`). */
   choices?: Choices;
@@ -152,10 +154,11 @@ function choicesProblem(choices: Choices): string | null {
 }
 
 /** A file key holds one string, and its default ships inside the component. */
-function fileKeyProblem(entry: KeyEntry, dir: string): string | null {
+function fileKeyProblem(entry: KeyEntry, kind: PathKind, dir: string): string | null {
+  if (entry.file === true && entry.folder === true) return "it is declared both `file` and `folder`";
   if (entry.type !== undefined && entry.type !== "string") return `its type is ${JSON.stringify(entry.type)}, and a path is a string`;
   if (entry.default === undefined) return null;
-  const resolved = resolveFileKey("default", entry.default, { base: dir, trusted: false });
+  const resolved = resolveFileKey("default", entry.default, { base: dir, trusted: false }, undefined, kind);
   return "problem" in resolved ? resolved.problem : null;
 }
 
@@ -181,9 +184,10 @@ function validate(declaration: Declaration, expectedName: string, path: string):
       const problem = choicesProblem(entry.choices);
       if (problem) fail(`key "${keyPath}" has choices it cannot run: ${problem}`);
     }
-    if (entry.file === true) {
-      const problem = fileKeyProblem(entry, dirname(path));
-      if (problem) fail(`key "${keyPath}" is a file key it cannot resolve: ${problem}`);
+    const kind = pathKind(entry);
+    if (kind) {
+      const problem = fileKeyProblem(entry, kind, dirname(path));
+      if (problem) fail(`key "${keyPath}" is a ${kind} key it cannot resolve: ${problem}`);
     }
     const schema = keySchema(entry);
     if (!schema) continue;
