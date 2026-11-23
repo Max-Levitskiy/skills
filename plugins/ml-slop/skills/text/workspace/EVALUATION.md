@@ -54,6 +54,30 @@ Exact outputs and the validation commands are recorded in PR #47. Repeat the
 comparison in the external harness before using these fixtures to calibrate
 numeric score weights or label bands.
 
+## Added controls: 2026-11-16
+
+`emotion_intensity_negative_control` and
+`hollow_intensifier_positive_control` are a paired context check. The first
+requires fix mode to preserve the authored degree in “incredibly excited” while
+removing generic announcement framing. The second requires it to remove hollow
+promotional intensifiers while preserving the only supported performance result
+and its sample scope.
+
+The pair is informed by ZeroSlop's 2026-11-14
+[`Preserve authored emotion while checking writing quality`](https://github.com/manavmishra/ZeroSlop/commit/520a94e2eaeadb347c055dcd390409f76c72a501)
+change, which scoped an intensifier rule away from first-person emotion. These
+fixtures are original. `ml-slop:text` already requires preserving stated
+feelings and claim strength, so no method prompt changes are needed; the gap was
+that the regression set did not verify emotional degree against a nearby hollow
+intensifier case.
+
+Run both cases through the same base and candidate model/harness configuration,
+with only each `source` value in model context. The expectation object, sibling
+case, this explanation, and source URL stay outside the model input. A candidate
+passes only if all exact spans and semantic invariants survive, both removable
+spans disappear, and no new claim is introduced. This is fixture coverage, not
+evidence of a measured model-quality improvement.
+
 ## Why these cases
 
 A newer open-source writing skill, Zero Slop, uses local source-detail checks

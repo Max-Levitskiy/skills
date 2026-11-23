@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.1
+
+- Add paired text rewrite controls that distinguish authored emotional
+  intensity from hollow promotional intensifiers.
+- Clarify that the text density score is not an authorship verdict.
+- Document the source provenance and matched base-versus-candidate harness
+  protocol. Methods, weights, thresholds, and score bands are unchanged.
+
 ## 0.4.0
 
 - Package all three skills for Codex, including the explicit-only code comment guidelines.

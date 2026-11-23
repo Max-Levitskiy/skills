@@ -19,6 +19,8 @@ aggregate a weighted 0–100 density score.
 Detect **repeated meaning — not just repeated words** — in any text, then either
 report it or fix it. AI-generated prose often restates the same idea in different
 phrasing; this skill finds those patterns and measures information density.
+The density score is not an AI-authorship verdict: human writing can be
+repetitive, and model-edited writing can be dense.
 
 ### Use
 
@@ -110,9 +112,11 @@ fail or don't apply drop out and the remaining weights renormalize.
 
 ### Status
 
-**This release (0.3.2):** adds an evidence-backed `import-streak` pattern and
-paired positive/negative fixtures. It does not change weights, penalties, or
-score bands; model-harness comparison is still required before claiming an
+**This release (0.4.1):** packages all three skills for Codex and adds paired
+text rewrite controls for preserving authored emotional intensity while
+removing hollow promotional intensifiers. It also makes explicit that density
+is not an authorship verdict. Methods, weights, penalties, and score bands are
+unchanged; model-harness comparison is still required before claiming an
 accuracy improvement.
 
 v1, smoke-validated in both input modes across Python and TypeScript (see

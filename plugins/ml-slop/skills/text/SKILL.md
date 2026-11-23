@@ -19,6 +19,10 @@ Detect repeated meaning — not just repeated words — across documents. AI tex
 often restates the same idea with different phrasing. This skill finds those
 patterns and either reports them (score mode) or fixes them (fix mode).
 
+A density score is **not** an AI-authorship verdict. Human text can be
+repetitive, and model-edited text can be dense. Report only the observable
+density and editing findings; do not infer who wrote the text.
+
 ## Step 0: Determine target and mode
 
 If the user specified file(s), use those. Otherwise ask:
@@ -121,6 +125,7 @@ Combine findings from all methods into a single report:
 
 **File(s):** <paths>
 **Density score:** <N>/100 (<label>)
+**Scope:** Density and editing only — not AI authorship
 **Sentences:** <total>  |  **Unique claims:** <count>  |  **Compression ratio:** <pct>%
 
 ### Repeated Claim Groups
