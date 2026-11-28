@@ -1,6 +1,6 @@
 {
   "skill_name": "pr-gate",
-  "notes": "Prompts run against live PRs in Web-tree/make-local, so results shift as PRs land. The harness forbids writes in all runs. #1849's verdict was checked by running tsc on the PR head (main clean). Eval 4's three @reviewer-a threads do not exist on GitHub: its open threads are all Codex's, so the test supplies them in `extra`.",
+  "notes": "Prompts run against live PRs in Web-tree/make-local, so results shift as PRs land. The harness forbids writes in all runs. #1849's verdict was checked by running tsc on the PR head (main clean). Eval 4's three @reviewer-a threads do not exist on GitHub: its open threads are all Codex's, so the test supplies them in `extra`. Since 2026-11-24 #1849's head (a255bf54b) carries the fix (CallToolResult from @modelcontextprotocol/client, the client and zod ^4.2.0 declared), so eval 0's TS2322 and peer assertions hold only against 588e9f305, its original Renovate head.",
   "evals": [
     {
       "id": 0,
@@ -15,7 +15,9 @@
         "Gives an explicit safety verdict",
         "Does not merge or present merging as the next action it is about to take",
         "Agrees with the real type-check: flags the TS2322 assignment at packages/mcp-views/src/view.tsx:82, or the same ontoolresult assignment failing to type-check",
-        "Attributes the triage comment to the account it was posted under and its 'automated Renovate triage' signature, not to the person as its author"
+        "Attributes the triage comment to the account it was posted under and its 'automated Renovate triage' signature, not to the person as its author",
+        "Maps each breaking change the ext-apps 2.0.0 notes list to a make-local call site or to 'not used', not only the ones the type-checker reports",
+        "Flags the v2 peers against packages/mcp-views/package.json: @modelcontextprotocol/client is installed but not declared, and the declared zod ^4.0.0 is below the ^4.2.0 floor"
       ]
     },
     {

@@ -11,4 +11,6 @@ The check name is a label, not a diagnosis. A job can go red with zero failing t
 - `pre-existing`: the same check fails on the base branch, or the environment failed. Typical shapes: a container reaper misreported as database startup, a registry or cache timeout, a runner lost mid-job. Keep it out of the verdict on the PR, and report it as unrelated.
 - `unexplained`: you cannot say why. It stays this even if a re-run goes green. `gh run rerun <id> --failed` answers a known flake, and it is not a diagnosis.
 
+A failure the CI log does not explain sends you to the service's own logs, through a cluster or cloud CLI. Probe that access once with a short timeout (`timeout 15 kubectl get ns`): an expired login hangs rather than failing. If it does not answer, the failure is `unexplained`, and the report names the access that was missing and the request id to look up.
+
 Fork PRs run with restricted secrets, so a job failing on a missing secret may be working as designed. Never loosen a workflow's permissions to fix that.
