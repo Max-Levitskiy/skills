@@ -10,6 +10,11 @@ Scope the work by blast radius, not diff size. On a head you already verified, c
 | App code | Does it match the ticket, and what did it couple to? | Compare against the linked issue, if there is one, not the diff. Look at shared helpers gaining callers and exported shapes changing. New tests that pass on the base branch cover nothing new |
 | Lockfile (with any of these) | Consistent, and in scope? | A frozen install must succeed and leave `git status` empty. Unrelated transitive jumps are out-of-scope changes: report them |
 
+### A dependency bump, past the types
+
+- **A major: walk its breaking-change list.** Collect every breaking change the upstream notes list for each release between the old and new version, and give each one a row: the call site it reaches in our code, or "not used". The notes are claims about the API, but they are also the only list of what types cannot show: error codes and messages, wire formats, a guard that now throws, a default that flipped. The type declarations diff confirms the rows that are API.
+- **The new peers against our manifest.** Read the bumped package's `peerDependencies` on the new version, and check each one against what the consuming workspace declares. bun and npm 7+ install a missing peer silently, so a frozen install and the type-check both pass while the manifest is wrong: a peer nobody declared, a range below the new floor, a dependency the bump made unused. Each is a finding, and declaring it belongs in the same PR.
+
 ## Running the PR's code
 
 Gates run in a throwaway worktree, never the person's checkout. The repo's gates are the commands in its convention docs, its pre-push hook, its package scripts and what its CI runs for these files:
@@ -33,3 +38,4 @@ A local failure after build-then-test may be your own mess, such as a runner col
 
 - **Each changed package has its trace:** the command CI really ran on it, followed from the workflow through the root script and its filters to the package's own script. Name what no check ran, such as a type-check or tests. A PR comment saying what CI covers is a claim, whoever posted it.
 - **A dependency bump has a run behind it:** the call sites' pattern went through the type-checker against the new version, in your repo gates or the scratch project. Reading `.d.ts` files gives you a hypothesis. If you cannot run it, the verdict says the types are unproven.
+- **A major has its table:** every listed breaking change maps to a call site or "not used", and every new peer is declared at its floor.
